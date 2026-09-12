@@ -344,6 +344,8 @@ PlasmoidItem {
         actionKind: root.actionKind
         actionFeedback: root.actionFeedback
         downloaderEnabled: Plasmoid.configuration.showVideoDownloader
+        taglineText: Plasmoid.configuration.taglineText
+        cookiesBrowser: Plasmoid.configuration.cookiesBrowser
         downloadReady: root.homeDirectory !== ""
         downloadInFlight: root.downloadInFlight
         downloadFeedback: root.downloadFeedback

@@ -18,6 +18,7 @@ Kirigami.FormLayout {
     property alias cfg_jsRuntime: jsRuntime.text
     property alias cfg_ytDlpBinary: ytDlpBinary.text
     property alias cfg_cookiesBrowser: cookiesBrowser.editText
+    property alias cfg_taglineText: taglineText.text
 
     QQC2.SpinBox {
         id: pollInterval
@@ -101,6 +102,14 @@ Kirigami.FormLayout {
         }
 
         QQC2.ToolTip.text: i18n("Passed to yt-dlp as --cookies-from-browser. Leave empty to download without cookies.")
+        QQC2.ToolTip.visible: hovered
+    }
+
+    QQC2.TextField {
+        id: taglineText
+        Kirigami.FormData.label: i18n("Bottom text:")
+
+        QQC2.ToolTip.text: i18n("Muted text shown at the bottom of the widget. Leave empty to hide it.")
         QQC2.ToolTip.visible: hovered
     }
 }

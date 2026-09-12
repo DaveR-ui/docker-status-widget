@@ -890,3 +890,164 @@ test("extractErrorLine falls back to the last line and stays bounded", () => {
     assert.ok(extracted.startsWith("ERROR: xxx"), extracted);
     assert.ok(extracted.endsWith("\u2026"), extracted);
 });
+
+/*
+ * ---------------------------------------------------------------------------
+ * Configurable tagline, cookies feedback and the action row geometry
+ * ---------------------------------------------------------------------------
+ * Four pieces of shipped QML that a runtime test cannot reach: a kcfg default, the
+ * config-page alias target, the bindings that carry both values into the popup, and
+ * the width of the stop button. They are pinned as text because every one of them
+ * compiles and renders when it is silently dropped, and the failure only shows up as
+ * a setting that does nothing or a button that moves under the cursor.
+ */
+
+const mainXmlUrl = new URL(
+    "../package/io.github.daver-ui.dockerstatus/contents/config/main.xml",
+    import.meta.url,
+);
+const configGeneralUrl = new URL(
+    "../package/io.github.daver-ui.dockerstatus/contents/ui/config/ConfigGeneral.qml",
+    import.meta.url,
+);
+const mainQmlUrl = new URL(
+    "../package/io.github.daver-ui.dockerstatus/contents/ui/main.qml",
+    import.meta.url,
+);
+const fullQmlUrl = new URL(
+    "../package/io.github.daver-ui.dockerstatus/contents/ui/FullRepresentation.qml",
+    import.meta.url,
+);
+
+const mainXml = readFileSync(mainXmlUrl, "utf8");
+const configGeneral = readFileSync(configGeneralUrl, "utf8");
+const mainQml = readFileSync(mainQmlUrl, "utf8");
+const fullQml = readFileSync(fullQmlUrl, "utf8");
+
+/*
+ * The opening tag and the body of one kcfg entry, so a default is asserted against the
+ * entry that owns it instead of against the whole file: another entry can carry the same
+ * default, and a file-wide includes() would not notice the tagline losing its own.
+ */
+function kcfgEntry(xml, name) {
+    const match = new RegExp(`<entry name="${name}"([^>]*)>([\\s\\S]*?)</entry>`).exec(xml);
+    assert.ok(match, `main.xml must declare the ${name} entry`);
+    return { attributes: match[1], body: match[2] };
+}
+
+/*
+ * Strips QML comments so a code assertion cannot be satisfied -- or defeated -- by prose.
+ * The tagline block deliberately names its shipped default in a comment, so the
+ * "no hardcoded literal" assertion below must read code only. It is regex-level and
+ * therefore approximate; it is only used on the tagline literal, which shares no line
+ * with a URL or a regex literal.
+ */
+const stripQmlComments = (source) =>
+    source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+
+test("main.xml declares the configurable tagline with the existing motto as its default", () => {
+    const tagline = kcfgEntry(mainXml, "taglineText");
+
+    assert.ok(tagline.attributes.includes('type="String"'), tagline.attributes);
+    assert.ok(
+        tagline.body.includes("<default>Persiguiendo la singularidad</default>"),
+        "the widget must keep its current wording as the out-of-the-box default",
+    );
+});
+
+test("main.xml still declares the cookies browser and defaults it to firefox", () => {
+    const cookies = kcfgEntry(mainXml, "cookiesBrowser");
+
+    assert.ok(cookies.attributes.includes('type="String"'), cookies.attributes);
+    assert.ok(cookies.body.includes("<default>firefox</default>"), cookies.body);
+});
+
+test("ConfigGeneral.qml aliases the bottom text to a plain writable TextField", () => {
+    assert.ok(
+        configGeneral.includes("property alias cfg_taglineText: taglineText.text"),
+        "Plasma reads the setting through the cfg_<entryName> alias",
+    );
+
+    // The alias target has to stay a plain writable property: aliasing an expression is a
+    // silent no-op on save, which is what the file's own header comment warns about.
+    assert.ok(
+        /QQC2\.TextField\s*\{\s*\n\s*id: taglineText/.test(configGeneral),
+        "the alias target must be a QQC2.TextField with id taglineText",
+    );
+});
+
+test("main.qml forwards the tagline and the cookies browser into the full representation", () => {
+    const blockStart = mainQml.indexOf("fullRepresentation: FullRepresentation {");
+    assert.ok(blockStart >= 0, "main.qml must define the full representation");
+
+    const fullRepresentationBlock = mainQml.slice(blockStart);
+
+    assert.ok(
+        fullRepresentationBlock.includes("taglineText: Plasmoid.configuration.taglineText"),
+        "the tagline setting must reach the popup representation",
+    );
+    assert.ok(
+        fullRepresentationBlock.includes("cookiesBrowser: Plasmoid.configuration.cookiesBrowser"),
+        "the cookies browser must reach the popup representation",
+    );
+});
+
+test("FullRepresentation.qml binds the tagline to the setting and drops the hardcoded motto", () => {
+    const code = stripQmlComments(fullQml);
+
+    assert.ok(code.includes("text: fullRoot.taglineText"), "the tagline must be the configured text");
+    assert.ok(
+        code.includes('visible: fullRoot.taglineText !== ""'),
+        "an empty setting must hide the tagline instead of leaving a blank row",
+    );
+    assert.ok(
+        !code.includes("Persiguiendo la singularidad"),
+        "the shipped code must not hardcode the motto any more",
+    );
+});
+
+test("FullRepresentation.qml resolves the displayed browser through the command's own resolver", () => {
+    assert.ok(
+        fullQml.includes(
+            "readonly property string cookiesBrowserDisplay: "
+                + "DockerStatus.resolveCookiesBrowser(fullRoot.cookiesBrowser)",
+        ),
+        "the label must resolve through the same function that builds the yt-dlp command, "
+            + "so it can never claim a browser the download is not using",
+    );
+
+    assert.ok(
+        fullQml.includes('? i18nc("@info", "Cookies from: %1", fullRoot.cookiesBrowserDisplay)'),
+        "the resolved browser must actually be the text that is shown",
+    );
+    assert.ok(fullQml.includes(': i18nc("@info", "Cookies: not used")'));
+});
+
+test("the stop button is fixed-width while the start button still fills the row", () => {
+    const buttonBlocks = fullQml.split("PlasmaComponents3.Button {");
+    const startBlock = buttonBlocks.find((block) => block.includes('icon.name: "media-playback-start"'));
+    const stopBlock = buttonBlocks.find((block) => block.includes('icon.name: "media-playback-stop"'));
+
+    assert.ok(startBlock, "the action row must still have a start button");
+    assert.ok(stopBlock, "the action row must still have a stop button");
+
+    assert.ok(startBlock.includes("Layout.fillWidth: true"), "Start must keep sharing the row");
+
+    // Read from the stop button's own block and from its own line on, so a fillWidth that
+    // belongs to another widget cannot stand in for the stop button's.
+    const stopHeader = stopBlock
+        .slice(stopBlock.indexOf('icon.name: "media-playback-stop"'))
+        .split("\n")
+        .slice(0, 10)
+        .join("\n");
+
+    assert.ok(
+        stopHeader.includes("Layout.fillWidth: false"),
+        "the stop button must not fill the row",
+    );
+    assert.ok(
+        stopHeader.includes("Layout.preferredWidth: Kirigami.Units.gridUnit * 7"),
+        "the stop button must keep one fixed narrow width, so the row cannot reflow "
+            + "between \"Stop daemon\" and \"Confirm stop\"",
+    );
+});

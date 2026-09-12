@@ -96,17 +96,18 @@ needs its own decision record.
 ## Video downloads
 
 The full representation has a download row: paste a YouTube or X (Twitter) link, press the button, and
-`yt-dlp` fetches the video into the configured folder using the cookies from **Firefox** — the browser is
-not a setting, it is a fixed constant in the command. The row exists only
+`yt-dlp` fetches the video into the configured folder, reading cookies from the configured browser
+(**Firefox** by default). The row exists only
 in the full representation — the desktop widget or the panel popup — never in the panel icon.
 
 The assembled command is exactly this, with every value single-quoted by `shellQuote()`:
 
 ```
-'yt-dlp' --cookies-from-browser 'firefox' --js-runtimes '<runtime>' --no-playlist --no-progress -P '<dir>' -o '%(title)s [%(id)s].%(ext)s' '<url>' # plasma-run-N
+'yt-dlp' --cookies-from-browser '<browser>' --js-runtimes '<runtime>' --no-playlist --no-progress -P '<dir>' -o '%(title)s [%(id)s].%(ext)s' '<url>' # plasma-run-N
 ```
 
-The `--js-runtimes` pair is omitted entirely when that setting is empty. The trailing comment is the
+The `--cookies-from-browser` pair is omitted entirely when the browser setting is empty, and so is
+`--js-runtimes` when that setting is empty. The trailing comment is the
 pre-existing `withRunToken()` mechanism that makes a repeated one-shot re-run.
 
 Two flags are deliberate:
@@ -131,9 +132,9 @@ This is the one place user input reaches a command, and it is bounded on purpose
   configuration alike — in single quotes and escapes an embedded quote as `'\''`. The unit tests run
   the assembled command through a real `/bin/sh` with a stub `yt-dlp` on `PATH` and assert the argv
   arrives intact.
-- **Configuration supplies validated values, never a command.** A bad binary or runtime name falls back
-  to its safe default; a relative or control-character download directory falls back to `~/Downloads`.
-  The browser is not configurable at all: the cookies come from Firefox.
+- **Configuration supplies validated values, never a command.** A bad binary, runtime name or browser
+  value falls back to its safe default; a relative or control-character download directory falls back to
+  `~/Downloads`. An empty browser setting omits `--cookies-from-browser` instead of guessing.
 - **yt-dlp's own configuration still applies.** There is no `--ignore-config`, so
   `~/.config/yt-dlp/config` (a PO-token plugin, a format preference) survives.
 
@@ -146,12 +147,13 @@ The full boundary and the rejected alternatives are recorded in
   lives in `~/.local/bin`, which is on plasmashell's environment.
 - For YouTube, a JavaScript runtime (`node` or `deno`). Without it, YouTube fails with
   "The page needs to be reloaded".
-- Firefox cookies for X/Twitter and for age-gated YouTube. The command always passes
-  `--cookies-from-browser firefox`; yt-dlp resolves the profile itself.
+- Cookies from a signed-in browser for X/Twitter and for age-gated YouTube. The command passes
+  `--cookies-from-browser <your setting>` (default `firefox`); leave the setting empty to send no cookies
+  at all. yt-dlp resolves the browser's profile itself.
 
 ### Settings
 
-These four settings are on the widget's config page:
+These six settings are on the widget's config page:
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
@@ -159,6 +161,8 @@ These four settings are on the widget's config page:
 | Download folder | `~/Downloads` | Videos are written here; `~/` expands to your home directory. |
 | JS runtime | `node` | Passed as `--js-runtimes`; leave empty to omit the flag entirely. |
 | yt-dlp binary | `yt-dlp` | Executable name or path; `~/` expands. |
+| Cookies browser | `firefox` | Passed as `--cookies-from-browser`; accepts yt-dlp syntax such as `chrome:Default` or `firefox+gnomekeyring`. Leave empty to send no cookies. |
+| Bottom text | `Persiguiendo la singularidad` | Muted text at the bottom of the widget. Leave empty to hide it entirely. |
 
 ---
 
@@ -245,12 +249,12 @@ node docs/validate.js --write  # regenerate docs/index.md and docs/tag-index.md,
 
 | Layer | How it was verified |
 | --- | --- |
-| Node unit suite | 58 unit tests (16 before the download feature), `node --test`; the bulk run against the exact shipped `dockerstatus.js`, and the suite also pins the action identities and their exact QML `actionKind` expressions, both fixed privileged commands, and the polkit rule as text plus a default-deny predicate matrix |
+| Node unit suite | 65 unit tests (16 before the download feature), `node --test`; the bulk run against the exact shipped `dockerstatus.js`, and the suite also pins the action identities and their exact QML `actionKind` expressions, both fixed privileged commands, the polkit rule as text plus a default-deny predicate matrix, and the config surfaces a runtime test cannot reach — the tagline default, the `firefox` cookies default, the full-representation bindings and the stop button's fixed width |
 | Download command boundary | Unit tests run the assembled command through a real `/bin/sh` with a stub `yt-dlp` on `PATH`; the argv arrives intact, including a real YouTube URL and a quote-injection URL |
 | Data engine contract (keys, polling, re-run trap) | Probe QML executed against live plasma5support 6.7.4 |
 | Full pipeline against live Docker | Probe harness parsed the real 3-container `catan-lan` stack |
 | End-to-end download | Probe: an X link exited 0 and wrote a 10,365,309-byte mp4 (cookies extracted from Firefox); a YouTube `--simulate` run selected format 401+251 via node |
-| All QML files | Two binaries measured. The `qmllint` on `PATH` is Qt5 (`qt5-declarative 5.15.19`): exit 0, no output, and a deliberate `property int x: "boom"` probe also exited 0 — syntax-only. `/usr/lib/qt6/bin/qmllint` (`qt6-declarative 6.11.2`, the tool matching the Plasma 6 target): exit 0, **0 errors, 66 warnings all `[unqualified]`, 37 infos of which 3 are `[unused-imports]`**, and no `[missing-property]`, `[incompatible-type]`, `[unresolved-type]` or `[import]` diagnostic |
+| All QML files | Two binaries measured. The `qmllint` on `PATH` is Qt5 (`qt5-declarative 5.15.19`): exit 0, no output, and a deliberate `property int x: "boom"` probe also exited 0 — syntax-only. `/usr/lib/qt6/bin/qmllint` (`qt6-declarative 6.11.2`, the tool matching the Plasma 6 target): exit 0, **0 errors, 69 warnings all `[unqualified]`, 37 infos of which 3 are `[unused-imports]`**, and no `[missing-property]`, `[incompatible-type]`, `[unresolved-type]` or `[import]` diagnostic |
 | `main.qml` as a `PlasmoidItem` | **Not executable outside plasmashell** |
 
 That last row is an honest limitation: instantiating `PlasmoidItem` outside a
@@ -266,7 +270,7 @@ only, and a deliberate type-mismatch probe (`property int x: "boom"`) also exite
 The two binaries are not interchangeable. The `qmllint` on `PATH` is Qt5
 (`qt5-declarative 5.15.19`), which is why the probe above proves it reports syntax only. The matching
 `/usr/lib/qt6/bin/qmllint` (`qt6-declarative 6.11.2`) does report semantics, and it is the relevant
-tool for a Plasma 6 target: on all six QML files it produced 0 errors, 66 warnings, every one of them
+tool for a Plasma 6 target: on all six QML files it produced 0 errors, 69 warnings, every one of them
 `[unqualified]`, and 37 infos of which 3 are `[unused-imports]`, with no `[missing-property]`,
 `[incompatible-type]`, `[unresolved-type]` or `[import]` diagnostic. Its exit code is still 0 unless
 `--max-warnings` is set, so the diagnostic stream — not the exit code — is the evidence.
@@ -288,8 +292,8 @@ Everything else is the shipped file, byte for byte.
   a user-scoped daemon.
 - Video downloads need `yt-dlp` on plasmashell's `PATH`. YouTube additionally needs a JavaScript
   runtime (`node` or `deno`); without it, YouTube fails with "The page needs to be reloaded".
-- X/Twitter downloads need cookies from a signed-in Firefox profile, and so does age-gated YouTube;
-  the command always reads them from Firefox.
+- X/Twitter downloads need cookies from a signed-in browser profile, and so does age-gated YouTube;
+  the command reads them from the configured browser (default Firefox).
 - `--no-playlist` is intentional: a YouTube link carrying `&list=...` downloads that video, not the
   radio mix it belongs to.
 - The download row exists only in the full representation (desktop widget or panel popup), never in the

@@ -42,11 +42,18 @@ ColumnLayout {
     property bool downloadInFlight: false
     property string downloadFeedback: ""
     property string downloadFeedbackSeverity: "muted"
+    property string taglineText: ""
+    property string cookiesBrowser: ""
 
     signal startRequested()
     signal stopRequested()
     signal refreshRequested()
     signal downloadRequested(string url)
+
+    // The label shows the value the command will actually use, resolved by the same
+    // function main.qml feeds into buildVideoDownloadCommand(), so it can never claim a
+    // browser the download is not using.
+    readonly property string cookiesBrowserDisplay: DockerStatus.resolveCookiesBrowser(fullRoot.cookiesBrowser)
 
     // The typed link is validated by the same pure function main.qml uses to build the
     // command, so this hint and the button can never disagree with the download itself.
@@ -174,8 +181,12 @@ ColumnLayout {
         }
 
         PlasmaComponents3.Button {
-            Layout.fillWidth: true
             icon.name: "media-playback-stop"
+            // The narrow fixed width is deliberate: it keeps the destructive action's
+            // button visually smaller than Start, and the row never reflows between
+            // "Stop daemon" and "Confirm stop".
+            Layout.fillWidth: false
+            Layout.preferredWidth: Kirigami.Units.gridUnit * 7
             text: fullRoot.stopInFlight
                 ? i18n("Stopping…")
                 : (fullRoot.stopArmed ? i18n("Confirm stop") : i18n("Stop daemon"))
@@ -323,6 +334,16 @@ ColumnLayout {
 
     PlasmaComponents3.Label {
         Layout.fillWidth: true
+        visible: fullRoot.downloaderEnabled
+        text: fullRoot.cookiesBrowserDisplay !== ""
+            ? i18nc("@info", "Cookies from: %1", fullRoot.cookiesBrowserDisplay)
+            : i18nc("@info", "Cookies: not used")
+        opacity: 0.7
+        font: Kirigami.Theme.smallFont
+    }
+
+    PlasmaComponents3.Label {
+        Layout.fillWidth: true
         visible: fullRoot.downloaderEnabled && fullRoot.pastedLinkUnsupported
         text: i18n("Only YouTube and X (Twitter) links are supported.")
         color: Kirigami.Theme.negativeTextColor
@@ -351,13 +372,15 @@ ColumnLayout {
     }
 
     // --- Tagline --------------------------------------------------------------
-    // A fixed motto, not a status message: it is deliberately muted so it never
-    // competes with the daemon state for the reader's attention. This is the only
+    // Configured text (default "Persiguiendo la singularidad"), not a status message: it is
+    // deliberately muted so it never competes with the daemon state for the reader's
+    // attention, and it disappears entirely when the setting is empty. This is the only
     // surface allowed to carry text -- the panel representation stays icon-sized.
     PlasmaComponents3.Label {
         Layout.fillWidth: true
         Layout.topMargin: Kirigami.Units.smallSpacing
-        text: i18nc("@info tagline", "Persiguiendo la singularidad")
+        text: fullRoot.taglineText
+        visible: fullRoot.taglineText !== ""
         horizontalAlignment: Text.AlignHCenter
         opacity: 0.5
         font: Kirigami.Theme.smallFont

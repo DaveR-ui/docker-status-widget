@@ -59,7 +59,8 @@ severity. The public surface, and what each function guarantees:
 | `resolveDownloadDirectory(cfg, home)` | absolute, `~`-expanded, trailing slashes trimmed; empty, relative or control-character value falls back to `<home>/Downloads` |
 | `resolveYtDlpBinary(cfg, home)` | a plain name or path matching `^(~/)?[A-Za-z0-9._/+-]+$`, else `yt-dlp` |
 | `resolveJsRuntime(cfg)` | a valid runtime name; empty opts out and returns `""` so the flag is omitted; garbage falls back to `node` |
-| `buildVideoDownloadCommand(opts)` | the assembled yt-dlp command, always with a fixed `--cookies-from-browser firefox` (a constant, so no configuration can reach it); omits `--js-runtimes` when the runtime is `""`; appends `withRunToken()` when a token is given |
+| `resolveCookiesBrowser(cfg)` | a valid `BROWSER[+KEYRING][:PROFILE]` token matching `^[A-Za-z0-9._+:,-]+$`; empty opts out and returns `""` so the flag is omitted; garbage falls back to `firefox` |
+| `buildVideoDownloadCommand(opts)` | the assembled yt-dlp command, with `--cookies-from-browser` taken from the validated browser value (omitted when that value is `""`); omits `--js-runtimes` when the runtime is `""`; appends `withRunToken()` when a token is given |
 | `parseDownloadedFile(output)` | the `[Merger]` path when present, else the last `[download] Destination:` line; `""` when neither appears |
 | `extractErrorLine(output)` | the last `ERROR:` line when present, else the last non-empty line; bounded to 240 characters |
 

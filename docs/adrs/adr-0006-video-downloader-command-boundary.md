@@ -5,7 +5,7 @@ tags: [adr, security, command-boundary, video-download, yt-dlp]
 aliases: [ADR-0006]
 related: [adr-index, adr-0005-doc-classes-and-body-shape-exceptions, status-slice, widget-slice, data-engine-contract]
 version: 1.0
-status: active
+status: superseded
 ---
 
 # ADR-0006: One validated exception to the fixed-command rule
@@ -119,3 +119,13 @@ Evidence: `tests/dockerstatus.test.mjs` runs the assembled command through a rea
 - [widget-slice.md](../widget/widget-slice.md) — the two data sources and the row wiring.
 - [data-engine-contract.md](../status/data-engine-contract.md) — the set semantics that make the run
   token necessary.
+
+## Addendum
+
+2026-09-12 — the browser clause of this record is reversed by
+[adr-0008-configurable-cookies-browser-and-bottom-text](adr-0008-configurable-cookies-browser-and-bottom-text.md).
+`--cookies-from-browser` is no longer the literal `firefox`: the browser is now a validated configuration
+value in the `BROWSER[+KEYRING][:PROFILE]` grammar, garbage falls back to `firefox`, and an empty value
+omits the flag entirely. Nothing else in this record changes — the download row is still the one sanctioned
+exception, the URL is still validated before a command exists, quoting is still the protection, and a
+second command-building exception still needs its own ADR.

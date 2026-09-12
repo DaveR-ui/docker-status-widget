@@ -47,5 +47,10 @@
       <label>Browser the video download reads its cookies from, e.g. "firefox" or "chrome:Default". Supports yt-dlp syntax (BROWSER+KEYRING:PROFILE). Leave empty to download without cookies.</label>
       <default>firefox</default>
     </entry>
+
+    <entry name="taglineText" type="String">
+      <label>Muted text shown at the bottom of the widget. Leave empty to hide it.</label>
+      <default>Persiguiendo la singularidad</default>
+    </entry>
   </group>
 </kcfg>
