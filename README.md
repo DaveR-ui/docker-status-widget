@@ -44,7 +44,7 @@ Then: right-click the panel or desktop → **Add Widgets…** → search
 **"Docker Status"**. On the desktop the full widget is shown directly; in the
 panel it collapses to the icon+dot and expands into a popup.
 
-Uninstall:
+### Uninstall
 
 ```bash
 ./install.sh uninstall
@@ -53,9 +53,9 @@ Uninstall:
 
 ---
 
-## Two design decisions worth knowing
+## Design decisions
 
-### 1. Two-tier polling
+### Two-tier polling
 
 `systemctl is-active docker` is a few milliseconds and is the only thing polled
 unconditionally. `docker ps` is polled **only while the daemon is up**, because
@@ -64,7 +64,7 @@ against a dead daemon it blocks on the socket timeout — a widget that polls
 
 Verified: with the daemon simulated down, the container command never executed.
 
-### 2. The `connectedSources` re-run trap
+### The `connectedSources` re-run trap
 
 The `executable` data engine treats `connectedSources` as a **set**. Assigning
 an identical command string twice is a **no-op** and the command is *not*
@@ -90,6 +90,38 @@ value is shell-quoted. Configuration never supplies a command, only values insid
 recorded in [ADR-0006](docs/adrs/adr-0006-video-downloader-command-boundary.md). Do not wire other
 `command`-style config entries into the engine without changing this mechanism; a second exception
 needs its own decision record.
+
+---
+
+## Privilege model
+
+`systemctl start docker` needs root. Three options were on the table:
+
+1. **`pkexec` per click** — works with zero setup, but prompts every time.
+2. **`sudoers NOPASSWD`** — coarse: it grants a whole binary, and is not
+   auditable per action.
+3. **Scoped polkit rule** — chosen. Grants exactly one action id, one unit, one
+   verb, from a local active session only.
+
+See `polkit/49-docker-status-widget.rules`. It does **not** grant stop, restart,
+disable or mask. To widen it, edit the `ALLOWED_VERBS` array deliberately rather
+than replacing the lookup with a wildcard.
+
+Note that `docker.service` is currently `disabled` on this machine: the daemon
+does not come back after a reboot. If you would rather the widget not start it,
+`systemctl enable --now docker.socket` gives you socket activation instead: the
+daemon comes up on demand, and the widget's start button becomes unnecessary.
+
+There **is** a stop button, and it is the only stop path. Stopping the daemon is
+destructive to every running container, so the button never fires on one click:
+the first click arms a confirmation that expires after five seconds, a
+deliberate second click at least half a second later runs `systemctl stop docker`
+(an immediate double-click counts as one gesture and does nothing), and a warning
+under the row says exactly what is at stake. The stop is deliberately **not**
+covered by the polkit grant, so it asks for a password while start stays
+passwordless — that asymmetry is the point, not an oversight. There is no stop
+entry in the context menu either: a right-click menu is still a one-click surface.
+See [ADR-0007](docs/adrs/adr-0007-stop-button-confirmation-and-narrow-grant.md).
 
 ---
 
@@ -166,38 +198,6 @@ These six settings are on the widget's config page:
 
 ---
 
-## Privilege model
-
-`systemctl start docker` needs root. Three options were on the table:
-
-1. **`pkexec` per click** — works with zero setup, but prompts every time.
-2. **`sudoers NOPASSWD`** — coarse: it grants a whole binary, and is not
-   auditable per action.
-3. **Scoped polkit rule** — chosen. Grants exactly one action id, one unit, one
-   verb, from a local active session only.
-
-See `polkit/49-docker-status-widget.rules`. It does **not** grant stop, restart,
-disable or mask. To widen it, edit the `ALLOWED_VERBS` array deliberately rather
-than replacing the lookup with a wildcard.
-
-Note that `docker.service` is currently `disabled` on this machine: the daemon
-does not come back after a reboot. If you would rather the widget not start it,
-`systemctl enable --now docker.socket` gives you socket activation instead: the
-daemon comes up on demand, and the widget's start button becomes unnecessary.
-
-There **is** a stop button, and it is the only stop path. Stopping the daemon is
-destructive to every running container, so the button never fires on one click:
-the first click arms a confirmation that expires after five seconds, a
-deliberate second click at least half a second later runs `systemctl stop docker`
-(an immediate double-click counts as one gesture and does nothing), and a warning
-under the row says exactly what is at stake. The stop is deliberately **not**
-covered by the polkit grant, so it asks for a password while start stays
-passwordless — that asymmetry is the point, not an oversight. There is no stop
-entry in the context menu either: a right-click menu is still a one-click surface.
-See [ADR-0007](docs/adrs/adr-0007-stop-button-confirmation-and-narrow-grant.md).
-
----
-
 ## Layout
 
 ```
@@ -254,7 +254,7 @@ node docs/validate.js --write  # regenerate docs/index.md and docs/tag-index.md,
 | Data engine contract (keys, polling, re-run trap) | Probe QML executed against live plasma5support 6.7.4 |
 | Full pipeline against live Docker | Probe harness parsed the real 3-container `catan-lan` stack |
 | End-to-end download | Probe: an X link exited 0 and wrote a 10,365,309-byte mp4 (cookies extracted from Firefox); a YouTube `--simulate` run selected format 401+251 via node |
-| All QML files | Two binaries measured. The `qmllint` on `PATH` is Qt5 (`qt5-declarative 5.15.19`): exit 0, no output, and a deliberate `property int x: "boom"` probe also exited 0 — syntax-only. `/usr/lib/qt6/bin/qmllint` (`qt6-declarative 6.11.2`, the tool matching the Plasma 6 target): exit 0, **0 errors, 69 warnings all `[unqualified]`, 37 infos of which 3 are `[unused-imports]`**, and no `[missing-property]`, `[incompatible-type]`, `[unresolved-type]` or `[import]` diagnostic |
+| All QML files | Both binaries measured — see [qmllint on this machine](#qmllint-on-this-machine) below |
 | `main.qml` as a `PlasmoidItem` | **Not executable outside plasmashell** |
 
 That last row is an honest limitation: instantiating `PlasmoidItem` outside a
@@ -263,15 +263,18 @@ running plasmashell fails with
 and `Plasmoid.configuration` does not exist there either. The inner pipeline was
 verified through an equivalent harness, but the widget wrapper itself — and the
 download row it now hosts — is only validated by `qmllint` and review until it runs in a real session.
-The `qmllint` claim is narrower than it sounds on this machine: that build exits 0 for syntax errors
-only, and a deliberate type-mismatch probe (`property int x: "boom"`) also exited 0. Read it as QML
-**syntax** validation, not semantic validation.
 
-The two binaries are not interchangeable. The `qmllint` on `PATH` is Qt5
-(`qt5-declarative 5.15.19`), which is why the probe above proves it reports syntax only. The matching
-`/usr/lib/qt6/bin/qmllint` (`qt6-declarative 6.11.2`) does report semantics, and it is the relevant
-tool for a Plasma 6 target: on all six QML files it produced 0 errors, 69 warnings, every one of them
-`[unqualified]`, and 37 infos of which 3 are `[unused-imports]`, with no `[missing-property]`,
+### qmllint on this machine
+
+The `qmllint` claim is narrower than it sounds on this machine. The `qmllint` on `PATH` is Qt5
+(`qt5-declarative 5.15.19`): exit 0, no output, and a deliberate `property int x: "boom"` probe also
+exited 0 — that build exits 0 for syntax errors only, which is why the probe proves it reports syntax
+only. Read it as QML **syntax** validation, not semantic validation.
+
+The two binaries are not interchangeable, and the Qt5 result is not the relevant one for this project.
+The matching `/usr/lib/qt6/bin/qmllint` (`qt6-declarative 6.11.2`) does report semantics and is the
+tool for a Plasma 6 target: on all six QML files it produced exit 0, **0 errors, 69 warnings all
+`[unqualified]`, 37 infos of which 3 are `[unused-imports]`**, and no `[missing-property]`,
 `[incompatible-type]`, `[unresolved-type]` or `[import]` diagnostic. Its exit code is still 0 unless
 `--max-warnings` is set, so the diagnostic stream — not the exit code — is the evidence.
 
