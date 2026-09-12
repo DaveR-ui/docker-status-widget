@@ -3,17 +3,12 @@
 **The two things every developer actually needs, one click away in the panel: a Docker daemon that is
 running, and the meme video saved before it disappears.**
 
-A KDE Plasma 6 widget for the Docker daemon. It tells you the state at a glance, starts the daemon without a
+A KDE Plasma 6 widget for the Docker daemon. It shows the daemon state at a glance, starts it without a
 password prompt, stops it behind a deliberate confirmation, and downloads the YouTube or X link you just
 pasted — no terminal, no browser tab, no `sudo` dance.
 
-![The panel popup: daemon state, container count and list, the start/stop row, the download row, and the configured bottom text](screenshots/widget-popup.png)
+![The panel popup: daemon state, container count and list, the start/stop row, the download row, and the bottom text](screenshots/widget-popup.png)
 ![The config page: polling, panel icon, container list, the whole download row, and the bottom text](screenshots/settings-general.png)
-
-KDE Plasma 6 on Wayland, developed and verified against **Plasma 6.7.4 / plasma5support 6.7.4 / polkit 127
-on CachyOS**.
-
----
 
 ## Install
 
@@ -33,100 +28,67 @@ into a popup. If it does not appear, restart plasmashell:
 kquitapp6 plasmashell && kstart plasmashell
 ```
 
-Installing the widget needs no root, and removing it is one command. The polkit rule is the only privileged
-step, it is a separate command on purpose, and it never happens implicitly.
+To take it out again:
 
-**Requirements:** KDE Plasma 6 (`X-Plasma-API-Minimum-Version: 6.0`), Docker with `docker.service`, and —
-only for downloads — a `yt-dlp` reachable on plasmashell's `PATH`, plus a JavaScript runtime (`node` or
-`deno`) for YouTube.
+```bash
+./install.sh uninstall
+./install.sh remove-polkit
+```
 
----
-
-## What it does
+## What it shows
 
 | Surface | Content |
 | --- | --- |
 | Panel (compact) | Theme icon (dimmed when stopped) + severity dot |
-| Popup / desktop (full) | Daemon state, `running/total` container count, container list, start/stop buttons, refresh button, video-download row, bottom text |
+| Popup / desktop (full) | Daemon state, `running/total` container count, container list, start/stop buttons, refresh button, download row, bottom text |
 
-State is reported honestly in four levels, not two:
+The daemon state is reported in four levels instead of two, so that a probe that fails is never mistaken
+for a daemon that is stopped:
 
-| State | Severity | Colour |
+| State | Colour | Meaning |
 | --- | --- | --- |
-| `active` | positive | green |
-| `inactive` | neutral | orange |
-| `failed` | negative | red |
-| `unknown` (probe failed) | muted | grey |
+| `active` | green | the daemon is running |
+| `inactive` | orange | the daemon is stopped |
+| `failed` | red | the unit failed |
+| `unknown` | grey | the probe could not tell |
 
-`unknown` is deliberately *not* rendered as "stopped": a broken probe must never
-look like a healthy reading.
+## Starting and stopping the daemon
 
----
+`systemctl start docker` needs root, and this widget wants that to be one click. The rule in
+`polkit/49-docker-status-widget.rules` grants exactly one action id, one unit, one verb, from a local
+active session only. It does not grant stop, restart, disable or mask.
 
-## Save the meme before it disappears
+**Start** is one click, and passwordless once that rule is installed. **Stop** is deliberately different:
+stopping the daemon kills every running container, so the first click only arms a confirmation, the
+confirmation expires after five seconds, and a second deliberate click — at least half a second later, so
+an accidental double-click does nothing — runs `systemctl stop docker`. Stop is not covered by the polkit
+rule and asks for your password. There is no stop entry in the context menu either: a right-click menu is
+still a one-click surface.
 
-The full representation has a download row: paste a YouTube or X (Twitter) link, press the button, and
-`yt-dlp` fetches the video into the configured folder, reading cookies from the configured browser
-(**Firefox** by default). The row exists only in the full representation — the desktop widget or the panel
-popup — never in the panel icon.
+## Downloading a video
 
-The assembled command is exactly this, with every value single-quoted by `shellQuote()`:
+Paste a YouTube or X (Twitter) link in the download row and press the button. `yt-dlp` fetches the video
+into the configured folder, reading cookies from the configured browser (Firefox by default):
 
 ```
-'yt-dlp' --cookies-from-browser '<browser>' --js-runtimes '<runtime>' --no-playlist --no-progress -P '<dir>' -o '%(title)s [%(id)s].%(ext)s' '<url>' # plasma-run-N
+'yt-dlp' --cookies-from-browser '<browser>' --js-runtimes '<runtime>' --no-playlist --no-progress -P '<dir>' -o '%(title)s [%(id)s].%(ext)s' '<url>'
 ```
 
-The `--cookies-from-browser` pair is omitted entirely when the browser setting is empty, and so is
-`--js-runtimes` when that setting is empty. The trailing comment is the
-pre-existing `withRunToken()` mechanism that makes a repeated one-shot re-run.
+- Only https links on YouTube and X/Twitter hosts are accepted, and every value in that command is
+  single-quoted before a shell ever sees it.
+- `--no-playlist` is deliberate: a link carrying `&list=...&start_radio=1` downloads that video, not the
+  radio mix it belongs to.
+- Leave the browser setting empty to send no cookies at all; the `--cookies-from-browser` flag is then
+  omitted entirely.
+- yt-dlp's own `~/.config/yt-dlp/config` still applies, so a PO-token plugin or a format preference
+  survives.
 
-Two flags are deliberate:
-
-- `--no-playlist`: the YouTube links people paste carry `&list=...&start_radio=1`; you want *that*
-  video, not the radio mix it belongs to.
-- `--no-progress`: keeps the captured output small. The widget shows a busy indicator instead of a
-  progress bar.
-
-### Safety model
-
-This is the one place user input reaches a command, and it is bounded on purpose:
-
-- **URL validation before a command exists.** https only; the host must match exactly one of
-  `youtube.com`, `www.youtube.com`, `m.youtube.com`, `music.youtube.com`, `youtu.be`, `www.youtu.be`,
-  `x.com`, `www.x.com`, `twitter.com`, `www.twitter.com`, `mobile.twitter.com`; at most 2048
-  characters; once surrounding whitespace is trimmed, refused if it contains inner whitespace, a single
-  quote, a double quote, a backtick, a backslash or a control character. A refused link never reaches a
-  shell, and the popup says
-  "Paste a YouTube or X (Twitter) link first."
-- **Quoting is the actual protection.** `shellQuote()` wraps every interpolated value — URL and
-  configuration alike — in single quotes and escapes an embedded quote as `'\''`. The unit tests run
-  the assembled command through a real `/bin/sh` with a stub `yt-dlp` on `PATH` and assert the argv
-  arrives intact.
-- **Configuration supplies validated values, never a command.** A bad binary, runtime name or browser
-  value falls back to its safe default; a relative or control-character download directory falls back to
-  `~/Downloads`. An empty browser setting omits `--cookies-from-browser` instead of guessing.
-- **yt-dlp's own configuration still applies.** There is no `--ignore-config`, so
-  `~/.config/yt-dlp/config` (a PO-token plugin, a format preference) survives.
-
-The full boundary and the rejected alternatives are recorded in
-[ADR-0006](docs/adrs/adr-0006-video-downloader-command-boundary.md).
-
-### Download prerequisites
-
-- `yt-dlp` reachable on plasmashell's `PATH`, or an absolute path in the setting. On this machine it
-  lives in `~/.local/bin`, which is on plasmashell's environment.
-- For YouTube, a JavaScript runtime (`node` or `deno`). Without it, YouTube fails with
-  "The page needs to be reloaded".
-- Cookies from a signed-in browser for X/Twitter and for age-gated YouTube. The command passes
-  `--cookies-from-browser <your setting>` (default `firefox`); leave the setting empty to send no cookies
-  at all. yt-dlp resolves the browser's profile itself.
-
----
+What it needs: `yt-dlp` reachable on plasmashell's `PATH` (or an absolute path in the setting), a
+JavaScript runtime such as `node` or `deno` for YouTube, and cookies from a signed-in browser profile for
+X/Twitter and for age-gated YouTube. The row lives in the full representation only — the desktop widget or
+the panel popup — never in the panel icon.
 
 ## Settings
-
-Everything on the widget's config page. Every value is validated by `dockerstatus.js` before it reaches a
-command, and a value it refuses falls back to the default in this table.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
@@ -135,199 +97,18 @@ command, and a value it refuses falls back to the default in this table.
 | List containers in the popup | on | Turns the container list off without hiding the count. |
 | Show the download row | on | Hides the row entirely when off. |
 | Download folder | `~/Downloads` | Videos are written here; `~/` expands to your home directory. |
-| JS runtime | `node` | Passed as `--js-runtimes`; leave empty to omit the flag entirely. |
+| JS runtime | `node` | Passed as `--js-runtimes`; leave empty to omit the flag. |
 | yt-dlp binary | `yt-dlp` | Executable name or path; `~/` expands. |
-| Cookies browser | `firefox` | Passed as `--cookies-from-browser`; accepts yt-dlp syntax such as `chrome:Default` or `firefox+gnomekeyring`. Leave empty to send no cookies. |
-| Bottom text | `Persiguiendo la singularidad` | Muted text at the bottom of the widget. Leave empty to hide it entirely. |
+| Cookies browser | `firefox` | Passed as `--cookies-from-browser`; accepts yt-dlp syntax such as `chrome:Default` or `firefox+gnomekeyring`. |
+| Bottom text | `Persiguiendo la singularidad` | Muted text at the bottom of the widget. Leave empty to hide it. |
 
----
+## Requirements
 
-## Design decisions
+- KDE Plasma 6 on Wayland, developed on Plasma 6.7.4 / plasma5support 6.7.4 / polkit 127 (CachyOS).
+- Docker with `docker.service`. Only that unit is supported: no rootless Docker and no user-scoped daemon.
+- For downloads, the optional extras listed above: `yt-dlp`, a JavaScript runtime for YouTube, and a
+  signed-in browser profile for cookies.
 
-### Two-tier polling
+## License
 
-`systemctl is-active docker` is a few milliseconds and is the only thing polled
-unconditionally. `docker ps` is polled **only while the daemon is up**, because
-against a dead daemon it blocks on the socket timeout — a widget that polls
-`docker ps` every second with the daemon down would hang itself.
-
-Verified: with the daemon simulated down, the container command never executed.
-
-### The `connectedSources` re-run trap
-
-The `executable` data engine treats `connectedSources` as a **set**. Assigning
-an identical command string twice is a **no-op** and the command is *not*
-re-executed. A naive start button therefore works exactly once: the second click
-does nothing, silently.
-
-Measured against plasma5support 6.7.4:
-
-| Action | Events |
-| --- | --- |
-| `connectedSources = ["echo A"]` | 1 |
-| `connectedSources = ["echo A"]` again | **0** |
-| `connectedSources = []` then `["echo A"]` | 1 |
-| `connectedSources = ["echo A # run1"]` then `["echo A # run2"]` | 1 each |
-
-This widget uses the last approach: `withRunToken()` appends a unique trailing
-shell comment so every click is a distinct source.
-
-Because that trick appends a shell comment, **executed commands are fixed
-constants in `main.qml`**, with one deliberate exception: the video-download command. It is assembled
-in `dockerstatus.js` from a validated URL and validated configuration values, and every interpolated
-value is shell-quoted. Configuration never supplies a command, only values inside one — the boundary is
-recorded in [ADR-0006](docs/adrs/adr-0006-video-downloader-command-boundary.md). Do not wire other
-`command`-style config entries into the engine without changing this mechanism; a second exception
-needs its own decision record.
-
----
-
-## Privilege model
-
-`systemctl start docker` needs root. Three options were on the table:
-
-1. **`pkexec` per click** — works with zero setup, but prompts every time.
-2. **`sudoers NOPASSWD`** — coarse: it grants a whole binary, and is not
-   auditable per action.
-3. **Scoped polkit rule** — chosen. Grants exactly one action id, one unit, one
-   verb, from a local active session only.
-
-See `polkit/49-docker-status-widget.rules`. It does **not** grant stop, restart,
-disable or mask. To widen it, edit the `ALLOWED_VERBS` array deliberately rather
-than replacing the lookup with a wildcard.
-
-Note that `docker.service` is currently `disabled` on this machine: the daemon
-does not come back after a reboot. If you would rather the widget not start it,
-`systemctl enable --now docker.socket` gives you socket activation instead: the
-daemon comes up on demand, and the widget's start button becomes unnecessary.
-
-There **is** a stop button, and it is the only stop path. Stopping the daemon is
-destructive to every running container, so the button never fires on one click:
-the first click arms a confirmation that expires after five seconds, a
-deliberate second click at least half a second later runs `systemctl stop docker`
-(an immediate double-click counts as one gesture and does nothing), and a warning
-under the row says exactly what is at stake. The stop is deliberately **not**
-covered by the polkit grant, so it asks for a password while start stays
-passwordless — that asymmetry is the point, not an oversight. There is no stop
-entry in the context menu either: a right-click menu is still a one-click surface.
-See [ADR-0007](docs/adrs/adr-0007-stop-button-confirmation-and-narrow-grant.md).
-
----
-
-## Layout
-
-```
-package/io.github.daver-ui.dockerstatus/
-├── metadata.json                     # KPackageStructure: Plasma/Applet
-└── contents/
-    ├── config/main.xml               # kcfg entries -> cfg_* aliases
-    ├── icons/dockerstatus.svg        # bundled app icon (metadata.json Icon: /icons/dockerstatus.svg)
-    └── ui/
-        ├── main.qml                  # PlasmoidItem: commands, polling, download wiring, state
-        ├── CompactRepresentation.qml # panel icon + severity dot
-        ├── FullRepresentation.qml    # popup/desktop: state, list, start/stop buttons, download row
-        ├── SeverityDot.qml           # single severity -> colour mapping
-        ├── dockerstatus.js           # pure logic incl. download boundary, unit tested in Node
-        └── config/ConfigGeneral.qml  # config page (poll, icon, list, download settings)
-polkit/49-docker-status-widget.rules
-tests/dockerstatus.test.mjs
-screenshots/                          # the two images above
-docs/                                 # documentation corpus — entry point: docs/readme.md
-```
-
-Notes on the layout, both learned the hard way:
-
-- The config page lives in `contents/ui/config/`, and `source:` in
-  `contents/config/config.qml` is resolved relative to `contents/ui/` — not
-  relative to `contents/`.
-- `dockerstatus.js` is deliberately free of QML types so it can run under a bare
-  JavaScript engine. Keep it that way.
-- A setting carried by a combo box cannot be a `cfg_*` alias: Plasma's initial write lands before the
-  control initialises. `ConfigGeneral.qml` keeps `cfg_cookiesBrowser` a plain property and seeds the combo
-  from it in the combo's own `Component.onCompleted`.
-
----
-
-## Documentation
-
-The documentation corpus lives in [`docs/`](docs/readme.md). Start at
-[`docs/readme.md`](docs/readme.md) for the navigation map, or at
-[`docs/project.md`](docs/project.md) for the routing entry point: stack, slices, commands
-and symptom lookups.
-
-Two conventions worth knowing before editing it. Every file and folder name under `docs/`
-is lower-case, and the corpus is machine-checked — errors block, warnings advise:
-
-```bash
-node docs/validate.js          # read-only; exit 1 on errors
-node docs/validate.js --write  # regenerate docs/index.md and docs/tag-index.md, then check
-```
-
----
-
-## Uninstall
-
-```bash
-./install.sh uninstall
-./install.sh remove-polkit
-```
-
----
-
-## Verification status
-
-| Layer | How it was verified |
-| --- | --- |
-| Node unit suite | 67 unit tests (16 before the download feature), `node --test`; the bulk run against the exact shipped `dockerstatus.js`, and the suite also pins the action identities and their exact QML `actionKind` expressions, both fixed privileged commands, the polkit rule as text plus a default-deny predicate matrix, and the config surfaces a runtime test cannot reach — the tagline default, the `firefox` cookies default, the cookies combo's seed-and-mute arrangement, the full-representation bindings and the stop button's fixed width |
-| Download command boundary | Unit tests run the assembled command through a real `/bin/sh` with a stub `yt-dlp` on `PATH`; the argv arrives intact, including a real YouTube URL and a quote-injection URL |
-| Data engine contract (keys, polling, re-run trap) | Probe QML executed against live plasma5support 6.7.4 |
-| Full pipeline against live Docker | Probe harness parsed the real 3-container `catan-lan` stack |
-| End-to-end download | Probe: an X link exited 0 and wrote a 10,365,309-byte mp4 (cookies extracted from Firefox); a YouTube `--simulate` run selected format 401+251 via node |
-| Config page, in a live session | Screenshot above: the cookies browser opens on the stored value (`firefox`), and the popup reports the same value through the command's own resolver |
-| All QML files | Both binaries measured — see [qmllint on this machine](#qmllint-on-this-machine) below |
-| `main.qml` as a `PlasmoidItem` | **Not executable outside plasmashell** |
-
-That last row is an honest limitation: instantiating `PlasmoidItem` outside a
-running plasmashell fails with
-`Could not create attached properties object 'PlasmaQuick::PlasmoidAttached'`,
-and `Plasmoid.configuration` does not exist there either. The inner pipeline was
-verified through an equivalent harness, but the widget wrapper itself — and the
-download row it now hosts — is only validated by `qmllint` and review until it runs in a real session.
-
-### qmllint on this machine
-
-The `qmllint` claim is narrower than it sounds on this machine. The `qmllint` on `PATH` is Qt5
-(`qt5-declarative 5.15.19`): exit 0, no output, and a deliberate `property int x: "boom"` probe also
-exited 0 — that build exits 0 for syntax errors only, which is why the probe proves it reports syntax
-only. Read it as QML **syntax** validation, not semantic validation.
-
-The two binaries are not interchangeable, and the Qt5 result is not the relevant one for this project.
-The matching `/usr/lib/qt6/bin/qmllint` (`qt6-declarative 6.11.2`) does report semantics and is the
-tool for a Plasma 6 target: on all six QML files it produced exit 0, **0 errors, 69 warnings all
-`[unqualified]`, 37 infos of which 3 are `[unused-imports]`**, and no `[missing-property]`,
-`[incompatible-type]`, `[unresolved-type]` or `[import]` diagnostic. Its exit code is still 0 unless
-`--max-warnings` is set, so the diagnostic stream — not the exit code — is the evidence.
-
-`tests/dockerstatus.test.mjs` strips the `.pragma library` line before
-evaluating, because that directive is QML-specific and not valid JavaScript.
-Everything else is the shipped file, byte for byte.
-
----
-
-## Known edges
-
-- `interval` on the executable engine appears to quantise to roughly 1 second
-  regardless of the requested value; polls below ~1s are pointless.
-- The widget reads `systemctl is-active` for the daemon and `docker ps` for
-  containers. It does not subscribe to `docker events`, so container churn is
-  visible at the poll interval, not instantly.
-- Only `docker.service` is supported; there is no support for rootless Docker or
-  a user-scoped daemon.
-- Video downloads need `yt-dlp` on plasmashell's `PATH`. YouTube additionally needs a JavaScript
-  runtime (`node` or `deno`); without it, YouTube fails with "The page needs to be reloaded".
-- X/Twitter downloads need cookies from a signed-in browser profile, and so does age-gated YouTube;
-  the command reads them from the configured browser (default Firefox).
-- `--no-playlist` is intentional: a YouTube link carrying `&list=...` downloads that video, not the
-  radio mix it belongs to.
-- The download row exists only in the full representation (desktop widget or panel popup), never in the
-  panel icon.
+MIT — see [LICENSE](LICENSE).
