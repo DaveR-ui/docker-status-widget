@@ -180,6 +180,27 @@ the browser's own profile list. The widget's explicit flag wins over the same fl
 `~/.config/yt-dlp/config` by command-line precedence, so changing it here is what takes effect.
 **Reference:** [../status/status-slice.md](../status/status-slice.md) — `resolveCookiesBrowser`.
 
+## the cookies browser setting shows brave after opening the options
+
+**Context:** the widget's options are opened, or applied, and "Cookies browser" reads `brave` — the first
+item of the list — whatever was configured before. Downloads then use a browser the user did not choose,
+or fail with "Sign in to confirm you're not a bot".
+**Root cause:** `cfg_cookiesBrowser` used to be an alias to the combo's `editText`. Plasma hands the stored
+value to the page as an initial property, and that write arrives before the combo initialises: the combo's
+own startup then adopts index 0 and rewrites `editText` to `brave`, and its `Component.onCompleted` runs
+only after that. Because Plasma reads `cfg_<entryName>` back when the page is applied, opening the options
+and accepting them wrote `brave` over the configured browser. Order measured on Qt 6.11.2 against the
+shipped file, with the stored value passed the way `AppletConfiguration.qml` passes it.
+**Fix:** keep `cfg_cookiesBrowser` a plain string property and seed the combo in its own
+`Component.onCompleted` — `currentIndex` first, then `editText`, so a free-form value such as
+`chrome:Default` survives an index of -1 — with the `onEditTextChanged` push-back muted behind
+`cookiesBrowser.seeded`. An unmuted handler writes the combo's startup value into the setting on the way in,
+which is the same bug from the other side. `config/ConfigGeneral.qml` carries the arrangement, and the Node
+suite pins it as text.
+**Reference:** [../widget/ui-surfaces.md](../widget/ui-surfaces.md) — the ConfigGeneral Interface section;
+[../adrs/adr-0008-configurable-cookies-browser-and-bottom-text.md](../adrs/adr-0008-configurable-cookies-browser-and-bottom-text.md)
+— the setting's accepted grammar and validation.
+
 ## the download finished but no file appeared
 
 **Context:** the popup reports a positive result, but the folder being inspected is unchanged.

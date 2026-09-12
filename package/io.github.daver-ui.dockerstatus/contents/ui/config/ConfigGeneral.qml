@@ -17,8 +17,15 @@ Kirigami.FormLayout {
     property alias cfg_downloadDirectory: downloadDirectory.text
     property alias cfg_jsRuntime: jsRuntime.text
     property alias cfg_ytDlpBinary: ytDlpBinary.text
-    property alias cfg_cookiesBrowser: cookiesBrowser.editText
     property alias cfg_taglineText: taglineText.text
+
+    // The one setting that is NOT an alias. Plasma hands every stored value to this page as an
+    // initial property, and that write reaches an editText alias before the combo initialises:
+    // the combo then adopts index 0 and rewrites editText to "brave", so the page opened on
+    // "brave" -- and, because cfg_cookiesBrowser read editText back, saving the page wrote
+    // "brave" over whatever was stored. A plain property survives the write and is what the
+    // combo is seeded from below.
+    property string cfg_cookiesBrowser
 
     QQC2.SpinBox {
         id: pollInterval
@@ -84,17 +91,37 @@ Kirigami.FormLayout {
         editable: true
         model: ["brave", "chrome", "chromium", "edge", "firefox", "opera", "safari", "vivaldi", "whale"]
 
-        // QQuickComboBox does NOT refresh editText when the activated index is already
-        // currentIndex, so that pick is lost. Measured on Qt 6.11 with the stored value
-        // "firefox": clicking "brave" (index 0, the default currentIndex) emitted
-        // activated(0) with currentText "brave" and left editText "firefox" -- the setting
-        // would have been saved unchanged. Writing the text on activation is what makes
-        // cfg_cookiesBrowser truthful for every pick.
-        onActivated: (index) => { cookiesBrowser.editText = cookiesBrowser.textAt(index); }
+        // False until the stored value has been pushed into the control. Measured on Qt 6.11.2:
+        // the stored value arrives BEFORE the combo initialises, the combo's own startup then
+        // sets index 0 and editText "brave" -- firing onEditTextChanged -- and only afterwards
+        // does this component's Component.onCompleted run. The push-back below therefore stays
+        // muted until the seed is in, or merely opening the page would write "brave" over the
+        // stored browser in the setting Plasma is about to save.
+        property bool seeded: false
 
-        // Keep the popup highlight on the stored browser instead of on index 0, which
-        // would otherwise show a value the user never chose.
+        // Config -> control, once the combo has finished initialising. The stored value is read
+        // into a local before anything is written: setting currentIndex makes the combo rewrite
+        // editText from the model, and an index of -1 blanks it, so a free-form value such as
+        // "chrome:Default" has to be restored afterwards or it would be lost before it is shown.
+        Component.onCompleted: {
+            const stored = configPage.cfg_cookiesBrowser;
+            cookiesBrowser.currentIndex = cookiesBrowser.find(stored);
+            cookiesBrowser.editText = stored;
+            cookiesBrowser.seeded = true;
+        }
+
+        // Control -> config: a pick from the list and a free-form edit both reach the setting,
+        // which is what Plasma reads when the page is saved. The index then follows an exact
+        // match so the popup highlight points at the value on screen; a value the model does not
+        // contain matches nothing and leaves the index where it was.
+        onActivated: (index) => { configPage.cfg_cookiesBrowser = cookiesBrowser.textAt(index); }
         onEditTextChanged: {
+            if (!cookiesBrowser.seeded) {
+                return;
+            }
+
+            configPage.cfg_cookiesBrowser = cookiesBrowser.editText;
+
             const match = cookiesBrowser.find(cookiesBrowser.editText);
             if (match >= 0 && match !== cookiesBrowser.currentIndex) {
                 cookiesBrowser.currentIndex = match;

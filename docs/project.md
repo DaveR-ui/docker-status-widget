@@ -193,3 +193,5 @@ docs/                                 this corpus — entry: readme.md, routing:
   [troubleshooting.md](verification/troubleshooting.md#sign-in-to-confirm-youre-not-a-bot)
 - "the download finished but no file appeared" →
   [troubleshooting.md](verification/troubleshooting.md#the-download-finished-but-no-file-appeared)
+- "the cookies browser setting shows brave after opening the options" →
+  [troubleshooting.md](verification/troubleshooting.md#the-cookies-browser-setting-shows-brave-after-opening-the-options)
