@@ -30,9 +30,13 @@ re-litigated from the code alone does not need a record either — only the *why
 - [[adr-0005-doc-classes-and-body-shape-exceptions]] — four doc classes are registered here, with an
   explicit body-shape exception and mode-by-tag membership.
 - [[adr-0006-video-downloader-command-boundary]] — the video-download row is the one sanctioned
-  exception to the fixed-command rule; a second exception needs a new ADR.
+  exception to the fixed-command rule; a second exception needs a new ADR. Its browser-constancy clause is
+  superseded by [[adr-0008-configurable-cookies-browser-and-bottom-text]]; the rest still stands.
 - [[adr-0007-stop-button-confirmation-and-narrow-grant]] — a stop button that confirms on a second
   click, with the polkit grant deliberately left at `["start"]` so stop prompts while start does not.
+- [[adr-0008-configurable-cookies-browser-and-bottom-text]] — the cookies browser becomes a validated
+  setting, reversing ADR-0006's browser-constancy clause; the bottom text is configuration, and the stop
+  button gets a fixed narrow width.
 
 ## Elsewhere
 

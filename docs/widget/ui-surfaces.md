@@ -80,17 +80,17 @@ delegating to `SeverityDot`. Hiding the dot when the state is unknown.
 
 #### Purpose
 The popup/desktop surface: what the daemon is doing, how many containers run, which ones, a start/stop
-button row, a refresh button, any failure feedback, the video-download row, and the fixed tagline pinned
-to the bottom.
+button row, a refresh button, any failure feedback, the video-download row, the cookies-browser line, and
+the configurable bottom text.
 
 #### Path
 `package/io.github.daver-ui.dockerstatus/contents/ui/FullRepresentation.qml`
 
 #### Interface
 Takes `daemonState`, `containers`, `daemonRunning`, `containerListEnabled`, `actionInFlight`,
-`actionKind`, `actionFeedback`, `downloaderEnabled`, `downloadReady`, `downloadInFlight`,
-`downloadFeedback` and `downloadFeedbackSeverity`; emits `startRequested()`, `stopRequested()`,
-`refreshRequested()` and `downloadRequested(url)`.
+`actionKind`, `actionFeedback`, `downloaderEnabled`, `taglineText`, `cookiesBrowser`, `downloadReady`,
+`downloadInFlight`, `downloadFeedback` and `downloadFeedbackSeverity`; emits `startRequested()`,
+`stopRequested()`, `refreshRequested()` and `downloadRequested(url)`.
 
 #### Data Flow
 All state flows down as properties from `main.qml`; the signals flow back up and are handled by
@@ -101,7 +101,10 @@ one `actionInFlight` flag.
 
 #### Usage Pattern
 Shown directly as the desktop widget and as the panel popup. Both buttons are always visible so their
-position never moves: start is disabled while an action is in flight or while the daemon already runs, and
+position never moves: start keeps `Layout.fillWidth: true` and absorbs the spare width, while stop is
+pinned to a fixed narrow width (`Kirigami.Units.gridUnit * 7`, `Layout.fillWidth: false`) so the
+destructive action stays visually smaller and the row cannot reflow between "Stop daemon" and
+"Confirm stop". Start is disabled while an action is in flight or while the daemon already runs, and
 stop is disabled while an action is in flight or while the daemon is not running. Stop never fires on one
 click — the first click arms a confirmation and shows a negative warning ("Stopping the daemon stops every
 running container. Press again to confirm."), the second click runs the stop, and the arming expires after
@@ -113,17 +116,21 @@ when the polkit rule is installed; stop always prompts, because the grant is del
 it ([[adr-0007-stop-button-confirmation-and-narrow-grant]]). A failure appears below the row as normalised
 `stderr` (CR stripped, trimmed), or as a generic message when `stderr` is empty. The download row appears
 only while the `showVideoDownloader` setting is on; its button is disabled while a download is in flight,
-while the paste is empty, or until the one-shot `homeSource` has reported `$HOME`. The last child is an
-unconditional, muted, centre-aligned tagline (`Persiguiendo la singularidad`); it carries no state and is
-the only text allowed on this surface's periphery.
+while the paste is empty, or until the one-shot `homeSource` has reported `$HOME`. The browser is
+configured on the same page and resolved through `DockerStatus.resolveCookiesBrowser()`, the same function
+`main.qml` feeds into the command, so the muted `Cookies from: <browser>` line under the row can never
+claim a browser the download is not using; an opted-out setting reads `Cookies: not used`. The last child
+is a muted, centre-aligned line carrying the configured bottom text (default
+`Persiguiendo la singularidad`) that disappears entirely when the setting is empty; it carries no state and
+is the only text allowed on this surface's periphery.
 
 #### Anti-Patterns
 A stop that runs on a single click, a stop entry in the context menu, or widening `ALLOWED_VERBS` to make
 stopping passwordless — the confirmation plus the interactive prompt are the whole safety argument
 ([[adr-0007-stop-button-confirmation-and-narrow-grant]]). Swallowing a failed action into a silent no-op
 instead of showing `stderr`. Rendering the container list while the daemon is down. Binding the tagline to
-state — it is a constant. Building the download command here instead of in `dockerstatus.js`. Adding a
-second severity-to-colour mapping for the download feedback.
+state — it is configured copy, not a status message. Building the download command here instead of in
+`dockerstatus.js`. Adding a second severity-to-colour mapping for the download feedback.
 
 #### Verification
 `qmllint` (both binaries — see the verification-tooling note; the Qt6 semantic run is clean); a probe with a deliberately failing command confirmed the failure path renders — that
@@ -222,12 +229,12 @@ download settings.
 (the `source` in `contents/config/config.qml` is resolved relative to `contents/ui/`, not `contents/`).
 
 #### Interface
-Seven `cfg_*` aliases — `cfg_pollIntervalSeconds`, `cfg_iconName`, `cfg_showContainerList`,
-`cfg_showVideoDownloader`, `cfg_downloadDirectory`, `cfg_jsRuntime` and `cfg_ytDlpBinary` — each bound
-to a plain writable property of a widget. There is no alias for the browser: the cookies always come
-from Firefox, as a constant in `dockerstatus.js`.
-
-#### Data Flow
+Nine `cfg_*` aliases — `cfg_pollIntervalSeconds`, `cfg_iconName`, `cfg_showContainerList`,
+`cfg_showVideoDownloader`, `cfg_downloadDirectory`, `cfg_jsRuntime`, `cfg_ytDlpBinary`,
+`cfg_cookiesBrowser` and `cfg_taglineText` — each bound to a plain writable property of a widget. The
+cookies browser and the bottom text are settings like the rest: the browser is validated by
+`resolveCookiesBrowser()` before it reaches the command, and the bottom text is display-only copy that
+leaves the panel representation untouched.#### Data Flow
 Plasma binds each `cfg_<entryName>` alias to the matching entry in `contents/config/main.xml`; the values
 reach `main.qml` through `Plasmoid.configuration`.
 

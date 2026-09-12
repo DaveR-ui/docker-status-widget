@@ -104,8 +104,8 @@ configured `~/Downloads` must be expanded to an absolute path before it is quote
 **Upstream:** `dockerstatus.js` for parsing, severity and the download-command builder; `metadata.json`
 and `main.xml` for plugin identity and config defaults; the probed behaviour of Plasma 6.7.4 and
 plasma5support 6.7.4. **Runtime (download only):** a `yt-dlp` executable reachable on plasmashell's
-`PATH`; for YouTube a JavaScript runtime (`node` or `deno`); Firefox cookies for X and for age-gated
-YouTube.
+`PATH`; for YouTube a JavaScript runtime (`node` or `deno`); cookies from the configured browser (default
+Firefox) for X and for age-gated YouTube.
 **Downstream:** the installer copies this package; the privilege slice decides whether the start
 button prompts; the verification slice can lint these files but can only *observe* this slice inside
 a running Plasma session.

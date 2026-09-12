@@ -169,15 +169,16 @@ name or a path and falls back to `yt-dlp` when the value looks shell-shaped.
 
 **Context:** a YouTube URL (often age-gated or after many automated requests), or an X link.
 **Root cause:** the download has no usable cookies, so yt-dlp cannot prove it is a logged-in browser.
-The command always passes `--cookies-from-browser firefox` — the browser is a constant in
-`dockerstatus.js`, not a setting — and the profile is read for the user running plasmashell.
-**Fix:** sign in to Firefox and confirm the profile belongs to the user running plasmashell. A Firefox
-profile can live outside the default location (for example `~/.config/mozilla/firefox/` on this machine);
-yt-dlp resolves the browser's own profile list. Note there is no setting to change: an explicit flag from
-this widget wins over the same flag in `~/.config/yt-dlp/config` by command-line precedence, so a
-different browser would be a code change, not a configuration one.
-**Reference:** [../status/status-slice.md](../status/status-slice.md) — `COOKIES_BROWSER` in
-`buildVideoDownloadCommand`.
+The command passes `--cookies-from-browser <your setting>` (default `firefox`), the profile is read for
+the user running plasmashell, and an empty setting omits the flag entirely — which produces this error
+for anything that needs a session.
+**Fix:** set the "cookies browser" setting on the widget's config page to the browser you are signed in
+to — yt-dlp syntax is accepted (`chrome:Default`, `firefox+gnomekeyring`, `chromium::Personal`) — or
+sign in there and confirm the profile belongs to the user running plasmashell. A profile can live
+outside the default location (for example `~/.config/mozilla/firefox/` on this machine); yt-dlp resolves
+the browser's own profile list. The widget's explicit flag wins over the same flag in
+`~/.config/yt-dlp/config` by command-line precedence, so changing it here is what takes effect.
+**Reference:** [../status/status-slice.md](../status/status-slice.md) — `resolveCookiesBrowser`.
 
 ## the download finished but no file appeared
 
