@@ -229,26 +229,42 @@ download settings.
 (the `source` in `contents/config/config.qml` is resolved relative to `contents/ui/`, not `contents/`).
 
 #### Interface
-Nine `cfg_*` aliases — `cfg_pollIntervalSeconds`, `cfg_iconName`, `cfg_showContainerList`,
-`cfg_showVideoDownloader`, `cfg_downloadDirectory`, `cfg_jsRuntime`, `cfg_ytDlpBinary`,
-`cfg_cookiesBrowser` and `cfg_taglineText` — each bound to a plain writable property of a widget. The
-cookies browser and the bottom text are settings like the rest: the browser is validated by
-`resolveCookiesBrowser()` before it reaches the command, and the bottom text is display-only copy that
-leaves the panel representation untouched.#### Data Flow
-Plasma binds each `cfg_<entryName>` alias to the matching entry in `contents/config/main.xml`; the values
-reach `main.qml` through `Plasmoid.configuration`.
+Eight `cfg_*` aliases — `cfg_pollIntervalSeconds`, `cfg_iconName`, `cfg_showContainerList`,
+`cfg_showVideoDownloader`, `cfg_downloadDirectory`, `cfg_jsRuntime`, `cfg_ytDlpBinary` and
+`cfg_taglineText` — each bound to a plain writable property of a widget, plus a plain string
+`cfg_cookiesBrowser`. The bottom text is a setting like the rest: display-only copy that leaves the panel
+representation untouched, and the browser is validated by `resolveCookiesBrowser()` before it reaches the
+command.
+
+The browser is the one setting carried by a `QQC2.ComboBox`, and that is why it alone is not an alias.
+Plasma delivers every stored value as an *initial property*, and that write arrives before the combo
+initialises: the combo's own startup then adopts index 0 and rewrites `editText` to `brave`, and its
+`Component.onCompleted` runs only after that. An `editText` alias therefore cannot hold the stored value —
+the page opened on `brave` and, because Plasma reads `cfg_<entryName>` back on apply, saving the page wrote
+`brave` over the configured browser. The combo is seeded from the plain property in its own
+`Component.onCompleted`, and pushes both a list pick and a free-form edit (`chrome:Default`,
+`firefox+gnomekeyring`) back into it; the push-back stays muted until the seed is in, because the combo's
+startup fires `editTextChanged` with `brave` first. Order measured against Qt 6.11.2 with the shipped file.
+
+#### Data Flow
+Plasma reads every `cfg_<entryName>` property — alias or plain — and writes it into the matching entry in
+`contents/config/main.xml` when the page is applied; the values reach `main.qml` through
+`Plasmoid.configuration`.
 
 #### Usage Pattern
-Add a setting by adding a kcfg entry **and** its alias in the same change. Keep the alias target a plain
-property.
+Add a setting by adding a kcfg entry **and** its `cfg_*` property in the same change. Keep the alias target
+a plain property, and use the plain-property form when the widget is a combo box: there the initial write
+lands before the control can hold it (see Interface above).
 
 #### Anti-Patterns
-Aliasing an expression: the page saves nothing and reports nothing. Adding a setting that lets the user
-type a command — configuration never supplies a command string, and the download settings are validated
-values inside a command the widget builds ([[adr-0006-video-downloader-command-boundary]]).
+Aliasing an expression: the page saves nothing and reports nothing. Aliasing `editText` of a
+`QQC2.ComboBox`: the stored value is overwritten before the page can seed the control, so the page opens —
+and then saves — the model's first item. Adding a setting that lets the user type a command — configuration
+never supplies a command string, and the download settings are validated values inside a command the widget
+builds ([[adr-0006-video-downloader-command-boundary]]).
 
 #### Verification
-`qmllint` (both binaries — see the verification-tooling note; the Qt6 semantic run is clean); manual save/reload in a live session.
+`qmllint` (both binaries — see the verification-tooling note; the Qt6 semantic run is clean); manual save/reload in a live session; the seed-and-mute arrangement is pinned as text by the Node suite.
 
 ### Tooltip subtext
 

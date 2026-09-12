@@ -900,6 +900,9 @@ test("extractErrorLine falls back to the last line and stays bounded", () => {
  * the width of the stop button. They are pinned as text because every one of them
  * compiles and renders when it is silently dropped, and the failure only shows up as
  * a setting that does nothing or a button that moves under the cursor.
+ *
+ * The cookies combo joins them below for the same reason, with a sharper failure mode:
+ * a missing seed does not render wrong, it SAVES wrong.
  */
 
 const mainXmlUrl = new URL(
@@ -973,6 +976,63 @@ test("ConfigGeneral.qml aliases the bottom text to a plain writable TextField", 
     assert.ok(
         /QQC2\.TextField\s*\{\s*\n\s*id: taglineText/.test(configGeneral),
         "the alias target must be a QQC2.TextField with id taglineText",
+    );
+});
+
+/*
+ * The cookies combo is the one config control whose failure mode is not cosmetic: opening the
+ * page on the wrong item also SAVES the wrong item, because Plasma reads cfg_<entryName> back
+ * when the page is applied. The arrangement below was measured, not reasoned about: the shipped
+ * file was instantiated against Qt 6.11.2 through PyQt6, with the stored value passed as an
+ * initial property exactly the way AppletConfiguration.qml passes it. Measured order on Qt
+ * 6.11.2 -- the stored value lands in the page, the combo's own startup adopts index 0 and
+ * rewrites editText to "brave", and only after that does the combo's Component.onCompleted run.
+ *
+ * A plain `node --test` suite cannot reach any of that, so these two tests pin the shape the
+ * measurement produced. They cannot prove the combo seeds correctly; they fail when the
+ * arrangement that was measured to be correct is replaced by another one.
+ */
+test("ConfigGeneral.qml keeps the cookies browser in a plain property, not an editText alias", () => {
+    const code = stripQmlComments(configGeneral);
+
+    assert.ok(
+        code.includes("property string cfg_cookiesBrowser"),
+        "the setting must live in a plain property that Plasma's initial write survives",
+    );
+    assert.ok(
+        !/property\s+alias\s+cfg_cookiesBrowser/.test(code),
+        "an editText alias cannot hold the stored value: the combo initialises afterwards, "
+            + "adopts index 0 and rewrites editText to \"brave\", so the page opens -- and "
+            + "then saves -- a browser the user never chose",
+    );
+});
+
+test("ConfigGeneral.qml seeds the cookies combo from the setting, then unmutes the push-back", () => {
+    const code = stripQmlComments(configGeneral);
+    const comboStart = code.indexOf("QQC2.ComboBox {");
+
+    assert.ok(comboStart >= 0, "the config page must still show the cookies combo");
+
+    const combo = code.slice(comboStart);
+
+    assert.ok(
+        /Component\.onCompleted:\s*\{\s*const stored = configPage\.cfg_cookiesBrowser;[\s\S]*?cookiesBrowser\.editText = stored;\s*cookiesBrowser\.seeded = true;/
+            .test(combo),
+        "the seed must read the setting once, write currentIndex before editText (an index of "
+            + "-1 blanks editText, so a free-form value like \"chrome:Default\" has to be "
+            + "restored afterwards) and only then mark itself done",
+    );
+
+    assert.ok(
+        /onEditTextChanged:\s*\{\s*if \(!cookiesBrowser\.seeded\)\s*\{\s*return;\s*\}/.test(combo),
+        "the push-back must stay muted until the seed is in: the combo's startup fires "
+            + "editTextChanged with \"brave\" before Component.onCompleted, so an unmuted "
+            + "handler writes that over the stored browser",
+    );
+
+    assert.ok(
+        combo.includes("configPage.cfg_cookiesBrowser = cookiesBrowser.textAt(index)"),
+        "a pick from the list must still reach the setting",
     );
 });
 

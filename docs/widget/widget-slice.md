@@ -95,7 +95,9 @@ configured `~/Downloads` must be expanded to an absolute path before it is quote
 - The severity-to-colour switch lives only in `SeverityDot.qml`. A new state adds a severity in
   [status-slice](../status/status-slice.md), never a colour here.
 - The `cfg_*` alias target must stay a plain writable property; aliasing an expression saves nothing
-  and reports nothing.
+  and reports nothing. A setting carried by a combo box is the exception: the initial property Plasma
+  writes arrives before the control initialises, so the setting is a plain property and the control is
+  seeded from it (`ConfigGeneral.qml` — the cookies browser).
 - `contents/config/config.qml` resolves `source` relative to `contents/ui/`, so the config page lives
   at `ui/config/ConfigGeneral.qml` — not at `config/ConfigGeneral.qml`.
 
