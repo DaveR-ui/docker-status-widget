@@ -1,0 +1,56 @@
+/*
+ * Docker Status widget -- scoped polkit rule.
+ *
+ * Lets members of the "wheel" group start docker.service from a local, active
+ * session without an interactive password prompt.
+ *
+ * The grant is intentionally as narrow as polkit allows:
+ *   - exactly one action id  : org.freedesktop.systemd1.manage-units
+ *   - exactly one unit       : docker.service
+ *   - exactly one verb       : "start"
+ *   - local AND active session only, so a remote/SSH or inactive session can
+ *     never use it
+ *
+ * It grants no ability to stop, restart, reload, disable, mask or otherwise
+ * modify docker.service, and no ability to touch any other unit.
+ *
+ * The widget gained a stop button (adr-0007), and this grant is deliberately NOT
+ * widened for it. Stopping therefore keeps polkit's interactive password prompt,
+ * while starting stays passwordless. That asymmetry is the intended behaviour:
+ * adding "stop" to the array would delete it by decision, not by oversight.
+ *
+ * To widen the verb list later, edit the array below deliberately -- do not
+ * replace the lookup with a wildcard.
+ */
+
+polkit.addRule(function (action, subject) {
+    var ALLOWED_VERBS = ["start"];
+
+    if (action.id !== "org.freedesktop.systemd1.manage-units") {
+        return polkit.Result.NOT_HANDLED;
+    }
+
+    if (action.lookup("unit") !== "docker.service") {
+        return polkit.Result.NOT_HANDLED;
+    }
+
+    if (ALLOWED_VERBS.indexOf(action.lookup("verb")) === -1) {
+        return polkit.Result.NOT_HANDLED;
+    }
+
+    if (!subject.local || !subject.active) {
+        return polkit.Result.NOT_HANDLED;
+    }
+
+    // polkit >= 0.121 exposes isInGroup() as a method; older releases exposed it
+    // as a boolean property. Support both so the rule is not silently dead.
+    var inWheel = (typeof subject.isInGroup === "function")
+        ? subject.isInGroup("wheel")
+        : subject.isInGroup;
+
+    if (inWheel) {
+        return polkit.Result.YES;
+    }
+
+    return polkit.Result.NOT_HANDLED;
+});

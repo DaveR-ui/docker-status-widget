@@ -1,0 +1,5 @@
+# Local agent runtime state
+.atl/
+
+.opencode/
+opencode.json

@@ -1,0 +1,22 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Name": "DaveR-ui"
+            }
+        ],
+        "Category": "System Information",
+        "Description": "Shows whether the Docker daemon is running, starts it on demand, stops it behind a confirmation, and downloads pasted YouTube or X videos with yt-dlp",
+        "Description[es]": "Muestra si el demonio de Docker está corriendo, lo arranca a demanda, lo detiene con confirmación y descarga videos de YouTube o X pegando el link, con yt-dlp",
+        "Icon": "/icons/dockerstatus.svg",
+        "Id": "io.github.daver-ui.dockerstatus",
+        "License": "MIT",
+        "Website": "https://github.com/DaveR-ui/docker-status-widget",
+        "BugReportUrl": "https://github.com/DaveR-ui/docker-status-widget/issues",
+        "Name": "Docker Status",
+        "Name[es]": "Estado de Docker",
+        "Version": "0.4.0"
+    },
+    "X-Plasma-API-Minimum-Version": "6.0"
+}

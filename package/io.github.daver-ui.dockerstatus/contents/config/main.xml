@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kcfg xmlns="http://www.kde.org/standards/kcfg/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0
+      http://www.kde.org/standards/kcfg/1.0/kcfg.xsd" >
+  <kcfgfile name=""/>
+
+  <group name="General">
+    <entry name="pollIntervalSeconds" type="Int">
+      <label>How often the widget asks systemd for the daemon state, in seconds.</label>
+      <default>3</default>
+      <min>1</min>
+      <max>60</max>
+    </entry>
+
+    <entry name="iconName" type="String">
+      <label>Icon shown in the panel. Any icon name available in the active theme.</label>
+      <default>folder-docker-symbolic</default>
+    </entry>
+
+    <entry name="showContainerList" type="Bool">
+      <label>List the containers in the popup while the daemon is running.</label>
+      <default>true</default>
+    </entry>
+
+    <entry name="showVideoDownloader" type="Bool">
+      <label>Show the video download row in the popup.</label>
+      <default>true</default>
+    </entry>
+
+    <entry name="downloadDirectory" type="String">
+      <label>Folder the downloaded videos are written to. "~/" is expanded to your home directory.</label>
+      <default>~/Downloads</default>
+    </entry>
+
+    <entry name="jsRuntime" type="String">
+      <label>JavaScript runtime yt-dlp needs for YouTube challenges, e.g. "node" or "deno". Leave empty to not pass --js-runtimes at all (a yt-dlp too old for that flag).</label>
+      <default>node</default>
+    </entry>
+
+    <entry name="ytDlpBinary" type="String">
+      <label>yt-dlp executable name or path, e.g. "yt-dlp" or "~/.local/bin/yt-dlp".</label>
+      <default>yt-dlp</default>
+    </entry>
+
+    <entry name="cookiesBrowser" type="String">
+      <label>Browser the video download reads its cookies from, e.g. "firefox" or "chrome:Default". Supports yt-dlp syntax (BROWSER+KEYRING:PROFILE). Leave empty to download without cookies.</label>
+      <default>firefox</default>
+    </entry>
+  </group>
+</kcfg>
