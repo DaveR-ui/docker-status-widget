@@ -7,8 +7,8 @@
             }
         ],
         "Category": "System Information",
-        "Description": "Shows whether the Docker daemon is running, starts it on demand, stops it behind a confirmation, and downloads pasted YouTube or X videos with yt-dlp",
-        "Description[es]": "Muestra si el demonio de Docker está corriendo, lo arranca a demanda, lo detiene con confirmación y descarga videos de YouTube o X pegando el link, con yt-dlp",
+        "Description": "Shows whether the Docker daemon is running, starts it on demand, stops it behind a confirmation, schedules a shutdown behind a countdown, and downloads pasted YouTube or X videos with yt-dlp",
+        "Description[es]": "Muestra si el demonio de Docker está corriendo, lo arranca a demanda, lo detiene con confirmación, programa un apagado con cuenta atrás y descarga videos de YouTube o X pegando el link, con yt-dlp",
         "Icon": "/icons/dockerstatus.svg",
         "Id": "io.github.daver-ui.dockerstatus",
         "License": "MIT",
@@ -16,7 +16,7 @@
         "BugReportUrl": "https://github.com/DaveR-ui/docker-status-widget/issues",
         "Name": "Docker Status",
         "Name[es]": "Estado de Docker",
-        "Version": "0.4.0"
+        "Version": "0.5.0"
     },
     "X-Plasma-API-Minimum-Version": "6.0"
 }

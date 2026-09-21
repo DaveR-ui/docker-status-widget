@@ -23,7 +23,7 @@ committed test — see the evidence layers in
 [verification-slice](../verification/verification-slice.md#how-it-works). Anything not in these tables is
 unverified, and treating
 it as a guarantee is how a widget silently stops updating. This is a *contract* sheet, not a catalog:
-the six sources that implement it are listed in
+the seven sources that implement it are listed in
 [widget-slice](../widget/widget-slice.md#how-it-works).
 
 ### Field groups
@@ -41,7 +41,7 @@ the six sources that implement it are listed in
 |---|---|---|
 | Purpose | continuous state | an action, or an immediate re-read |
 | The identical command assigned again | re-runs on the next tick | **not re-run** — the assignment is a set no-op |
-| Instances | `daemonSource`, `containerSource` | `forcedDaemonRead`, `daemonAction`, `homeSource`, `downloadAction` |
+| Instances | `daemonSource`, `containerSource` | `forcedDaemonRead`, `daemonAction`, `homeSource`, `downloadAction`, `powerAction` |
 | Output delivery | one `onNewData` per run | exactly one `onNewData`, at process exit, carrying the whole run |
 
 Measured event counts for the trap that shapes this design:
@@ -87,11 +87,14 @@ safe only for command strings the project itself builds — fixed constants, nev
   `downloadAction` ignores an event without that key while the fast one-shots (`forcedDaemonRead`,
   `daemonAction`, `homeSource`) read it unconditionally. `daemonAction` serves both privileged actions:
   only one of start and stop can be in flight at a time, so one one-shot source and one `actionInFlight`
-  flag are enough, and `actionKind` distinguishes the reply's owner.
+  flag are enough, and `actionKind` distinguishes the reply's owner. `powerAction` is the third one-shot
+  that can outlive its own click: `systemctl poweroff` can stay alive while the shutdown job completes, so
+  the source keeps `shutdownInFlight` set and the popup shows the neutral "Powering off…" line until the
+  event arrives; its exit code and `stderr` are surfaced exactly like `daemonAction`'s.
 
 ## Related sheets
 
 - [status-slice.md](status-slice.md) — the logic that consumes this payload.
-- [widget-slice.md](../widget/widget-slice.md) — the six sources that implement this contract.
+- [widget-slice.md](../widget/widget-slice.md) — the seven sources that implement this contract.
 - [troubleshooting.md](../verification/troubleshooting.md#the-start-daemon-button-does-nothing-on-the-second-click)
   — the symptom a consumer sees when the set semantics are ignored.

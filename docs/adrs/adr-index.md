@@ -37,6 +37,15 @@ re-litigated from the code alone does not need a record either — only the *why
 - [[adr-0008-configurable-cookies-browser-and-bottom-text]] — the cookies browser becomes a validated
   setting, reversing ADR-0006's browser-constancy clause; the bottom text is configuration, and the stop
   button gets a fixed narrow width.
+- [[adr-0009-widget-owned-shutdown-countdown]] — the shutdown countdown is widget-owned (a wall-clock
+  deadline with a local cancel), the power-off is a fixed command that adds no second command-building
+  exception, and, unlike the docker stop, it does not prompt: logind's `allow_active=yes` default makes a
+  local active session power off passwordlessly. Its inline-field rejection is superseded by
+  [[adr-0010-inline-shutdown-minutes-in-the-representation]]; the rest still stands.
+- [[adr-0010-inline-shutdown-minutes-in-the-representation]] — the shutdown minutes become an inline field
+  in the representation: it emits a value-carrying signal and `main.qml` stays the only writer of the
+  `shutdownCountdownMinutes` kcfg entry, validating through the unchanged resolver; the duration still
+  never reaches a shell, so no second command-building exception is minted.
 
 ## Elsewhere
 

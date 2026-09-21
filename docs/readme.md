@@ -1,5 +1,5 @@
 ---
-last_updated: 2026-09-11
+last_updated: 2026-09-21
 status: active
 description: Entry point of the Docker Status documentation corpus — what it is, how to navigate it, and the rules every note obeys.
 tags: [index, entry-point, navigation, documentation]
@@ -102,3 +102,6 @@ rescued — if it is lost, rerun the generator.
 | [adrs/adr-0005-doc-classes-and-body-shape-exceptions.md](adrs/adr-0005-doc-classes-and-body-shape-exceptions.md) | Four doc classes are registered here, with an explicit body-shape exception. |
 | [adrs/adr-0006-video-downloader-command-boundary.md](adrs/adr-0006-video-downloader-command-boundary.md) | The video-download row is the one sanctioned exception to the fixed-command rule. |
 | [adrs/adr-0007-stop-button-confirmation-and-narrow-grant.md](adrs/adr-0007-stop-button-confirmation-and-narrow-grant.md) | A stop button that confirms on a second click, with the polkit grant deliberately left at `["start"]` so stop prompts while start does not. |
+| [adrs/adr-0008-configurable-cookies-browser-and-bottom-text.md](adrs/adr-0008-configurable-cookies-browser-and-bottom-text.md) | The cookies browser becomes a validated setting, reversing ADR-0006's browser-constancy clause; the bottom text is configuration, and the stop button gets a fixed narrow width. |
+| [adrs/adr-0009-widget-owned-shutdown-countdown.md](adrs/adr-0009-widget-owned-shutdown-countdown.md) | A widget-owned "Countdown to Extinction" shutdown: the power-off is a fixed command, the duration is a validated setting that never reaches it, and, unlike the docker stop, it does not prompt. Its inline-field rejection is superseded by ADR-0010. |
+| [adrs/adr-0010-inline-shutdown-minutes-in-the-representation.md](adrs/adr-0010-inline-shutdown-minutes-in-the-representation.md) | The shutdown minutes become an inline field in the representation: it emits a value-carrying signal and `main.qml` stays the only writer of the kcfg entry; the duration still never reaches a shell. |

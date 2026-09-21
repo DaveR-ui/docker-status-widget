@@ -72,6 +72,11 @@ const {
     buildVideoDownloadCommand,
     parseDownloadedFile,
     extractErrorLine,
+    SHUTDOWN_MINUTES_DEFAULT,
+    SHUTDOWN_MINUTES_MINIMUM,
+    resolveShutdownMinutes,
+    shutdownRemainingSeconds,
+    formatCountdown,
 } = sandbox;
 
 test("the shipped module exposes the documented constants", () => {
@@ -893,6 +898,88 @@ test("extractErrorLine falls back to the last line and stays bounded", () => {
 
 /*
  * ---------------------------------------------------------------------------
+ * Countdown to Extinction
+ * ---------------------------------------------------------------------------
+ * The countdown is widget-owned: the configured string only sizes a local deadline
+ * and never reaches a shell, but an unusable value must not arm a nonsense deadline.
+ * The resolver is where that is decided, so it is tested like the other boundary
+ * functions above.
+ */
+
+test("resolveShutdownMinutes treats a missing value as the default, not an error", () => {
+    assert.equal(SHUTDOWN_MINUTES_DEFAULT, 15);
+    assert.equal(SHUTDOWN_MINUTES_MINIMUM, 10);
+    assert.equal(resolveShutdownMinutes(undefined), SHUTDOWN_MINUTES_DEFAULT);
+    assert.equal(resolveShutdownMinutes(null), SHUTDOWN_MINUTES_DEFAULT);
+    assert.equal(resolveShutdownMinutes(""), SHUTDOWN_MINUTES_DEFAULT);
+    assert.equal(resolveShutdownMinutes("   "), SHUTDOWN_MINUTES_DEFAULT);
+    assert.equal(resolveShutdownMinutes("\r\n"), SHUTDOWN_MINUTES_DEFAULT);
+});
+
+test("resolveShutdownMinutes accepts a plain whole number above the minimum", () => {
+    assert.equal(resolveShutdownMinutes("15"), 15);
+    assert.equal(resolveShutdownMinutes(" 20 "), 20);
+    assert.equal(resolveShutdownMinutes("11"), 11);
+    assert.equal(resolveShutdownMinutes("3600"), 3600);
+});
+
+test("resolveShutdownMinutes refuses a value at or below the minimum", () => {
+    // The minimum is inclusive of rejection: "more than 10", not "10 or more".
+    assert.equal(resolveShutdownMinutes("10"), null);
+    assert.equal(resolveShutdownMinutes("0"), null);
+    assert.equal(resolveShutdownMinutes("1"), null);
+});
+
+test("resolveShutdownMinutes refuses anything that is not a plain run of digits", () => {
+    assert.equal(resolveShutdownMinutes("abc"), null);
+    assert.equal(resolveShutdownMinutes("12abc"), null);
+    assert.equal(resolveShutdownMinutes("12.5"), null);
+    assert.equal(resolveShutdownMinutes("1e3"), null);
+    assert.equal(resolveShutdownMinutes(" 1 2"), null);
+    assert.equal(resolveShutdownMinutes("-5"), null);
+    assert.equal(resolveShutdownMinutes("+15"), null);
+    assert.equal(resolveShutdownMinutes("15m"), null);
+});
+
+test("shutdownRemainingSeconds counts whole seconds and never goes negative", () => {
+    assert.equal(shutdownRemainingSeconds(10000, 0), 10);
+    assert.equal(shutdownRemainingSeconds(10000, 9000), 1, "exactly one second left");
+    assert.equal(shutdownRemainingSeconds(10000, 9001), 1, "999 ms left rounds up to one second");
+    assert.equal(shutdownRemainingSeconds(10000, 10000), 0, "at the deadline");
+    assert.equal(shutdownRemainingSeconds(10000, 20000), 0, "past the deadline");
+});
+
+test("shutdownRemainingSeconds treats unusable input as zero", () => {
+    assert.equal(shutdownRemainingSeconds(undefined, 0), 0);
+    assert.equal(shutdownRemainingSeconds(0, undefined), 0);
+    assert.equal(shutdownRemainingSeconds(null, null), 0);
+    assert.equal(shutdownRemainingSeconds(NaN, 0), 0);
+    assert.equal(shutdownRemainingSeconds(Infinity, 0), 0);
+    assert.equal(shutdownRemainingSeconds(0, Infinity), 0);
+    assert.equal(shutdownRemainingSeconds("soon", 0), 0);
+});
+
+test("formatCountdown renders M:SS and grows to H:MM:SS past an hour", () => {
+    assert.equal(formatCountdown(0), "0:00");
+    assert.equal(formatCountdown(59), "0:59");
+    assert.equal(formatCountdown(60), "1:00");
+    assert.equal(formatCountdown(899), "14:59");
+    assert.equal(formatCountdown(900), "15:00");
+    assert.equal(formatCountdown(3600), "1:00:00");
+    assert.equal(formatCountdown(3661), "1:01:01");
+});
+
+test("formatCountdown refuses negatives, non-finite values and garbage", () => {
+    assert.equal(formatCountdown(-1), "0:00");
+    assert.equal(formatCountdown(NaN), "0:00");
+    assert.equal(formatCountdown(Infinity), "0:00");
+    assert.equal(formatCountdown(undefined), "0:00");
+    assert.equal(formatCountdown(null), "0:00");
+    assert.equal(formatCountdown("later"), "0:00");
+});
+
+/*
+ * ---------------------------------------------------------------------------
  * Configurable tagline, cookies feedback and the action row geometry
  * ---------------------------------------------------------------------------
  * Four pieces of shipped QML that a runtime test cannot reach: a kcfg default, the
@@ -1084,9 +1171,14 @@ test("FullRepresentation.qml resolves the displayed browser through the command'
 });
 
 test("the stop button is fixed-width while the start button still fills the row", () => {
+    // Select by the button's own label, not by icon name: the Countdown to Extinction
+    // play/cancel buttons reuse the same media-playback-start/stop icons, so an
+    // icon-name match would silently depend on file order.
     const buttonBlocks = fullQml.split("PlasmaComponents3.Button {");
-    const startBlock = buttonBlocks.find((block) => block.includes('icon.name: "media-playback-start"'));
-    const stopBlock = buttonBlocks.find((block) => block.includes('icon.name: "media-playback-stop"'));
+    const startBlock = buttonBlocks.find((block) => block.includes('i18n("Start daemon")'));
+    const stopBlock = buttonBlocks.find(
+        (block) => block.includes('i18n("Stop daemon")') || block.includes('i18n("Confirm stop")'),
+    );
 
     assert.ok(startBlock, "the action row must still have a start button");
     assert.ok(stopBlock, "the action row must still have a stop button");
@@ -1111,3 +1203,348 @@ test("the stop button is fixed-width while the start button still fills the row"
             + "between \"Stop daemon\" and \"Confirm stop\"",
     );
 });
+
+/*
+ * ---------------------------------------------------------------------------
+ * Countdown to Extinction: the config entry, the config control, and the wiring
+ * ---------------------------------------------------------------------------
+ * The countdown crosses three files that cannot be exercised together here: a kcfg
+ * entry, a config-page control, and the state machine in main.qml driven by
+ * FullRepresentation's signals. Every one of these compiles and renders when it is
+ * silently dropped, and the failure only shows up as a setting that does nothing, a
+ * dead-looking button with no reason, or a countdown that can never be cancelled.
+ */
+
+test("main.xml declares the shutdown countdown as a String defaulting to 15", () => {
+    const entry = kcfgEntry(mainXml, "shutdownCountdownMinutes");
+
+    // A String, not an Int: the control is a TextField so a non-number can reach the page
+    // and surface an error. An Int entry could never carry one.
+    assert.ok(entry.attributes.includes('type="String"'), entry.attributes);
+    assert.ok(entry.body.includes("<default>15</default>"), entry.body);
+});
+
+test("ConfigGeneral.qml aliases the countdown to a plain TextField and shows the invalid cue", () => {
+    assert.ok(
+        configGeneral.includes("property alias cfg_shutdownCountdownMinutes: shutdownCountdownMinutes.text"),
+        "Plasma reads the setting through the cfg_<entryName> alias",
+    );
+
+    // The alias target must stay a plain writable property: aliasing an expression is a
+    // silent no-op on save, the trap the file's own header comment documents.
+    assert.ok(
+        /QQC2\.TextField\s*\{\s*\n\s*id: shutdownCountdownMinutes/.test(configGeneral),
+        "the alias target must be a QQC2.TextField with id shutdownCountdownMinutes",
+    );
+
+    assert.ok(
+        configGeneral.includes(
+            "readonly property bool shutdownMinutesValid: "
+                + "DockerStatus.resolveShutdownMinutes(configPage.cfg_shutdownCountdownMinutes) !== null",
+        ),
+        "the page must validate through the same pure resolver main.qml uses",
+    );
+
+    assert.ok(
+        configGeneral.includes("Enter a whole number of minutes greater than 10."),
+        "an unusable value must surface an explanation instead of leaving play looking dead",
+    );
+});
+
+test("main.qml keeps the power-off command a fixed literal the countdown never reaches", () => {
+    assert.ok(mainQml.includes('readonly property string powerOffCommand: "systemctl poweroff"'));
+
+    // Interpolation and concatenation are exactly how a configured duration could reach a
+    // shell, which is the one thing this feature must never do.
+    assert.ok(
+        !/readonly property string powerOffCommand:[^\n]*\$\{/.test(mainQml),
+        "the power-off command must not interpolate anything into its string",
+    );
+    assert.ok(
+        !/readonly property string powerOffCommand:[^\n]*\+/.test(mainQml),
+        "the power-off command must not be assembled from configuration",
+    );
+    assert.ok(
+        !/powerOffCommand[^\n]*shutdownMinutes/.test(mainQml),
+        "the configured countdown must never reach the command string",
+    );
+});
+
+test("main.qml owns the countdown state and its three functions", () => {
+    for (const pin of [
+        "property bool shutdownPending: false",
+        "property bool shutdownInFlight: false",
+        "function startShutdownCountdown()",
+        "function stopShutdownCountdown()",
+        "function firePowerOff()",
+    ]) {
+        assert.ok(mainQml.includes(pin), `main.qml must declare ${pin}`);
+    }
+
+    // The deadline is a timestamp, not a long Timer interval: it survives a late tick.
+    assert.ok(
+        mainQml.includes("Date.now() + root.shutdownMinutes * 60 * 1000"),
+        "the countdown must be a wall-clock deadline",
+    );
+    // Every one-shot command goes through the run token, power-off included.
+    assert.ok(
+        mainQml.includes("DockerStatus.withRunToken(root.powerOffCommand, root.nextRunToken())"),
+        "the power-off must go through withRunToken like every other one-shot command",
+    );
+});
+
+test("main.qml forwards the shutdown state and handles both shutdown signals", () => {
+    const blockStart = mainQml.indexOf("fullRepresentation: FullRepresentation {");
+    assert.ok(blockStart >= 0, "main.qml must define the full representation");
+
+    const block = mainQml.slice(blockStart);
+
+    for (const forwarding of [
+        "shutdownReady: root.shutdownReady",
+        "shutdownMinutes: root.shutdownMinutes",
+        "shutdownPending: root.shutdownPending",
+        "shutdownInFlight: root.shutdownInFlight",
+        "shutdownRemainingSeconds: root.shutdownRemainingSeconds",
+        "shutdownFeedback: root.shutdownFeedback",
+        "shutdownFeedbackSeverity: root.shutdownFeedbackSeverity",
+    ]) {
+        assert.ok(block.includes(forwarding), `the popup must receive ${forwarding}`);
+    }
+
+    assert.ok(block.includes("onShutdownStartRequested: root.startShutdownCountdown()"));
+    assert.ok(block.includes("onShutdownStopRequested: root.stopShutdownCountdown()"));
+});
+
+test("FullRepresentation.qml carries the shutdown section, disables play and builds no command", () => {
+    assert.ok(fullQml.includes('i18n("Countdown to Extinction")'), "the section needs its title");
+
+    // Play must be disabled the instant the sequence starts, so one activation cannot arm
+    // twice; stop is the only cancellation path and is enabled only while pending. The
+    // inline field's validity is a second gate: an unusable value disables play rather
+    // than being rounded to something else.
+    assert.ok(
+        fullQml.includes(
+            "readonly property bool shutdownPlayEnabled: fullRoot.shutdownReady "
+                + "&& fullRoot.shutdownMinutesFieldValid "
+                + "&& !fullRoot.shutdownPending && !fullRoot.shutdownInFlight",
+        ),
+        "play must include shutdownMinutesFieldValid and !shutdownPending",
+    );
+    assert.ok(
+        /text: fullRoot\.shutdownPending\s*\?\s*i18n\("Shutting down…"\)\s*:\s*i18n\("Shut down"\)/
+            .test(fullQml),
+        "the play label must say that the sequence is running",
+    );
+    assert.ok(
+        /enabled: fullRoot\.shutdownPending\b/.test(fullQml),
+        "stop must only be enabled while a shutdown is pending",
+    );
+
+    // The popup is a pure consumer: it renders state and emits signals, and never names a
+    // shell command or the fixed power-off constant.
+    assert.ok(!fullQml.includes("systemctl poweroff"), "the popup must not build a command");
+    assert.ok(!fullQml.includes("powerOffCommand"), "the popup must not know the command");
+
+    // The feedback row reuses SeverityDot, so no second severity-to-colour mapping exists.
+    const section = fullQml.slice(fullQml.indexOf('i18n("Countdown to Extinction")'));
+    assert.ok(
+        section.includes("severity: fullRoot.shutdownFeedbackSeverity"),
+        "the shutdown feedback must reuse SeverityDot",
+    );
+    assert.ok(
+        section.includes("DockerStatus.formatCountdown(fullRoot.shutdownRemainingSeconds)"),
+        "the pending line must render the live countdown",
+    );
+});
+
+/*
+ * ---------------------------------------------------------------------------
+ * Countdown to Extinction: the inline editor and the single kcfg writer
+ * ---------------------------------------------------------------------------
+ * The popup gains a second editing surface for the same setting, so the two halves
+ * that must not drift get pinned as text: the representation carries the raw value
+ * and emits edits, and main.qml remains the ONLY writer of the kcfg entry. The
+ * resolver stays the single validator on both sides.
+ */
+
+test("FullRepresentation.qml carries the inline minutes field's inbound property and outbound signal", () => {
+    assert.ok(
+        fullQml.includes("property string shutdownMinutesText:"),
+        "the raw stored value must enter the representation as a string",
+    );
+    assert.ok(
+        fullQml.includes("signal shutdownMinutesEdited(string text)"),
+        "the representation must emit the raw text of an edit",
+    );
+});
+
+test("main.qml forwards the raw countdown string and handles the edit signal", () => {
+    const blockStart = mainQml.indexOf("fullRepresentation: FullRepresentation {");
+    assert.ok(blockStart >= 0, "main.qml must define the full representation");
+    const block = mainQml.slice(blockStart);
+
+    assert.ok(
+        block.includes("shutdownMinutesText: Plasmoid.configuration.shutdownCountdownMinutes"),
+        "the popup must receive the canonical raw stored string",
+    );
+    assert.ok(
+        block.includes("onShutdownMinutesEdited: (text) => root.setShutdownMinutes(text)"),
+        "the edit signal must reach the single writer",
+    );
+});
+
+test("the inline field is pure: only main.qml touches Plasmoid.configuration", () => {
+    assert.ok(
+        !fullQml.includes("Plasmoid.configuration"),
+        "the representation must stay a pure consumer and never read or write configuration",
+    );
+    assert.ok(
+        !fullQml.includes("Plasmoid.configuration.shutdownCountdownMinutes ="),
+        "the kcfg entry must not be written from the representation",
+    );
+    assert.ok(
+        mainQml.includes("Plasmoid.configuration.shutdownCountdownMinutes ="),
+        "main.qml must remain the single writer of the kcfg entry",
+    );
+});
+
+test("main.qml writes back only a resolvable, changed value", () => {
+    const fnStart = mainQml.indexOf("function setShutdownMinutes(raw)");
+    assert.ok(fnStart >= 0, "main.qml must define setShutdownMinutes(raw)");
+
+    // Slice the whole function by matching braces, since a nested block's closing brace
+    // must not be able to cut the slice short and hide the write. setShutdownMinutes is
+    // the last function in the file, so the next-function boundary is unavailable.
+    let fnDepth = 0;
+    let fnEnd = -1;
+    for (let i = fnStart; i < mainQml.length; i += 1) {
+        if (mainQml[i] === "{") fnDepth += 1;
+        if (mainQml[i] === "}") {
+            fnDepth -= 1;
+            if (fnDepth === 0) {
+                fnEnd = i + 1;
+                break;
+            }
+        }
+    }
+    assert.ok(fnEnd > fnStart, "setShutdownMinutes' body must close");
+    const fn = mainQml.slice(fnStart, fnEnd);
+
+    assert.ok(
+        fn.includes("DockerStatus.resolveShutdownMinutes(raw)"),
+        "the writer must validate through the same pure resolver",
+    );
+    assert.ok(
+        fn.includes("return;"),
+        "an unusable value must return early instead of being persisted",
+    );
+    assert.ok(
+        fn.includes("raw === Plasmoid.configuration.shutdownCountdownMinutes"),
+        "an unchanged value must not trigger a redundant kcfg write",
+    );
+    assert.ok(
+        fn.includes("Plasmoid.configuration.shutdownCountdownMinutes = raw"),
+        "the writer must persist the validated raw value into the kcfg entry",
+    );
+});
+
+test("FullRepresentation.qml validates through the single resolver and parses nothing itself", () => {
+    assert.ok(
+        fullQml.includes("DockerStatus.resolveShutdownMinutes("),
+        "the field must validate through the shared resolver",
+    );
+    assert.ok(
+        !fullQml.includes("parseInt("),
+        "the representation must not carry a second integer parser",
+    );
+    assert.ok(
+        !fullQml.includes("/^[0-9"),
+        "the representation must not carry a second digits regex",
+    );
+});
+
+test("the inline field seeds once and mirrors inbound changes with both guards", () => {
+    assert.ok(fullQml.includes("property bool seeded: false"), "the field needs its seeded latch");
+    assert.ok(
+        fullQml.includes("property bool programmatic: false"),
+        "the field needs its programmatic-write latch",
+    );
+
+    const seedStart = fullQml.indexOf("Component.onCompleted:");
+    assert.ok(seedStart >= 0, "the field must seed itself on completion");
+    const seed = fullQml.slice(seedStart, fullQml.indexOf("\n            }", seedStart));
+    assert.ok(
+        seed.includes("text = fullRoot.shutdownMinutesText;"),
+        "seeding must copy the raw stored string once, not bind a live expression",
+    );
+
+    const syncStart = fullQml.indexOf("onShutdownMinutesTextChanged:");
+    assert.ok(syncStart >= 0, "the root must handle inbound changes to the stored string");
+    const sync = fullQml.slice(syncStart, fullQml.indexOf("\n    }", syncStart));
+    assert.ok(
+        sync.includes("shutdownMinutesField.activeFocus"),
+        "an inbound change must never clobber what the user is typing",
+    );
+    assert.ok(
+        sync.includes("shutdownMinutesField.programmatic"),
+        "an inbound change must skip a programmatic text write instead of echoing it back",
+    );
+});
+
+test("the inline field mirrors an external change on focus loss without clobbering the user's error", () => {
+    // A stored change that arrives while the field is focused is skipped by the inbound
+    // sync, and nothing re-runs on blur; focus loss is the only moment it can still be
+    // mirrored. The mirror must therefore exist and must keep every gate the sync has.
+    const focusStart = fullQml.indexOf("onActiveFocusChanged:");
+    assert.ok(focusStart >= 0, "a focus change must mirror an external change the focused sync skipped");
+    const focus = fullQml.slice(focusStart, fullQml.indexOf("\n            }", focusStart));
+
+    assert.ok(
+        focus.includes("if (activeFocus || !shutdownMinutesField.seeded || shutdownMinutesField.programmatic) return;"),
+        "the focus-loss mirror must bail while focused, before seeding and on a programmatic write",
+    );
+    assert.ok(
+        focus.includes("shutdownMinutesField.text === fullRoot.shutdownMinutesText"),
+        "an unchanged text must not trigger a redundant mirror",
+    );
+    assert.ok(
+        focus.includes("DockerStatus.resolveShutdownMinutes(shutdownMinutesField.text) === null"),
+        "the focus-loss mirror must only mirror a valid text, never overwrite the user's error",
+    );
+    assert.ok(
+        focus.includes("shutdownMinutesField.programmatic = true;")
+            && focus.includes("shutdownMinutesField.programmatic = false;"),
+        "the mirror must latch the programmatic flag around the write so it cannot echo as an edit",
+    );
+});
+
+test("the inline field reaches its error path and is disabled while a countdown runs", () => {
+    // The error must remain typeable: a digits-only input or mask would make it unreachable.
+    assert.ok(
+        !fullQml.includes("ImhDigitsOnly"),
+        "the field must accept non-digits so the error path stays reachable",
+    );
+    assert.ok(
+        !fullQml.includes("inputMask"),
+        "an input mask would block the invalid states the cue exists for",
+    );
+
+    assert.ok(
+        fullQml.includes("visible: !fullRoot.shutdownMinutesFieldValid"),
+        "the cue must show while the field's own value is invalid",
+    );
+    assert.ok(
+        fullQml.includes('i18n("Enter a whole number of minutes greater than 10.")'),
+        "the cue must say what to fix",
+    );
+    assert.ok(
+        fullQml.includes("Kirigami.Theme.negativeTextColor"),
+        "the field must tint itself through the theme, not a new severity mapping",
+    );
+
+    assert.ok(
+        fullQml.includes("enabled: !fullRoot.shutdownPending && !fullRoot.shutdownInFlight"),
+        "the field must be disabled while a countdown is pending or in flight",
+    );
+});
+

@@ -1,5 +1,5 @@
 ---
-last_updated: 2026-09-11
+last_updated: 2026-09-21
 status: active
 description: Agent-facing entry point for the Docker Status plasmoid — stack, slices, commands, conventions, vocabulary and symptom routing.
 tags: [project, entry-point, routing, slices]
@@ -17,15 +17,21 @@ confirmation. Its form is a KPackage of QML files, one polkit rule, and one Bash
 step, no service of its own, no database, no network code. The widget is a read-mostly observer of two
 external commands — `systemctl is-active docker` and `docker ps -a` — and the only mutations it can
 perform are `systemctl start docker.service`, passwordless through a deliberately narrow privilege
-grant, and `systemctl stop docker.service`, which is deliberately not covered by that grant and so goes
-through polkit's interactive password prompt.
+grant; `systemctl stop docker.service`, which is deliberately not covered by that grant and so goes
+through polkit's interactive password prompt; and `systemctl poweroff`, which runs only when a
+widget-owned countdown expires and, unlike the stop, does not prompt.
 
 Anti-goals, stated so nobody adds them by accident: no stop on a single click — stopping the daemon is
 destructive to every running container, so the stop button arms on the first click and runs on the
 second, with an expiring confirmation ([[adr-0007-stop-button-confirmation-and-narrow-grant]]); no stop
 without the interactive polkit prompt, and no widening of the grant for stop — `ALLOWED_VERBS` stays
-`["start"]`; no restart/disable/mask button; no stop entry in the context menu, because a menu is also
-a one-click surface; no rootless or user-scoped daemon support; no `docker events` subscription (state
+`["start"]`; no scheduled or systemd-owned shutdown — the countdown is widget-owned, so a reload cancels
+it; no countdown of 10 minutes or less, and no unvalidated duration — the configured minutes size a
+local deadline and never reach the fixed `systemctl poweroff` command
+([[adr-0009-widget-owned-shutdown-countdown]]); no polkit rule for the power-off and no widening of the
+grant for it — unlike the docker stop it does not prompt, so the countdown and the Cancel button, not a
+password, are the safeguard; no restart/disable/mask button; no stop entry in the context menu, because
+a menu is also a one-click surface; no rootless or user-scoped daemon support; no `docker events` subscription (state
 is polled, not streamed); no command string taken from configuration — the single sanctioned exception
 is the video-download row, where configuration supplies only validated values inside a command the
 widget builds ([[adr-0006-video-downloader-command-boundary]]); no privileged work in the installer
@@ -49,8 +55,8 @@ beyond the explicit `install-polkit` command.
 
 | Slice | Description | Keywords | Entry points | Primary agents |
 |---|---|---|---|---|
-| widget | The QML surfaces Plasma renders: representations, actions, polling wiring, download row, config page | plasmoid, qml, representation, popup, icon, dot, layout, config, tooltip, download, yt-dlp, video | package/io.github.daver-ui.dockerstatus/contents/ | coder, tester |
-| status | Pure parsing, state and severity logic, plus the download command boundary; zero dependencies | parse, severity, systemctl, is-active, unknown, summarize, container, run token, shell quote, url, yt-dlp | package/io.github.daver-ui.dockerstatus/contents/ui/dockerstatus.js | coder, tester, reviewer |
+| widget | The QML surfaces Plasma renders: representations, actions, polling wiring, download row, shutdown countdown, config page | plasmoid, qml, representation, popup, icon, dot, layout, config, tooltip, download, yt-dlp, video, shutdown, countdown, poweroff | package/io.github.daver-ui.dockerstatus/contents/ | coder, tester |
+| status | Pure parsing, state and severity logic, plus the download command boundary and the shutdown-duration resolver; zero dependencies | parse, severity, systemctl, is-active, unknown, summarize, container, run token, shell quote, url, yt-dlp, shutdown, countdown, poweroff | package/io.github.daver-ui.dockerstatus/contents/ui/dockerstatus.js | coder, tester, reviewer |
 | privilege | The single scoped polkit grant that makes the start button passwordless | polkit, privilege, wheel, manage-units, password, sudo, pkexec | polkit/49-docker-status-widget.rules | reviewer |
 | installer | The lifecycle CLI: install, remove, grant, report, run tests | install, kpackagetool6, uninstall, status, plasmoid, reversible | install.sh | coder, tester |
 | verification | How the project is proven: test harness, linters, probe evidence, symptom routing | test, qmllint, probe, evidence, symptom, troubleshoot | tests/dockerstatus.test.mjs, verification/troubleshooting.md | tester, reviewer |
@@ -86,7 +92,7 @@ package/io.github.daver-ui.dockerstatus/      the plasmoid KPackage — what Pla
     └── ui/
         ├── main.qml                  PlasmoidItem: fixed commands, polling, actions, download wiring, state
         ├── CompactRepresentation.qml panel: icon + severity dot
-        ├── FullRepresentation.qml    popup/desktop: state, list, start/stop action row, feedback, download row, tagline
+        ├── FullRepresentation.qml    popup/desktop: state, list, start/stop action row, feedback, download row, shutdown countdown, tagline
         ├── SeverityDot.qml           the single severity -> theme colour mapping
         ├── dockerstatus.js           pure logic, no QML types, unit tested
         └── config/ConfigGeneral.qml  config page widgets (poll, icon, list, download settings)
@@ -137,6 +143,9 @@ docs/                                 this corpus — entry: readme.md, routing:
   message and nothing else.
 - **Download job** — one `downloadAction` one-shot: a yt-dlp command whose `stdout`/`stderr` accumulate
   across events until the event carrying `exit code` closes it.
+- **Shutdown countdown** — widget-owned state: a `Date.now()` wall-clock deadline plus a one-second
+  ticker, armed by play and cancelled locally by stop (no privilege). The configured minutes size the
+  deadline only and never reach the fixed `systemctl poweroff` command.
 - **Shell quote** — `shellQuote()`'s single-quote wrapping with `'\''` escaping; the protection that
   keeps a pasted value one inert shell argument.
 - **Data engine** — the `plasma5support` `DataSource` with the `executable` engine.
@@ -195,3 +204,7 @@ docs/                                 this corpus — entry: readme.md, routing:
   [troubleshooting.md](verification/troubleshooting.md#the-download-finished-but-no-file-appeared)
 - "the cookies browser setting shows brave after opening the options" →
   [troubleshooting.md](verification/troubleshooting.md#the-cookies-browser-setting-shows-brave-after-opening-the-options)
+- "the shutdown play button stays disabled" →
+  [troubleshooting.md](verification/troubleshooting.md#the-shutdown-play-button-stays-disabled)
+- "the machine powers off without asking for a password" →
+  [troubleshooting.md](verification/troubleshooting.md#the-machine-powers-off-without-asking-for-a-password)

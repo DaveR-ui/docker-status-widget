@@ -19,11 +19,12 @@ two contextual actions, renders a panel item and a popup, and hosts a config pag
 
 ## Boundaries
 
-**In:** representation selection and layout; the six `P5Support.DataSource` instances and their wiring
-(four for the Docker side, two for the download row); `Plasmoid.contextualActions` and the
-start/stop/refresh handlers; the download handler and its observable state; i18n strings, tooltips and
-`Plasmoid.title`; the severity-to-colour mapping; the kcfg entries and the `cfg_*` alias wiring; the
-config page widgets.
+**In:** representation selection and layout; the seven `P5Support.DataSource` instances and their wiring
+(four for the Docker side, two for the download row, one for the power-off); `Plasmoid.contextualActions`
+and the start/stop/refresh handlers; the download handler and its observable state; the shutdown
+countdown, its ticker, its inline minutes editor and its observable state; i18n strings, tooltips and
+`Plasmoid.title`; the
+severity-to-colour mapping; the kcfg entries and the `cfg_*` alias wiring; the config page widgets.
 
 **Out:** parsing, state and severity *decisions* belong to [status-slice](../status/status-slice.md);
 the privilege grant belongs to [privilege-slice](../privilege/privilege-slice.md); installing the
@@ -45,7 +46,7 @@ assembly lives in the [status slice](../status/status-slice.md) and whose bounda
 ## How it works
 
 `PlasmoidItem` is the root. `preferredRepresentation` is the full representation on a planar
-(desktop) form factor and null in a panel, which falls back to the compact one. Six `DataSource`
+(desktop) form factor and null in a panel, which falls back to the compact one. Seven `DataSource`
 instances with the `executable` engine carry every command:
 
 | id | connectedSources | interval | role |
@@ -56,6 +57,7 @@ instances with the `executable` engine carry every command:
 | `daemonAction` | assigned on demand | `0` | the privileged action, `systemctl start docker` or `systemctl stop docker`; one source serves both because only one action can be in flight |
 | `homeSource` | `printf %s "$HOME"` (a constant) | `0` | one-shot at load: the shell expands `$HOME`; the result is validated before it is used |
 | `downloadAction` | the assembled yt-dlp command, assigned on demand | `0` | one-shot video download; the single event at exit closes the run, and the consumer still guards and accumulates in case a future engine streams |
+| `powerAction` | the fixed `systemctl poweroff`, assigned on demand | `0` | one-shot at countdown expiry; clears `shutdownInFlight` and surfaces the exit code and `stderr`; can stay alive while `systemctl` waits for the shutdown job |
 
 `effectivePollIntervalMs` is `max(1000, pollIntervalSeconds * 1000)`, so a configured sub-second
 interval is silently floored. `onNewData` handlers write `root.daemonState` and `root.containers`;
@@ -78,6 +80,27 @@ which shell-quotes every value. `homeSource` exists only to feed `homeDirectory`
 configured `~/Downloads` must be expanded to an absolute path before it is quoted. When the run ends,
 `downloadFeedbackSeverity` drives the same `SeverityDot` the header uses.
 
+The shutdown countdown is the other stateful handler, and it is widget-owned.
+`startShutdownCountdown()` arms it by setting `shutdownDeadlineMs` to `Date.now()` plus
+`shutdownMinutes * 60 * 1000`; a one-second `shutdownTicker` then recomputes `shutdownRemainingSeconds`
+from `Date.now()` against
+that fixed deadline through `DockerStatus.shutdownRemainingSeconds()`, so a late tick cannot make the
+deadline drift. At zero the ticker calls `firePowerOff()`, which runs the fixed `powerOffCommand` through
+`withRunToken()` on `powerAction` and surfaces the exit code and `stderr`. `stopShutdownCountdown()` clears
+the pending state locally and needs no privilege. Because the deadline lives in `main.qml`, a reload drops
+it and silently cancels a pending shutdown — the intended fail-safe. `shutdownReady` derives from
+`DockerStatus.resolveShutdownMinutes(Plasmoid.configuration.shutdownCountdownMinutes)`: a `null` result
+disables play rather than arming a nonsense countdown. The duration is also editable inline in the popup:
+the representation carries the raw stored string (`shutdownMinutesText`) and emits
+`shutdownMinutesEdited(raw)` with the field text; the field seeds once, mirrors inbound stored changes
+only while it is unfocused, and re-syncs a valid field value from the stored string when it loses focus
+(so an external change the focused sync skipped cannot leave the two surfaces disagreeing, while invalid
+user text stays visible to be fixed). `setShutdownMinutes(raw)` — the ONLY writer of the
+kcfg entry — resolves through that same `DockerStatus.resolveShutdownMinutes()`, refuses a `null` value
+without persisting, skips a redundant write, and otherwise writes
+`Plasmoid.configuration.shutdownCountdownMinutes`. The representation validates its field through the same
+resolver but reads and writes no configuration ([[adr-0010-inline-shutdown-minutes-in-the-representation]]).
+
 ## Conventions of this slice
 
 - Commands are `readonly` constants in `main.qml`, with ONE deliberate exception: the video-download
@@ -85,13 +108,18 @@ configured `~/Downloads` must be expanded to an absolute path before it is quote
   validated configuration values, and every interpolated value is shell-quoted. Configuration never
   supplies a command; it supplies values inside one. A second exception needs a new ADR — see
   [ADR-0006](../adrs/adr-0006-video-downloader-command-boundary.md).
+- The shutdown countdown is widget-owned and its command is a fixed constant (`powerOffCommand`). The
+  configured minutes size a local `Date.now()` deadline and never reach a shell; the cancel path is purely
+  local and needs no privilege ([[adr-0009-widget-owned-shutdown-countdown]]).
 - The download row lives only in the full representation. It is never rendered in the panel, and its
   tooltip is attached to the `ToolButton`: `PlasmaComponents3.ToolTip` only renders when its parent is
   an `AbstractButton`.
 - Every one-shot assignment goes through `DockerStatus.withRunToken()`; identical `connectedSources`
   strings are a no-op in the engine (see [data-engine-contract](../status/data-engine-contract.md)).
-- Representations receive properties and emit signals. They never reach for a `DataSource`, and they
-  read `Plasmoid.configuration` only for the panel icon.
+- Representations receive properties and emit signals. They never reach for a `DataSource`, and a
+  representation reads `Plasmoid.configuration` only for the panel icon; persisting a setting goes through
+  a value-carrying signal to `main.qml`, never through configuration access in the representation
+  ([[adr-0010-inline-shutdown-minutes-in-the-representation]]).
 - The severity-to-colour switch lives only in `SeverityDot.qml`. A new state adds a severity in
   [status-slice](../status/status-slice.md), never a colour here.
 - The `cfg_*` alias target must stay a plain writable property; aliasing an expression saves nothing
@@ -128,5 +156,15 @@ a running Plasma session.
   would change this slice's assumptions about which command answers.
 - The download row cannot be instantiated outside plasmashell either; only its command boundary is
   unit tested, so its layout and enable/disable behaviour are reviewed until they run in a session.
+- The countdown lives in QML, so the play/stop timing, the inline field's interaction and the effective
+  passwordless power-off are reviewed, not tested; the pure resolver (`resolveShutdownMinutes`), the two
+  helpers (`shutdownRemainingSeconds`, `formatCountdown`) and the inline field's wiring (inbound property,
+  edit signal, single-writer rule, seed/sync guards, the focus-loss mirror guarded against clobbering the
+  user's error text) are pinned by the Node suite as static text.
+- A reload or plasmashell restart cancels a pending shutdown on purpose: the deadline is widget-owned and
+  does not survive the widget being replaced.
+- The countdown uses absolute-deadline semantics: a forward system-clock step, or a resume after the
+  deadline already passed while suspended, fires the power-off on the next tick. The `Cancel` button and
+  the configurable duration are the mitigations.
 - The download depends on external tools the widget cannot probe for: a wrong `yt-dlp` binary or a
   missing JavaScript runtime fails at download time with yt-dlp's own message, not at load time.

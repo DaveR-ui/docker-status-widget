@@ -44,11 +44,36 @@ ColumnLayout {
     property string downloadFeedbackSeverity: "muted"
     property string taglineText: ""
     property string cookiesBrowser: ""
+    property bool shutdownReady: false
+    property int shutdownMinutes: 0
+    property bool shutdownPending: false
+    property bool shutdownInFlight: false
+    property int shutdownRemainingSeconds: 0
+    property string shutdownFeedback: ""
+    property string shutdownFeedbackSeverity: "muted"
+    // The RAW stored kcfg value, deliberately a string and not a number: a bad stored
+    // value must stay visible in the inline field so the user can fix it, instead of
+    // being hidden behind a resolved default. main.qml forwards it verbatim.
+    property string shutdownMinutesText: ""
 
     signal startRequested()
     signal stopRequested()
     signal refreshRequested()
     signal downloadRequested(string url)
+    signal shutdownStartRequested()
+    signal shutdownStopRequested()
+    signal shutdownMinutesEdited(string text)
+
+    // The inline field validates through the same pure resolver main.qml uses to size the
+    // deadline, so the field, the play gate and the persisted value cannot drift apart.
+    // Validating raw text here also keeps this representation free of its own parsing.
+    readonly property bool shutdownMinutesFieldValid: DockerStatus.resolveShutdownMinutes(shutdownMinutesField.text) !== null
+
+    // Play is disabled the instant the sequence starts and stays disabled until stop
+    // cancels it or the power-off completes: the button is the arming surface, so one
+    // activation must not be able to arm twice. shutdownMinutesFieldValid is the second
+    // gate: an unusable inline value must disable play, not be rounded to something else.
+    readonly property bool shutdownPlayEnabled: fullRoot.shutdownReady && fullRoot.shutdownMinutesFieldValid && !fullRoot.shutdownPending && !fullRoot.shutdownInFlight
 
     // The label shows the value the command will actually use, resolved by the same
     // function main.qml feeds into buildVideoDownloadCommand(), so it can never claim a
@@ -118,6 +143,18 @@ ColumnLayout {
         if (fullRoot.actionInFlight) {
             fullRoot.disarmStop();
         }
+    }
+
+    // Inbound sync for the inline minutes field. Both guards matter: the field's own programmatic
+    // flag keeps a mirrored write from echoing back as a user edit, and the focus guard keeps a
+    // reload-driven change from overwriting what the user is in the middle of typing.
+    onShutdownMinutesTextChanged: {
+        if (!shutdownMinutesField.seeded || shutdownMinutesField.programmatic) return;
+        if (shutdownMinutesField.activeFocus) return;
+        if (shutdownMinutesField.text === fullRoot.shutdownMinutesText) return;
+        shutdownMinutesField.programmatic = true;
+        shutdownMinutesField.text = fullRoot.shutdownMinutesText;
+        shutdownMinutesField.programmatic = false;
     }
 
     spacing: Kirigami.Units.smallSpacing
@@ -366,6 +403,162 @@ ColumnLayout {
         PlasmaComponents3.Label {
             Layout.fillWidth: true
             text: fullRoot.downloadFeedback
+            wrapMode: Text.WordWrap
+            font: Kirigami.Theme.smallFont
+        }
+    }
+
+    // --- Countdown to Extinction ---------------------------------------------
+    // The countdown itself is owned by main.qml: this representation only renders the
+    // local deadline and emits start/stop. Play disables the instant the sequence starts,
+    // so it can only ever be armed once; stop is the only way to cancel and, because
+    // cancel is purely local, it needs no privilege. The power-off adds no polkit rule
+    // and does not widen the grant (ALLOWED_VERBS stays ["start"]); unlike the daemon
+    // stop it does not prompt, because logind's default policy for
+    // org.freedesktop.login1.power-off is allow_active=yes. The safeguards are the
+    // deliberate activation, the more-than-10-minute countdown, the visible countdown
+    // and the cancel button, not a password gate (adr-0009).
+    Rectangle {
+        Layout.fillWidth: true
+        Layout.topMargin: Kirigami.Units.smallSpacing
+        Layout.preferredHeight: 1
+        color: Kirigami.Theme.disabledTextColor
+        opacity: 0.3
+    }
+
+    PlasmaComponents3.Label {
+        Layout.fillWidth: true
+        text: i18n("Countdown to Extinction")
+        font.bold: true
+    }
+
+    // The countdown length is editable here, not only in the config page, because this is
+    // the surface where the play button and its disabled state actually live. The field
+    // deliberately refuses no keystrokes: a non-number has to be typeable so the error cue
+    // below can explain why play is disabled. The seed/sync pair exists because a plain
+    // `text:` binding would be destroyed by the first user edit -- the same trap the config
+    // page's cookies combo documents -- so the stored value is copied in once and afterwards
+    // only mirrored while the field is unfocused.
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: Kirigami.Units.smallSpacing
+
+        PlasmaComponents3.Label {
+            text: i18n("Minutes until power-off:")
+        }
+
+        PlasmaComponents3.TextField {
+            id: shutdownMinutesField
+            Layout.fillWidth: false
+            Layout.preferredWidth: Kirigami.Units.gridUnit * 5
+            placeholderText: i18n("15")
+            // Disabled while a countdown is pending or in flight: the deadline is snapshotted
+            // in main.qml, so editing here could only imply a running deadline would change.
+            enabled: !fullRoot.shutdownPending && !fullRoot.shutdownInFlight
+            // No new severity mapping: an invalid value just tints the text, and the hint
+            // below says what to fix. The dot stays reserved for status severity.
+            color: fullRoot.shutdownMinutesFieldValid ? Kirigami.Theme.textColor : Kirigami.Theme.negativeTextColor
+
+            // seeded flips LAST in Component.onCompleted, after programmatic is cleared, so
+            // the seed write can never look like a user edit and emit.
+            property bool seeded: false
+            property bool programmatic: false
+
+            Component.onCompleted: {
+                programmatic = true;
+                text = fullRoot.shutdownMinutesText;
+                programmatic = false;
+                seeded = true;
+            }
+
+            onTextChanged: {
+                if (!shutdownMinutesField.seeded || shutdownMinutesField.programmatic) return;
+                fullRoot.shutdownMinutesEdited(shutdownMinutesField.text);
+            }
+
+            // A stored value that changed while this field had focus would otherwise never be
+            // mirrored: onShutdownMinutesTextChanged skips a focused field, and nothing re-runs
+            // on blur. Only a VALID text is mirrored -- invalid text is the user's to fix and
+            // must stay visible, and a valid user-typed value is already persisted, so a
+            // valid-but-different text on blur can only be an external change that was missed.
+            onActiveFocusChanged: {
+                if (activeFocus || !shutdownMinutesField.seeded || shutdownMinutesField.programmatic) return;
+                if (shutdownMinutesField.text === fullRoot.shutdownMinutesText) return;
+                if (DockerStatus.resolveShutdownMinutes(shutdownMinutesField.text) === null) return;
+                shutdownMinutesField.programmatic = true;
+                shutdownMinutesField.text = fullRoot.shutdownMinutesText;
+                shutdownMinutesField.programmatic = false;
+            }
+        }
+    }
+
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: Kirigami.Units.smallSpacing
+
+        PlasmaComponents3.Button {
+            Layout.fillWidth: true
+            icon.name: "media-playback-start"
+            text: fullRoot.shutdownPending
+                ? i18n("Shutting down…")
+                : i18n("Shut down")
+            enabled: fullRoot.shutdownPlayEnabled
+            onClicked: fullRoot.shutdownStartRequested()
+
+            PlasmaComponents3.ToolTip {
+                text: i18nc("@info", "Arm a %1-minute countdown; the machine powers off when it expires", fullRoot.shutdownMinutes)
+            }
+        }
+
+        PlasmaComponents3.Button {
+            Layout.fillWidth: false
+            Layout.preferredWidth: Kirigami.Units.gridUnit * 7
+            icon.name: "media-playback-stop"
+            text: i18n("Cancel")
+            enabled: fullRoot.shutdownPending
+            onClicked: fullRoot.shutdownStopRequested()
+
+            PlasmaComponents3.ToolTip {
+                text: i18n("Cancel the pending shutdown")
+            }
+        }
+    }
+
+    PlasmaComponents3.Label {
+        Layout.fillWidth: true
+        visible: fullRoot.shutdownPending
+        text: i18nc("@info", "Powering off in %1", DockerStatus.formatCountdown(fullRoot.shutdownRemainingSeconds))
+        opacity: 0.7
+        font: Kirigami.Theme.smallFont
+    }
+
+    // A disabled play button must never look dead without a reason: the inline value that
+    // failed validation says what to fix. The countdown is now editable on this surface, so
+    // pointing at the config page would be stale.
+    PlasmaComponents3.Label {
+        Layout.fillWidth: true
+        visible: !fullRoot.shutdownMinutesFieldValid
+        text: i18n("Enter a whole number of minutes greater than 10.")
+        color: Kirigami.Theme.negativeTextColor
+        wrapMode: Text.WordWrap
+        font: Kirigami.Theme.smallFont
+    }
+
+    // The dot carries the severity, exactly as in the header: no second
+    // severity-to-colour switch is allowed to exist.
+    RowLayout {
+        Layout.fillWidth: true
+        visible: fullRoot.shutdownFeedback !== ""
+        spacing: Kirigami.Units.smallSpacing
+
+        SeverityDot {
+            Layout.alignment: Qt.AlignVCenter
+            severity: fullRoot.shutdownFeedbackSeverity
+        }
+
+        PlasmaComponents3.Label {
+            Layout.fillWidth: true
+            text: fullRoot.shutdownFeedback
             wrapMode: Text.WordWrap
             font: Kirigami.Theme.smallFont
         }

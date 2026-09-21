@@ -53,6 +53,17 @@ user sees the ordinary password prompt. All five passing returns `YES`. The file
 `/etc/polkit-1/rules.d/49-docker-status-widget.rules` as `root:root`, mode `0644`, and polkit (or
 `polkitd`) is restarted best-effort afterwards.
 
+The grant covers exactly one action id (systemd `manage-units`). The widget's shutdown countdown is
+**outside** it: `systemctl poweroff` reaches logind, not systemd's `manage-units`, and the widget adds no
+rule for it. `ALLOWED_VERBS` is untouched — still exactly `["start"]`. Unlike `systemctl stop docker`, the
+power-off does **not** prompt: `/usr/share/polkit-1/actions/org.freedesktop.login1.policy` gives
+`org.freedesktop.login1.power-off` the defaults `allow_any=auth_admin_keep`,
+`allow_inactive=auth_admin_keep`, **`allow_active=yes`** (`power-off-multiple-sessions` is likewise
+`allow_active=yes`), so a local active session is authorised without authentication — the `pkcheck` probe
+for `org.freedesktop.login1.power-off` exits 0 without interaction. The safeguards for
+that action are the countdown and the `Cancel` button, not a password
+([[adr-0009-widget-owned-shutdown-countdown]]).
+
 ## Conventions of this slice
 
 - The verb check stays an array membership test. Widening the grant means editing `ALLOWED_VERBS`
@@ -90,3 +101,7 @@ button always prompts, installed rule or not: it is outside the grant by decisio
   ([[adr-0007-stop-button-confirmation-and-narrow-grant]]).
 - The rule does not enable `docker.service` at boot; that stays a separate, deliberate system
   decision.
+- The power-off is not covered by this grant and needs no rule: logind's `allow_active=yes` default makes
+  a local active session power off without a password. That is the platform's policy, not this project's,
+  and it is not a prompt this slice can produce. The countdown and the `Cancel` button are the only
+  safeguards ([[adr-0009-widget-owned-shutdown-countdown]]).

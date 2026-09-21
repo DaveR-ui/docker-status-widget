@@ -52,5 +52,10 @@
       <label>Muted text shown at the bottom of the widget. Leave empty to hide it.</label>
       <default>Persiguiendo la singularidad</default>
     </entry>
+
+    <entry name="shutdownCountdownMinutes" type="String">
+      <label>Minutes until the widget powers the machine off after the shutdown button is pressed. Must be a whole number greater than 10.</label>
+      <default>15</default>
+    </entry>
   </group>
 </kcfg>

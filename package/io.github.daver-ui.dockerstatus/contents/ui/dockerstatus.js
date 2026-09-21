@@ -498,3 +498,98 @@ function extractErrorLine(output) {
 
     return chosen;
 }
+
+/*
+ * Countdown to extinction.
+ *
+ * The configured minutes size a LOCAL deadline owned by the widget; the number
+ * itself never reaches a shell and is never interpolated into a command. The
+ * power-off command is a fixed constant in main.qml and this value is a duration,
+ * not a fragment of it. Validation exists so that an unusable value disables the
+ * play control with an explanation instead of arming a nonsense countdown.
+ */
+
+var SHUTDOWN_MINUTES_DEFAULT = 15;
+var SHUTDOWN_MINUTES_MINIMUM = 10;
+
+/**
+ * Resolves the configured countdown length to a whole number of minutes strictly
+ * greater than SHUTDOWN_MINUTES_MINIMUM, or null when the value cannot be used.
+ *
+ * undefined/null and an empty string mean "nothing configured" and yield the
+ * default rather than an error. Anything that is not a plain run of digits --
+ * "abc", "12abc", "12.5", "1e3", " 1 2", "-5", "+15" -- is refused, as is any
+ * integer at or below the minimum (0 included). Returning null is what keeps a
+ * nonsensical value from arming a countdown: callers disable play instead.
+ */
+function resolveShutdownMinutes(raw) {
+    if (raw === undefined || raw === null) {
+        return SHUTDOWN_MINUTES_DEFAULT;
+    }
+
+    var text = String(raw).replace(/\r/g, "").trim();
+
+    if (text === "") {
+        return SHUTDOWN_MINUTES_DEFAULT;
+    }
+
+    if (!/^[0-9]+$/.test(text)) {
+        return null;
+    }
+
+    var minutes = parseInt(text, 10);
+    if (!isFinite(minutes) || minutes <= SHUTDOWN_MINUTES_MINIMUM) {
+        return null;
+    }
+
+    return minutes;
+}
+
+/**
+ * Whole seconds left until a millisecond deadline, rounded up and floored at zero.
+ * Any input that cannot be used as a timestamp yields 0, so the ticker can never
+ * show a negative or garbage countdown.
+ */
+function shutdownRemainingSeconds(deadlineMs, nowMs) {
+    if (deadlineMs === undefined || deadlineMs === null
+            || nowMs === undefined || nowMs === null) {
+        return 0;
+    }
+
+    var deadline = Number(deadlineMs);
+    var now = Number(nowMs);
+
+    if (!isFinite(deadline) || !isFinite(now)) {
+        return 0;
+    }
+
+    var seconds = Math.ceil((deadline - now) / 1000);
+    return seconds > 0 ? seconds : 0;
+}
+
+/**
+ * Renders whole seconds as "M:SS", growing to "H:MM:SS" once the value reaches an
+ * hour. Zero, negatives, non-finite values and garbage all render as "0:00".
+ * No padStart: this file must run under a bare ES5 engine, so padding is manual.
+ */
+function formatCountdown(seconds) {
+    var total = Number(seconds);
+    if (!isFinite(total) || total <= 0) {
+        return "0:00";
+    }
+
+    total = Math.floor(total);
+
+    var hours = Math.floor(total / 3600);
+    var minutes = Math.floor((total % 3600) / 60);
+    var secs = total % 60;
+
+    var secsText = secs < 10 ? "0" + secs : String(secs);
+
+    if (hours > 0) {
+        var minutesText = minutes < 10 ? "0" + minutes : String(minutes);
+        return hours + ":" + minutesText + ":" + secsText;
+    }
+
+    return minutes + ":" + secsText;
+}

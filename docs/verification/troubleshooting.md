@@ -213,3 +213,41 @@ open that directory. If no path was reported, search the configured folder for `
 the setting is absolute or starts with `~/`, and that the user can write there.
 **Reference:** [../widget/ui-surfaces.md](../widget/ui-surfaces.md) — the download row's result
 feedback.
+
+## the shutdown play button stays disabled
+
+**Context:** the full representation, in the "Countdown to Extinction" section, after typing a value into
+its inline "Minutes until power-off" field (or after setting the countdown on the config page).
+**Root cause:** the value shown could not arm a countdown, so `resolveShutdownMinutes()` returned `null`
+and the play button is disabled on purpose. That happens for anything that is not a plain run of digits —
+`abc`, `12abc`, `12.5`, `1e3`, ` 1 2`, `-5`, `+15` — and for any whole number at or below 10 (`10`, `0`,
+`1`). An empty or absent value is **not** a failure: it resolves to the default 15.
+**Fix:** type a whole number greater than 10 into the inline "Minutes until power-off" field, or set
+"Shutdown countdown (minutes)" (the `shutdownCountdownMinutes` kcfg entry) on the config page to the same.
+The popup shows "Enter a whole number of minutes greater than 10." under the field while the value is
+unusable, so the button is not silently dead; a valid edit persists through `main.qml` immediately, and an
+invalid one is never persisted.
+**Reference:** [../status/status-slice.md](../status/status-slice.md) — `resolveShutdownMinutes`;
+[../widget/ui-surfaces.md](../widget/ui-surfaces.md) — the shutdown section;
+[../adrs/adr-0010-inline-shutdown-minutes-in-the-representation.md](../adrs/adr-0010-inline-shutdown-minutes-in-the-representation.md)
+— the inline field and the single-writer rule.
+
+## the machine powers off without asking for a password
+
+**Context:** the countdown expires and the machine powers off; no polkit prompt appears.
+**Root cause:** expected behaviour, not a fault. The widget adds no polkit rule and does not widen the
+docker grant (`ALLOWED_VERBS` is untouched, still exactly `["start"]`). The power-off is a logind action,
+and `/usr/share/polkit-1/actions/org.freedesktop.login1.policy` gives
+`org.freedesktop.login1.power-off` the defaults `allow_any=auth_admin_keep`,
+`allow_inactive=auth_admin_keep`, `allow_active=yes` (`power-off-multiple-sessions` is likewise
+`allow_active=yes`), so a local active session is authorised without authentication — the `pkcheck` probe
+for `org.freedesktop.login1.power-off` exits 0 without interaction. Unlike
+`systemctl stop docker`, the power-off does not prompt
+([[adr-0009-widget-owned-shutdown-countdown]]).
+**Fix:** none is needed. The safeguards are the deliberate activation, the more-than-10-minute countdown,
+the live visible countdown and the `Cancel` button ([[adr-0009-widget-owned-shutdown-countdown]]). Do
+**not** "fix" the absent prompt by widening `ALLOWED_VERBS` or adding a rule: the power-off is a logind
+action, not a systemd `manage-units` verb, so a rule would not create a password gate — it would only
+weaken the docker grant. Changing logind's default is a system-policy edit, outside this widget.
+**Reference:** [privilege-slice.md](../privilege/privilege-slice.md) — why the power-off is outside the
+grant and does not prompt.

@@ -5,13 +5,13 @@ around them is human-owned and survives regeneration; nothing inside them should
 hand.
 
 <!-- BEGIN GENERATED: index -->
-<!-- snapshot: 2026-09-12 -->
+<!-- snapshot: 2026-09-21 -->
 ## Generated index
 
 ### Overview
 
-- Markdown files: 36
-- Context docs: 2 | Notes: 8 | Hubs: 6 | ADRs: 8 | Templates: 8 | Checklists: 2
+- Markdown files: 38
+- Context docs: 2 | Notes: 8 | Hubs: 6 | ADRs: 10 | Templates: 8 | Checklists: 2
 
 ### Tree
 
@@ -27,6 +27,8 @@ hand.
   - adr-0006-video-downloader-command-boundary.md — adr, id: `adr-0006-video-downloader-command-boundary`
   - adr-0007-stop-button-confirmation-and-narrow-grant.md — adr, id: `adr-0007-stop-button-confirmation-and-narrow-grant`
   - adr-0008-configurable-cookies-browser-and-bottom-text.md — adr, id: `adr-0008-configurable-cookies-browser-and-bottom-text`
+  - adr-0009-widget-owned-shutdown-countdown.md — adr, id: `adr-0009-widget-owned-shutdown-countdown`
+  - adr-0010-inline-shutdown-minutes-in-the-representation.md — adr, id: `adr-0010-inline-shutdown-minutes-in-the-representation`
   - adr-index.md — hub, id: `adr-index`
 - checklists/
   - bootstrap-checklist.md — checklist, id: `bootstrap-checklist`

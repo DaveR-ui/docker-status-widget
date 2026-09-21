@@ -4,6 +4,8 @@ import QtQuick.Layouts
 
 import org.kde.kirigami as Kirigami
 
+import "../dockerstatus.js" as DockerStatus
+
 Kirigami.FormLayout {
     id: configPage
 
@@ -18,6 +20,14 @@ Kirigami.FormLayout {
     property alias cfg_jsRuntime: jsRuntime.text
     property alias cfg_ytDlpBinary: ytDlpBinary.text
     property alias cfg_taglineText: taglineText.text
+    property alias cfg_shutdownCountdownMinutes: shutdownCountdownMinutes.text
+
+    // The countdown setting is a String on purpose: its control is a plain TextField, so a
+    // non-numeric value can reach this page and must be able to surface an error. An
+    // Int/SpinBox could never produce one, which would make the error requirement vacuous.
+    // The value is a local duration that never reaches a command; this same pure resolver
+    // decides in main.qml whether the value can arm a countdown at all.
+    readonly property bool shutdownMinutesValid: DockerStatus.resolveShutdownMinutes(configPage.cfg_shutdownCountdownMinutes) !== null
 
     // The one setting that is NOT an alias. Plasma hands every stored value to this page as an
     // initial property, and that write reaches an editText alias before the combo initialises:
@@ -138,5 +148,24 @@ Kirigami.FormLayout {
 
         QQC2.ToolTip.text: i18n("Muted text shown at the bottom of the widget. Leave empty to hide it.")
         QQC2.ToolTip.visible: hovered
+    }
+
+    QQC2.TextField {
+        id: shutdownCountdownMinutes
+        Kirigami.FormData.label: i18n("Shutdown countdown (minutes):")
+
+        QQC2.ToolTip.text: i18n("Whole number of minutes greater than 10. The widget powers the machine off this long after you press Shut down.")
+        QQC2.ToolTip.visible: hovered
+    }
+
+    // A value the resolver refuses disables the play button in the popup, so this row is
+    // what stops the button looking dead for no reason. The setting is validated by the
+    // same pure function main.qml uses to decide whether a countdown can be armed.
+    QQC2.Label {
+        visible: !configPage.shutdownMinutesValid
+        text: i18n("Enter a whole number of minutes greater than 10.")
+        color: Kirigami.Theme.negativeTextColor
+        wrapMode: Text.WordWrap
+        font: Kirigami.Theme.smallFont
     }
 }

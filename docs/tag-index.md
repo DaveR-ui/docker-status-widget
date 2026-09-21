@@ -4,10 +4,10 @@ Tag → document, for when a question arrives in vocabulary the tree does not ob
 by `node docs/validate.js --write`; regenerate rather than edit.
 
 <!-- BEGIN GENERATED: tags -->
-<!-- snapshot: 2026-09-12 -->
+<!-- snapshot: 2026-09-21 -->
 ## Generated tag index
 
-- **adr** — adr-0001-corpus-location-and-entry-point, adr-0002-lowercase-naming-convention, adr-0003-slice-taxonomy, adr-0004-scoped-polkit-grant, adr-0005-doc-classes-and-body-shape-exceptions, adr-0006-video-downloader-command-boundary, adr-0007-stop-button-confirmation-and-narrow-grant, adr-0008-configurable-cookies-browser-and-bottom-text, adr-index, adr-template
+- **adr** — adr-0001-corpus-location-and-entry-point, adr-0002-lowercase-naming-convention, adr-0003-slice-taxonomy, adr-0004-scoped-polkit-grant, adr-0005-doc-classes-and-body-shape-exceptions, adr-0006-video-downloader-command-boundary, adr-0007-stop-button-confirmation-and-narrow-grant, adr-0008-configurable-cookies-browser-and-bottom-text, adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation, adr-index, adr-template
 - **bootstrap** — bootstrap-checklist
 - **brownfield** — adr-0003-slice-taxonomy, slice-generalities-template
 - **catalog** — interface-surface-template
@@ -15,7 +15,7 @@ by `node docs/validate.js --write`; regenerate rather than edit.
 - **cli** — installer-index, installer-slice
 - **command-boundary** — adr-0006-video-downloader-command-boundary
 - **components** — ui-inventory-template
-- **config** — adr-0008-configurable-cookies-browser-and-bottom-text
+- **config** — adr-0008-configurable-cookies-browser-and-bottom-text, adr-0010-inline-shutdown-minutes-in-the-representation
 - **contract** — adr-0005-doc-classes-and-body-shape-exceptions, document-template, interface-surface-template, new-note-checklist
 - **convention** — adr-0002-lowercase-naming-convention
 - **daemon** — adr-0007-stop-button-confirmation-and-narrow-grant
@@ -39,13 +39,15 @@ by `node docs/validate.js --write`; regenerate rather than edit.
 - **navigation** — hub-template, readme
 - **packaging** — installer-slice
 - **polkit** — adr-0004-scoped-polkit-grant, adr-0007-stop-button-confirmation-and-narrow-grant, privilege-index, privilege-slice
+- **power-management** — adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation
 - **privilege** — adr-0004-scoped-polkit-grant, adr-0007-stop-button-confirmation-and-narrow-grant, privilege-index, privilege-slice
 - **project** — project
 - **project-md** — project-md-template
 - **qml** — widget-index, widget-slice, widget-ui-surfaces
 - **routing** — adr-0003-slice-taxonomy, project
 - **schema** — adr-0005-doc-classes-and-body-shape-exceptions
-- **security** — adr-0004-scoped-polkit-grant, adr-0006-video-downloader-command-boundary, adr-0007-stop-button-confirmation-and-narrow-grant, privilege-slice
+- **security** — adr-0004-scoped-polkit-grant, adr-0006-video-downloader-command-boundary, adr-0007-stop-button-confirmation-and-narrow-grant, adr-0009-widget-owned-shutdown-countdown, privilege-slice
+- **shutdown** — adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation
 - **slice** — installer-slice, privilege-slice, slice-generalities-template, status-slice, verification-slice, widget-slice
 - **slices** — adr-0003-slice-taxonomy, project
 - **status** — data-engine-contract, status-index, status-slice
@@ -57,7 +59,7 @@ by `node docs/validate.js --write`; regenerate rather than edit.
 - **tests** — verification-index, verification-slice
 - **tooling** — adr-0002-lowercase-naming-convention
 - **troubleshooting** — troubleshooting, troubleshooting-template
-- **ui** — adr-0007-stop-button-confirmation-and-narrow-grant, adr-0008-configurable-cookies-browser-and-bottom-text, ui-inventory-template, widget-ui-surfaces
+- **ui** — adr-0007-stop-button-confirmation-and-narrow-grant, adr-0008-configurable-cookies-browser-and-bottom-text, adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation, ui-inventory-template, widget-ui-surfaces
 - **validator** — adr-0002-lowercase-naming-convention
 - **verification** — troubleshooting, verification-index, verification-slice
 - **video-download** — adr-0006-video-downloader-command-boundary, adr-0008-configurable-cookies-browser-and-bottom-text

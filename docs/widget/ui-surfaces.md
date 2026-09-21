@@ -39,10 +39,12 @@ There is no other surface. A new one is a design decision, not an implementation
 
 Verification tooling: two `qmllint` binaries exist on this machine and they are not interchangeable. The
 one on `PATH` is Qt5 (`qt5-declarative 5.15.19`) and reports syntax only. The matching
-`/usr/lib/qt6/bin/qmllint` (`qt6-declarative 6.11.2`) is the semantic tool for a Plasma 6 target: on all
-six QML files it reported 0 errors, 66 warnings (every one `[unqualified]`) and 37 infos of which 3 are
-`[unused-imports]`, and none of `[missing-property]`, `[incompatible-type]`, `[unresolved-type]` or
-`[import]`. Every
+`/usr/lib/qt6/bin/qmllint` (`qt6-declarative 6.11.2`) is the semantic tool for a Plasma 6 target. Measured
+on the four `contents/ui/*.qml` files it reports 0 errors, 75 warnings (every one `[unqualified]`) and 43
+infos, of which 2 are `[unused-imports]`; on `contents/ui/config/*.qml` it reports 0 errors, 22 warnings
+(all `[unqualified]`) and 6 infos, of which 1 is `[unused-imports]`. Across the five files that is 0
+errors, 97 warnings and 49 infos (3 `[unused-imports]`), and none of `[missing-property]`,
+`[incompatible-type]`, `[unresolved-type]` or `[import]`. Every
 "Verification" line below means both binaries were run; "the Qt6 semantic run is clean" records that
 measured result, and the exit code is not the evidence (Qt6 exits 0 unless `--max-warnings` is set).
 
@@ -80,8 +82,8 @@ delegating to `SeverityDot`. Hiding the dot when the state is unknown.
 
 #### Purpose
 The popup/desktop surface: what the daemon is doing, how many containers run, which ones, a start/stop
-button row, a refresh button, any failure feedback, the video-download row, the cookies-browser line, and
-the configurable bottom text.
+button row, a refresh button, any failure feedback, the video-download row, the cookies-browser line, the
+"Countdown to Extinction" shutdown section, and the configurable bottom text.
 
 #### Path
 `package/io.github.daver-ui.dockerstatus/contents/ui/FullRepresentation.qml`
@@ -89,12 +91,16 @@ the configurable bottom text.
 #### Interface
 Takes `daemonState`, `containers`, `daemonRunning`, `containerListEnabled`, `actionInFlight`,
 `actionKind`, `actionFeedback`, `downloaderEnabled`, `taglineText`, `cookiesBrowser`, `downloadReady`,
-`downloadInFlight`, `downloadFeedback` and `downloadFeedbackSeverity`; emits `startRequested()`,
-`stopRequested()`, `refreshRequested()` and `downloadRequested(url)`.
+`downloadInFlight`, `downloadFeedback`, `downloadFeedbackSeverity`, `shutdownReady`, `shutdownMinutes`,
+`shutdownMinutesText`, `shutdownPending`, `shutdownInFlight`, `shutdownRemainingSeconds`, `shutdownFeedback`
+and `shutdownFeedbackSeverity`; emits `startRequested()`, `stopRequested()`, `refreshRequested()`,
+`downloadRequested(url)`, `shutdownStartRequested()`, `shutdownStopRequested()` and
+`shutdownMinutesEdited(text)`.
 
 #### Data Flow
 All state flows down as properties from `main.qml`; the signals flow back up and are handled by
-`root.startDaemon()`, `root.stopDaemon()`, `root.refreshDaemonState()` and `root.downloadVideo(url)`. The
+`root.startDaemon()`, `root.stopDaemon()`, `root.refreshDaemonState()`, `root.downloadVideo(url)`,
+`root.startShutdownCountdown()`, `root.stopShutdownCountdown()` and `root.setShutdownMinutes(text)`. The
 container list model is the parsed array itself. `actionKind` (`DockerStatus.ACTION_START` / `ACTION_STOP`)
 says which action owns an in-flight reply, so the row can show the matching label while both actions share
 one `actionInFlight` flag.
@@ -124,13 +130,42 @@ is a muted, centre-aligned line carrying the configured bottom text (default
 `Persiguiendo la singularidad`) that disappears entirely when the setting is empty; it carries no state and
 is the only text allowed on this surface's periphery.
 
+The "Countdown to Extinction" section sits above the tagline: a separator, a bold title, a "Minutes until
+power-off:" label with an inline `TextField` (`shutdownMinutesField`), a wide play button ("Shut down" /
+"Shutting down…") and a narrow "Cancel" button, both with tooltips. The inline field is a second editing
+surface for `shutdownCountdownMinutes`: it seeds once from the raw stored string (`shutdownMinutesText`),
+mirrors inbound changes only while it is unfocused (never a `text:` binding), and emits the raw text as
+`shutdownMinutesEdited(text)`. When the field loses focus it re-syncs a VALID field value from the stored
+string: an external change that arrives while the field is focused is skipped by the focused sync and
+nothing re-runs on blur, so that moment is the only one left to mirror it; invalid user text is
+deliberately left visible to be fixed. Its validity comes from the same `DockerStatus.resolveShutdownMinutes()` the
+deadline uses (`shutdownMinutesFieldValid`), so a value the resolver refuses tints the text red, shows the
+cue "Enter a whole number of minutes greater than 10.", and disables play; the field is disabled while a
+countdown is pending or in flight. An invalid edit never persists: the representation owns no
+configuration — it emits, and `main.qml`'s `setShutdownMinutes()` is the single writer that validates and
+writes the kcfg entry ([[adr-0010-inline-shutdown-minutes-in-the-representation]]). Play is disabled the
+instant the sequence is armed (`shutdownPlayEnabled` requires ready, a valid field, not pending and not in
+flight), so one activation cannot arm twice; `Cancel` is enabled only while a shutdown is pending, and it
+cancels locally without any privilege. While pending, a muted line reads `Powering off in M:SS` from
+`DockerStatus.formatCountdown(shutdownRemainingSeconds)` and counts down once a second. The section's
+feedback row reuses `SeverityDot` with `shutdownFeedbackSeverity`, exactly as the header does. The section
+renders and emits only; the deadline, the ticker and the fixed power-off command all live in `main.qml`
+([[adr-0009-widget-owned-shutdown-countdown]]).
+
 #### Anti-Patterns
 A stop that runs on a single click, a stop entry in the context menu, or widening `ALLOWED_VERBS` to make
 stopping passwordless — the confirmation plus the interactive prompt are the whole safety argument
 ([[adr-0007-stop-button-confirmation-and-narrow-grant]]). Swallowing a failed action into a silent no-op
 instead of showing `stderr`. Rendering the container list while the daemon is down. Binding the tagline to
 state — it is configured copy, not a status message. Building the download command here instead of in
-`dockerstatus.js`. Adding a second severity-to-colour mapping for the download feedback.
+`dockerstatus.js`. Adding a second severity-to-colour mapping for the download feedback. Reading or
+writing `Plasmoid.configuration` (or touching a `DataSource`) from the inline minutes field: the field is
+sanctioned, but persistence goes only through its value-carrying signal to `main.qml`, the single writer of
+the kcfg entry ([[adr-0010-inline-shutdown-minutes-in-the-representation]]). Building the
+power-off command here, or naming `powerOffCommand`, instead of emitting a signal. An arming confirmation
+on play: unlike the stop, play starts the sequence and disables itself at once, and the countdown is the
+confirmation window. Assuming the power-off prompts for a password — that is a logind default, not this
+widget's gate ([[adr-0009-widget-owned-shutdown-countdown]]).
 
 #### Verification
 `qmllint` (both binaries — see the verification-tooling note; the Qt6 semantic run is clean); a probe with a deliberately failing command confirmed the failure path renders — that

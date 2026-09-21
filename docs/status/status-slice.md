@@ -24,7 +24,8 @@ parsers all live here, so the one place user input reaches a shell is testable w
 **In:** output normalisation; `systemctl is-active` stdout to daemon state; `docker ps` rows to
 container objects; counting and the compact badge; severity mapping for both daemon and containers;
 the run-token helper; video-link classification; shell quoting; download-directory, binary, runtime
-and runtime resolution; download-command assembly; download-result parsing.
+and runtime resolution; download-command assembly; download-result parsing; the shutdown-duration
+resolver and the countdown formatting helpers.
 
 **Out:** running anything (the [widget slice](../widget/widget-slice.md) owns the data sources and
 the processes); rendering (only `SeverityDot.qml` maps a severity to a colour); proving the behaviour
@@ -63,12 +64,22 @@ severity. The public surface, and what each function guarantees:
 | `buildVideoDownloadCommand(opts)` | the assembled yt-dlp command, with `--cookies-from-browser` taken from the validated browser value (omitted when that value is `""`); omits `--js-runtimes` when the runtime is `""`; appends `withRunToken()` when a token is given |
 | `parseDownloadedFile(output)` | the `[Merger]` path when present, else the last `[download] Destination:` line; `""` when neither appears |
 | `extractErrorLine(output)` | the last `ERROR:` line when present, else the last non-empty line; bounded to 240 characters |
+| `SHUTDOWN_MINUTES_DEFAULT` / `SHUTDOWN_MINUTES_MINIMUM` | `15` / `10` — the default when the setting is blank or absent, and the floor a usable whole number must exceed |
+| `resolveShutdownMinutes(raw)` | blank, `null` or `undefined` → 15 (the default, not an error); a run of digits whose integer is **strictly greater than 10** → that integer; anything that is not a plain run of digits, or a whole number ≤ 10, → `null`, which disables play |
+| `shutdownRemainingSeconds(deadlineMs, nowMs)` | whole seconds until the deadline, rounded up (`Math.ceil`) and floored at 0; unusable input → 0 |
+| `formatCountdown(seconds)` | `"M:SS"`, growing to `"H:MM:SS"` past an hour; `0`, negatives, non-finite values and garbage → `"0:00"` |
 
 State ownership: this module owns *meaning*; `main.qml` owns the lifetime of the values. The download
 helpers own the whole safety argument for the one command that is not a fixed constant: the URL is
 classified before a command exists, and every value interpolated into the command — URL and
 configuration alike — goes through `shellQuote()`. The boundary itself is recorded in
 [../adrs/adr-0006-video-downloader-command-boundary.md](../adrs/adr-0006-video-downloader-command-boundary.md).
+
+The shutdown helpers own a different boundary: the configured minutes are a validated *duration*, not a
+command fragment, so `resolveShutdownMinutes` decides whether a countdown can be armed at all while the
+fixed `systemctl poweroff` command stays in `main.qml` and is never touched. `null` is the deliberate
+answer for an unusable value; the caller disables play and shows why, rather than arming a nonsense
+countdown ([../adrs/adr-0009-widget-owned-shutdown-countdown.md](../adrs/adr-0009-widget-owned-shutdown-countdown.md)).
 
 ## Conventions of this slice
 
@@ -80,7 +91,9 @@ configuration alike — goes through `shellQuote()`. The boundary itself is reco
 - Default arms degrade to `unknown`/`muted`, never to a healthy reading. A broken probe must not look
   like a stopped daemon.
 - Testability is a design constraint, not a by-product: a new behaviour needs a pure function with a
-  test, not a branch inside `onNewData`.
+  test, not a branch inside `onNewData`. The shutdown helpers are the worked example — every branch of
+  `resolveShutdownMinutes`, the ceiling and the floor of `shutdownRemainingSeconds`, and the `M:SS` /
+  `H:MM:SS` boundary of `formatCountdown` all have unit tests.
 - Quoting is proven, not asserted: the `shellQuote` round-trips and the assembled download command are
   tested against a real `/bin/sh`, with a stub `yt-dlp` on `PATH` that prints its argv. A change to the
   quoting rule without a shell-level test is a regression waiting to happen.
