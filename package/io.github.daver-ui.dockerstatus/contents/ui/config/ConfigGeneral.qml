@@ -39,6 +39,7 @@ Kirigami.FormLayout {
     property alias cfg_ytDlpBinary: ytDlpBinary.text
     property alias cfg_taglineText: taglineText.text
     property alias cfg_shutdownCountdownMinutes: shutdownCountdownMinutes.text
+    property alias cfg_updateCheckIntervalHours: updateCheckIntervalHours.value
 
     // The countdown setting is a String on purpose: its control is a plain TextField, so a
     // non-numeric value can reach this page and must be able to surface an error. An
@@ -429,6 +430,68 @@ Kirigami.FormLayout {
                     color: Kirigami.Theme.negativeTextColor
                     wrapMode: Text.WordWrap
                     font: Kirigami.Theme.smallFont
+                }
+            }
+        }
+    }
+
+    // --- Updates -------------------------------------------------------------
+    Rectangle {
+        Kirigami.FormData.isSection: true
+        Layout.fillWidth: true
+        implicitWidth: Math.max(updatesBody.implicitWidth, Kirigami.Units.gridUnit * 16)
+            + Kirigami.Units.largeSpacing * 4
+        implicitHeight: updatesBody.implicitHeight + Kirigami.Units.largeSpacing * 4
+        radius: paletteTokens.cardRadius
+        color: Qt.rgba(paletteTokens.panelSunken.r, paletteTokens.panelSunken.g, paletteTokens.panelSunken.b, 0.45)
+        border.width: paletteTokens.appBorderWidth
+        border.color: paletteTokens.line
+
+        ColumnLayout {
+            id: updatesBody
+            anchors.fill: parent
+            anchors.margins: Kirigami.Units.largeSpacing * 2
+            spacing: Kirigami.Units.smallSpacing
+
+            QQC2.Label {
+                text: i18n("Updates")
+                color: paletteTokens.text
+                font.family: paletteTokens.fontFamily
+                font.pixelSize: paletteTokens.sectionTitlePixelSize
+            }
+
+            QQC2.Label {
+                Layout.fillWidth: true
+                text: i18n("How often the widget checks for a newer version of itself.")
+                color: paletteTokens.muted
+                wrapMode: Text.WordWrap
+                font.family: paletteTokens.fontFamily
+                font.pixelSize: paletteTokens.subtlePixelSize
+            }
+
+            Kirigami.FormLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: Kirigami.Units.smallSpacing
+
+                QQC2.SpinBox {
+                    id: updateCheckIntervalHours
+                    Kirigami.FormData.label: i18n("Update check interval (hours):")
+                    from: 0
+                    to: 168
+                    stepSize: 1
+
+                    font.family: paletteTokens.fontFamily
+                    font.pixelSize: paletteTokens.labelPixelSize
+                    palette.text: paletteTokens.text
+                    background: Rectangle {
+                        color: paletteTokens.fieldSurface
+                        border.width: 1
+                        border.color: updateCheckIntervalHours.activeFocus ? paletteTokens.fieldBorderFocus : paletteTokens.fieldBorder
+                        radius: paletteTokens.controlRadius
+                    }
+
+                    QQC2.ToolTip.text: i18n("Hours between update checks. 0 disables the check; the widget stays silent when offline.")
+                    QQC2.ToolTip.visible: hovered
                 }
             }
         }

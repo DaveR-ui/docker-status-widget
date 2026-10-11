@@ -1,0 +1,161 @@
+name: ci
+
+# The pre-merge gate. Three independent jobs, three exact status-check contexts:
+#
+#   test      node --test tests/      — the documented canonical command, run from
+#                                      the repo root (docs/project.md, Commands)
+#   qmllint   Qt6 qmllint over both QML roots, error-counted (see below)
+#   docs      node docs/validate.js   — the corpus checker, check mode only
+#
+# Deliberately NOT a push trigger: running the same checks on push and on the
+# pull request reports every context twice, which is noise branch protection
+# cannot tell apart. A PR is the unit of review here, so a PR is the only trigger.
+#
+# paths-ignore is deliberately absent as well: the suite is fast, and a PR that
+# touches only docs must still be stopped by a broken widget.
+
+on:
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # The documented canonical command, run from the repo root: docs/project.md
+      # records `node --test tests/` as the suite's invocation and states that the
+      # wrapper (install.sh test) is what calls it, so this is the un-wrapped form.
+      # No npm install, no build step — zero dependencies by design.
+      - name: Run the unit suite
+        run: node --test tests/
+
+      # The version endpoint is derived from metadata.json by the Pages workflow; this
+      # step keeps the committed copy honest so a PR that bumps KPlugin.Version fails
+      # until it regenerates site/latest.json. A step, not a job: it adds no new
+      # status-check context, so the branch-protection contract stays three checks.
+      - name: Check the release manifest is derived from the current version
+        run: node .github/scripts/sync-manifest.mjs --check
+
+  qmllint:
+    name: qmllint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # Provides /usr/lib/qt6/bin/qmllint on ubuntu-24.04 (noble). The Qt6 linter
+      # is the semantic one; the qmllint that ships on PATH from the Qt5 packages
+      # is syntax-only and reports nothing useful for a Plasma 6 target
+      # (docs/verification/verification-slice.md, evidence table).
+      - name: Install the Qt6 linter
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends qt6-declarative-dev-tools
+
+      # Qt6 qmllint exits 0 with any number of warnings unless --max-warnings is
+      # set, so warnings and infos are NOT a failure — on this corpus the counts are in
+      # the low hundreds and are version-bound, so they are not evidence and are not
+      # recorded here; the diagnostic stream is printed in full instead. A real defect
+      # shows up two ways:
+      #   1. an `Error:`-severity diagnostic in the captured stream (a category
+      #      raised to error severity, or a build that labels one), and
+      #   2. a non-zero qmllint exit status, which is how "it could not parse or
+      #      open this file" surfaces: the clean corpus exits 0, an injected parse
+      #      error exits 255 (both measured against the real widget files on a Qt6
+      #      build; a runner's point release may report different warning counts).
+      # Either way the whole diagnostic stream is printed first, never summarised away.
+      - name: Lint QML (Qt6, errors only)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          QT6_QMLLINT="/usr/lib/qt6/bin/qmllint"
+          if [ -x "$QT6_QMLLINT" ]; then
+            qmllint="$QT6_QMLLINT"
+            echo "Using the semantic Qt6 linter: $qmllint"
+          elif command -v qmllint >/dev/null 2>&1; then
+            qmllint="$(command -v qmllint)"
+            echo "::warning::Qt6 qmllint not found; falling back to the Qt5 binary on PATH, which is syntax-only"
+          else
+            echo "::error::no qmllint found — expected $QT6_QMLLINT (qt6-declarative-dev-tools) or qmllint on PATH"
+            exit 1
+          fi
+
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+
+          # Both QML roots, as the Commands table in docs/project.md records them.
+          patterns=(
+            "package/io.github.daver-ui.dockerstatus/contents/ui/*.qml"
+            "package/io.github.daver-ui.dockerstatus/contents/ui/config/*.qml"
+          )
+
+          total=0
+          broken=0
+          pass=0
+          for pattern in "${patterns[@]}"; do
+            pass=$((pass + 1))
+            files=( $pattern ) # unquoted on purpose: this is the glob
+            if [ ! -e "${files[0]}" ]; then
+              echo "::error::no QML files matched $pattern"
+              exit 1
+            fi
+
+            log="$work/pass-$pass.log"
+            echo "::group::qmllint ${files[*]}"
+            set +e
+            "$qmllint" "${files[@]}" >"$log" 2>&1
+            status=$?
+            set -e
+            cat "$log"
+
+            # Diagnostic formats to expect from Qt builds: `file:line:col: error: msg`,
+            # a leading `Error: file:...`, and the bracketed `[error]` category.
+            # In the 6.11 build measured on the developer machine, a file qmllint
+            # cannot parse is reported as `Warning: ... [syntax]` — which is why the
+            # exit status is checked above and this grep is the belt to its braces,
+            # covering builds where a category is raised to error severity.
+            # No warning category contains the word "error", so this counts errors only.
+            n="$(grep -cE '(^Error:|:[[:space:]]*error:|\[error\])' "$log" || true)"
+            echo "qmllint exit status: $status; error diagnostics in this pass: $n"
+            total=$(( total + n ))
+            if [ "$status" -ne 0 ]; then
+              broken=$(( broken + 1 ))
+              echo "::error::qmllint exited $status for this pass — it could not lint the file set cleanly"
+            fi
+            echo "::endgroup::"
+          done
+
+          echo "qmllint error diagnostics: $total; unparseable/unopenable passes: $broken"
+          if [ "$total" -gt 0 ] || [ "$broken" -gt 0 ]; then
+            echo "::error::qmllint gate failed ($total error diagnostics, $broken failed passes); warnings and infos are not gating"
+            exit 1
+          fi
+          echo "qmllint: no errors — warnings and infos are not gating"
+
+  docs:
+    name: docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # Check mode only. docs/validate.js --write rewrites the two generated
+      # regions; CI never rewrites anything, it only reports, so the flag is
+      # deliberately absent.
+      - name: Validate the documentation corpus
+        run: node docs/validate.js

@@ -52,6 +52,12 @@ re-litigated from the code alone does not need a record either — only the *why
   reverses the colour half of the SeverityDot rule (severity still resolves only in `SeverityDot.qml`),
   switches the popup to its own card via `PlasmaCore.Types.NoBackground`, and makes the two action buttons
   equal width; every command stays fixed and `unknown` stays muted.
+- [[adr-0013-widget-update-check-and-release-site]] — the installed widget reads one local file and fetches
+  one fixed https manifest to learn an update exists (a human-approved reversal of the "no network code"
+  goal), with the command assembled entirely from constants so it mints no third command-building exception;
+  `metadata.json` stays the single source of version truth through `sync-manifest.mjs`; CI gates on `test` +
+  `qmllint` + `docs` while Playwright stays non-gating; and `site/` and `.github/` are documented in the
+  Repository Structure because the sixth-slice question is left to the human.
 
 ## Elsewhere
 

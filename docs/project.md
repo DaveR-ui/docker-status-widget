@@ -1,5 +1,5 @@
 ---
-last_updated: 2026-10-10
+last_updated: 2026-10-11
 status: active
 description: Agent-facing entry point for the Docker Status plasmoid — stack, slices, commands, conventions, vocabulary and symptom routing.
 tags: [project, entry-point, routing, slices]
@@ -13,9 +13,12 @@ doc_language: en
 
 Docker Status is a KDE Plasma 6 plasmoid (panel widget, and full widget on the desktop)
 that reports whether the Docker daemon is running, starts it with one click, and stops it behind a
-confirmation. Its form is a KPackage of QML files, one polkit rule, and one Bash installer: no build
-step, no service of its own, no database, no network code. The widget is a read-mostly observer of two
-external commands — `systemctl is-active docker` and `docker ps -a` — and the only mutations it can
+confirmation. Its form is a KPackage of QML files, one polkit rule, one Bash installer and a GitHub
+Pages release site: no build step, no service of its own, no database. It used to list "no network code"
+as a goal; that goal is deliberately reversed — the installed widget now reads its own `metadata.json`
+and fetches one fixed https release manifest to tell you an update exists, and nothing else about it
+talks to the network ([[adr-0013-widget-update-check-and-release-site]]). The widget is a read-mostly
+observer of two external commands — `systemctl is-active docker` and `docker ps -a` — and the only mutations it can
 perform are `systemctl start docker.service`, passwordless through a deliberately narrow privilege
 grant; `systemctl stop docker.service`, which is deliberately not covered by that grant and so goes
 through polkit's interactive password prompt; and `systemctl poweroff`, which runs only when a
@@ -32,7 +35,9 @@ local deadline and never reach the fixed `systemctl poweroff` command
 grant for it — unlike the docker stop it does not prompt, so the countdown and the Cancel button, not a
 password, are the safeguard; no restart/disable/mask button; no stop entry in the context menu, because
 a menu is also a one-click surface; no rootless or user-scoped daemon support; no `docker events` subscription (state
-is polled, not streamed); no command string taken from configuration — the single sanctioned exception
+is polled, not streamed); no network beyond the one update check — no service of its own, no telemetry,
+no POST, and no URL taken from configuration, because the manifest address is a fixed constant
+([[adr-0013-widget-update-check-and-release-site]]); no command string taken from configuration — the single sanctioned exception
 is the video-download row, where configuration supplies only validated values inside a command the
 widget builds ([[adr-0006-video-downloader-command-boundary]]); no privileged work in the installer
 beyond the explicit `install-polkit` command.
@@ -49,6 +54,7 @@ beyond the explicit `install-polkit` command.
 | Packaging | KPackage `Plasma/Applet` via `kpackagetool6` | plain-copy fallback when unavailable |
 | Installer | Bash with `set -euo pipefail` | system `bash`, no shell framework |
 | Tests | Node.js `node --test` | zero dependencies; no `package.json`, no `npm install` |
+| CI / deployment | GitHub Actions + GitHub Pages (workflow deploy) | PR gate `test` + `qmllint` + `docs`; push to `master` publishes `dist/` to Pages; no build step, no `package.json` |
 | Architecture pattern | thin QML shell + pure-function core + external privilege boundary | logic is testable without Plasma |
 
 ## Slices
@@ -78,7 +84,9 @@ beyond the explicit `install-polkit` command.
 
 Working-directory quirks: `install.sh` resolves every path from its own directory and
 `docs/validate.js` from the directory containing itself, so both work from any cwd. QML files are
-not runnable from a shell — see Common Lookups.
+not runnable from a shell — see Common Lookups. The release site has no local serve command: it is
+published only by CI (`.github/workflows/pages.yml`), and the non-gating Playwright config is what
+serves `site/` on localhost during its own run.
 
 ## Repository Structure
 
@@ -90,16 +98,26 @@ package/io.github.daver-ui.dockerstatus/      the plasmoid KPackage — what Pla
     ├── config/config.qml             config page registration (source is relative to contents/ui/)
     ├── icons/dockerstatus.svg        bundled app icon, referenced by metadata.json Icon (/icons/dockerstatus.svg)
     └── ui/
-        ├── main.qml                  PlasmoidItem: fixed commands, polling, actions, download wiring, state
+        ├── main.qml                  PlasmoidItem: fixed commands, polling, actions, download wiring, update check, state
         ├── CompactRepresentation.qml panel: icon + severity dot
-        ├── FullRepresentation.qml    popup/desktop: state, list, start/stop action row, feedback, download row, shutdown countdown, tagline
+        ├── FullRepresentation.qml    popup/desktop: state, list, start/stop action row, feedback, download row, shutdown countdown, update line, tagline
         ├── SeverityDot.qml           the single severity -> palette colour mapping
         ├── DockerStatusPalette.qml   the mockup's fixed dark palette and type scale (neutral chrome tokens)
         ├── dockerstatus.js           pure logic, no QML types, unit tested
-        └── config/ConfigGeneral.qml  config page widgets (poll, icon, list, download settings)
+        └── config/ConfigGeneral.qml  config page widgets (poll, icon, list, download settings, update interval)
 polkit/49-docker-status-widget.rules  the scoped privilege grant (installed by hand)
 tests/dockerstatus.test.mjs           Node harness over the shipped dockerstatus.js
 install.sh                            lifecycle CLI
+.github/                              CI and Pages workflows, plus the manifest script
+├── workflows/ci.yml                  PR gate: test, qmllint, docs (three status checks)
+├── workflows/pages.yml               push to master: validate, test, rebuild latest.json, publish dist/
+├── workflows/playwright.yml          non-gating site e2e (continue-on-error)
+└── scripts/sync-manifest.mjs         derives site/latest.json from metadata.json (--write / --check)
+site/                                 the GitHub Pages release site (the widget's update endpoint)
+├── index.html                        static page; its version text is hand-maintained
+├── styles.css                        the site's stylesheet
+├── latest.json                       generated manifest the widget fetches (version only)
+└── e2e/                              non-gating Playwright scaffold over the static site
 docs/                                 this corpus — entry: readme.md, routing: project.md
 ```
 
@@ -108,7 +126,9 @@ docs/                                 this corpus — entry: readme.md, routing:
 - Executed commands are **fixed constants in `main.qml`**, with one deliberate exception: the
   video-download command. It is built in `dockerstatus.js` from a validated URL and validated
   configuration values, and every interpolated value is shell-quoted. Configuration never supplies a
-  command, only values inside one ([[adr-0006-video-downloader-command-boundary]]). The run-token trick
+  command, only values inside one ([[adr-0006-video-downloader-command-boundary]]). The update-check
+  command is also built in `dockerstatus.js`, but entirely from fixed constants, so it is deliberately
+  not a second exception ([[adr-0013-widget-update-check-and-release-site]]). The run-token trick
   appends a shell comment, which is safe only for strings this project builds itself.
 - Every one-shot assignment goes through `withRunToken()`: the `executable` engine treats
   `connectedSources` as a **set**, so an identical command string is not re-executed.
@@ -210,3 +230,5 @@ docs/                                 this corpus — entry: readme.md, routing:
   [troubleshooting.md](verification/troubleshooting.md#the-shutdown-play-button-stays-disabled)
 - "the machine powers off without asking for a password" →
   [troubleshooting.md](verification/troubleshooting.md#the-machine-powers-off-without-asking-for-a-password)
+- "the widget never says an update is available" →
+  [troubleshooting.md](verification/troubleshooting.md#the-widget-never-says-an-update-is-available)

@@ -73,6 +73,12 @@ Item {
     // being hidden behind a resolved default. main.qml forwards it verbatim.
     property string shutdownMinutesText: ""
 
+    // Update check. main.qml owns the whole check; this representation only renders the one
+    // line it produces and can ask for a manual re-check. No severity here: the line reuses
+    // the tagline's muted style, so there is deliberately no updateSeverity property.
+    property bool updateAvailable: false
+    property string updateFeedback: ""
+
     signal startRequested()
     signal stopRequested()
     signal refreshRequested()
@@ -80,6 +86,7 @@ Item {
     signal shutdownStartRequested()
     signal shutdownStopRequested()
     signal shutdownMinutesEdited(string text)
+    signal updateCheckRequested()
 
     // The inline field validates through the same pure resolver main.qml uses to size the
     // deadline, so the field, the play gate and the persisted value cannot drift apart.
@@ -1130,6 +1137,24 @@ Item {
                     }
                 }
             }
+        }
+
+        // --- Update notice ---------------------------------------------------
+        // Shown ONLY when an update is actually available (visible: fullRoot.updateAvailable),
+        // so an offline machine, a missing curl or an unparseable manifest renders nothing at
+        // all -- this line is the feature's entire footprint. It reuses the tagline's muted,
+        // centred style and is deliberately NOT a button and NOT a SeverityDot: it is neither a
+        // health state nor a link, and the widget opens no browser.
+        PlasmaComponents3.Label {
+            Layout.fillWidth: true
+            text: fullRoot.updateFeedback
+            visible: fullRoot.updateAvailable
+            horizontalAlignment: Text.AlignHCenter
+            elide: Text.ElideRight
+            color: paletteTokens.muted
+            opacity: 0.5
+            font.family: paletteTokens.fontFamily
+            font.pixelSize: paletteTokens.subtlePixelSize
         }
 
         // --- Tagline ----------------------------------------------------------

@@ -1,0 +1,66 @@
+name: playwright
+
+# Playwright — deliberately NON-GATING.
+#
+# The only web surface this project has is the new GitHub Pages site, and it has
+# no behaviour yet that is worth blocking a merge on: the widget's real logic is
+# QML inside plasmashell, which no browser test can reach, and it is covered by
+# `node --test` plus qmllint instead. So this job reports and never gates — the
+# merge gate stays `node --test` + `qmllint` until the site grows real behaviour
+# (and even then, that belongs in a decision, not in a default).
+#
+# continue-on-error is set at the JOB level, so neither a failing spec nor a
+# missing scaffold can ever block a merge.
+#
+# Runs on pull requests that touch site/, on a weekly sweep (a config nobody
+# touches rots quietly), and by hand. No deployment is involved: the config at
+# site/e2e/playwright.config.mjs starts its own local `python3` static server,
+# and python3 is present on ubuntu-latest.
+#
+# The suite is installed into $RUNNER_TEMP, never into the repo: there is no
+# package.json and none may be created.
+
+on:
+  pull_request:
+    paths:
+      - "site/**"
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  playwright:
+    name: playwright
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Playwright and Chromium outside the repo
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${RUNNER_TEMP:-}" ]; then
+            echo "::error::RUNNER_TEMP is empty — refusing to install into the repo, and refusing to skip silently"
+            exit 1
+          fi
+
+          npm i --prefix "$RUNNER_TEMP/pw" @playwright/test@^1
+          "$RUNNER_TEMP/pw/node_modules/.bin/playwright" install --with-deps chromium
+
+      # The config lives in site/e2e/ and drives its own webServer on localhost,
+      # so no deployment is needed and no deployed URL has to be passed in.
+      - name: Run the Playwright suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${RUNNER_TEMP:-}" ]; then
+            echo "::error::RUNNER_TEMP is empty — the Playwright install location is gone"
+            exit 1
+          fi
+          "$RUNNER_TEMP/pw/node_modules/.bin/playwright" test --config site/e2e/playwright.config.mjs

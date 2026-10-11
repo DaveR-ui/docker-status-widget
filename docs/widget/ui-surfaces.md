@@ -20,6 +20,8 @@ status: active
   **ConfigGeneral**, backed by the kcfg entries in `contents/config/main.xml`.
 - The user must paste a link and fetch a video → the **video download row** inside FullRepresentation
   (full representation only; never the compact representation or the tooltip).
+- An installed widget must learn a newer release exists → the **update line** inside FullRepresentation
+  (rendered only when one is available; not a button, not a link).
 - State must be readable on hover, without opening anything → the **tooltip subtext** on the root
   `PlasmoidItem`.
 - An action must be reachable without opening the popup → the **contextual actions** (right-click menu).
@@ -33,6 +35,7 @@ There is no other surface. A new one is a design decision, not an implementation
 | Severity is computed in `dockerstatus.js`; colour is chosen only in `SeverityDot.qml`. | No other file may map a state to a colour. |
 | Representations are pure consumers: properties in, signals out. | No `DataSource` access, and `Plasmoid.configuration` only for the compact icon name. |
 | Configuration never supplies a command, only validated values inside one. | The video-download row is the ONE place user input enters a command; the URL is validated against a host allow-list and every interpolated value is shell-quoted, so the run token stays safe. A second exception needs a new ADR ([[adr-0006-video-downloader-command-boundary]]). |
+| The update check is fixed and silent. | Its command is assembled entirely from constants — no configuration, no input — and every failure draws nothing. Its notice is one muted line, never a notification and never a link, because the widget opens no browser ([[adr-0013-widget-update-check-and-release-site]]). |
 | `unknown` never looks healthy. | Muted (the palette's `muted` grey), never neutral (the palette's `orange` accent). |
 | Secondary text stays secondary. | The palette's `muted` colour for small labels and footer text; `opacity: 0.5` for the tagline, `0.38` for a disabled button, `1.0`/`0.5` for the panel icon. |
 | Everything user-visible is translated. | `i18n(...)` for plain strings, `i18nc("@info", ...)` when the argument needs context. |
@@ -86,7 +89,8 @@ delegating to `SeverityDot`. Hiding the dot when the state is unknown.
 The popup/desktop surface, restyled to the mockup's fixed dark palette: a topbar (logo tile, workspace
 eyebrow and refresh icon-button), a status card (daemon state, an ONLINE/OFFLINE pill, a running-container
 count and progress bar, the start/stop button row), the container list, the video-download row with its
-cookies-browser line, the "Countdown to Extinction" shutdown section, the configurable bottom text and a
+cookies-browser line, the "Countdown to Extinction" shutdown section, one muted update line shown only when
+a newer release is known, the configurable bottom text and a
 footer. It paints its own dark 20px-radius card, so Plasma's own background is switched off
 (`Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground` in `main.qml`;
 [[adr-0011-fixed-dark-palette-from-mockup]]).
@@ -98,15 +102,18 @@ footer. It paints its own dark 20px-radius card, so Plasma's own background is s
 Takes `daemonState`, `containers`, `daemonRunning`, `containerListEnabled`, `actionInFlight`,
 `actionKind`, `actionFeedback`, `downloaderEnabled`, `taglineText`, `cookiesBrowser`, `downloadReady`,
 `downloadInFlight`, `downloadFeedback`, `downloadFeedbackSeverity`, `shutdownReady`, `shutdownMinutes`,
-`shutdownMinutesText`, `shutdownPending`, `shutdownInFlight`, `shutdownRemainingSeconds`, `shutdownFeedback`
-and `shutdownFeedbackSeverity`; emits `startRequested()`, `stopRequested()`, `refreshRequested()`,
-`downloadRequested(url)`, `shutdownStartRequested()`, `shutdownStopRequested()` and
-`shutdownMinutesEdited(text)`.
+`shutdownMinutesText`, `shutdownPending`, `shutdownInFlight`, `shutdownRemainingSeconds`, `shutdownFeedback`,
+`shutdownFeedbackSeverity`, `updateAvailable` and `updateFeedback`; emits `startRequested()`,
+`stopRequested()`, `refreshRequested()`,
+`downloadRequested(url)`, `shutdownStartRequested()`, `shutdownStopRequested()`,
+`shutdownMinutesEdited(text)` and `updateCheckRequested()`.
 
 #### Data Flow
 All state flows down as properties from `main.qml`; the signals flow back up and are handled by
 `root.startDaemon()`, `root.stopDaemon()`, `root.refreshDaemonState()`, `root.downloadVideo(url)`,
-`root.startShutdownCountdown()`, `root.stopShutdownCountdown()` and `root.setShutdownMinutes(text)`. The
+`root.startShutdownCountdown()`, `root.stopShutdownCountdown()`, `root.setShutdownMinutes(text)` and
+`root.checkForUpdates()`. The update line reads only the forwarded `updateAvailable` / `updateFeedback`
+properties and builds nothing, exactly like every other consumer here. The
 container list model is the parsed array itself. `actionKind` (`DockerStatus.ACTION_START` / `ACTION_STOP`)
 says which action owns an in-flight reply, so the row can show the matching label while both actions share
 one `actionInFlight` flag. The view derives its own display values from those properties:
@@ -174,6 +181,13 @@ feedback row reuses `SeverityDot` with `shutdownFeedbackSeverity`, exactly as th
 renders and emits only; the deadline, the ticker and the fixed power-off command all live in `main.qml`
 ([[adr-0009-widget-owned-shutdown-countdown]]).
 
+Above the tagline and below the shutdown section sits the update notice: a single muted, centred
+`PlasmaComponents3.Label`, visible only while `updateAvailable`, naming the newer version. It is
+deliberately not a button, not a `SeverityDot` and not a link — the widget opens no browser — and it is the
+feature's entire footprint: an offline machine, a missing `curl` or an unparseable manifest renders nothing
+([[adr-0013-widget-update-check-and-release-site]]). A "Check for updates" entry in the right-click menu
+re-runs the check on demand.
+
 #### Anti-Patterns
 A stop that runs on a single click, a stop entry in the context menu, or widening `ALLOWED_VERBS` to make
 stopping passwordless — the confirmation plus the interactive prompt are the whole safety argument
@@ -187,7 +201,9 @@ the kcfg entry ([[adr-0010-inline-shutdown-minutes-in-the-representation]]). Bui
 power-off command here, or naming `powerOffCommand`, instead of emitting a signal. An arming confirmation
 on play: unlike the stop, play starts the sequence and disables itself at once, and the countdown is the
 confirmation window. Assuming the power-off prompts for a password — that is a logind default, not this
-widget's gate ([[adr-0009-widget-owned-shutdown-countdown]]).
+widget's gate ([[adr-0009-widget-owned-shutdown-countdown]]). Turning the update line into a button, a
+link or a notification, or surfacing a failed check as text: the notice shows only a real update and every
+failure draws nothing ([[adr-0013-widget-update-check-and-release-site]]).
 
 #### Verification
 `qmllint` (both binaries — see the verification-tooling note; the Qt6 semantic run is clean); a probe with a deliberately failing command confirmed the failure path renders — that
@@ -284,9 +300,9 @@ Reusing `neutral` for unknown states, which would make a broken probe look merel
 ### ConfigGeneral
 
 #### Purpose
-The configuration page, restyled to the palette as five section cards (Docker, Container list, Video
-download, Shutdown countdown, Appearance): poll interval, panel icon name, whether containers are listed,
-the download settings, the shutdown minutes and the bottom text. The page keeps Plasma's chrome — unlike
+The configuration page, restyled to the palette as six section cards (Docker, Container list, Video
+download, Shutdown countdown, Updates, Appearance): poll interval, panel icon name, whether containers are
+listed, the download settings, the shutdown minutes, the update-check interval and the bottom text. The page keeps Plasma's chrome — unlike
 the popup it does not switch the background off — and paints the palette's optional dark page surface
 (`paintPageBackground`) behind the cards; `import ".."` lets the palette `QtObject` resolve from `ui/`
 ([[adr-0011-fixed-dark-palette-from-mockup]]).
@@ -296,9 +312,10 @@ the popup it does not switch the background off — and paints the palette's opt
 (the `source` in `contents/config/config.qml` is resolved relative to `contents/ui/`, not `contents/`).
 
 #### Interface
-Nine `cfg_*` aliases — `cfg_pollIntervalSeconds`, `cfg_iconName`, `cfg_showContainerList`,
+Ten `cfg_*` aliases — `cfg_pollIntervalSeconds`, `cfg_iconName`, `cfg_showContainerList`,
 `cfg_showVideoDownloader`, `cfg_downloadDirectory`, `cfg_jsRuntime`, `cfg_ytDlpBinary`,
-`cfg_taglineText` and `cfg_shutdownCountdownMinutes` — each bound to a plain writable property of a
+`cfg_taglineText`, `cfg_shutdownCountdownMinutes` and `cfg_updateCheckIntervalHours` — each bound to a
+plain writable property of a
 widget, plus a plain string `cfg_cookiesBrowser`. The bottom text is a setting like the rest: display-only
 copy that leaves the panel representation untouched, and the browser is validated by
 `resolveCookiesBrowser()` before it reaches the command.
@@ -362,21 +379,23 @@ shows.
 ### Contextual actions
 
 #### Purpose
-Refresh and start, reachable from the right-click menu without opening the popup.
+Refresh, start and check-for-updates, reachable from the right-click menu without opening the popup.
 
 #### Path
 `package/io.github.daver-ui.dockerstatus/contents/ui/main.qml` — `Plasmoid.contextualActions`.
 
 #### Interface
-Two `PlasmaCore.Action` entries with `text`, `icon.name`, `enabled` and `onTriggered`.
+Three `PlasmaCore.Action` entries with `text`, `icon.name`, `enabled` and `onTriggered`.
 
 #### Data Flow
-`onTriggered` calls `root.refreshDaemonState()` and `root.startDaemon()` — the same handlers the popup
-signals reach, so there is one code path per action.
+`onTriggered` calls `root.refreshDaemonState()`, `root.startDaemon()` and `root.checkForUpdates()` — the
+same handlers the popup signals reach, so there is one code path per action.
 
 #### Usage Pattern
-`enabled` reflects real availability: start is disabled while the daemon runs or an action is in flight.
-Add a new action here only if it is also represented in the popup, or if it is genuinely menu-only.
+`enabled` reflects real availability: start is disabled while the daemon runs or an action is in flight,
+and check-for-updates while a check is in flight. Add a new action here only if it is also represented in
+the popup, or if it is genuinely menu-only: the check-for-updates entry is the worked example of the latter
+— the popup has no button for it, only the line it can produce.
 
 #### Anti-Patterns
 A second implementation of an action that already exists in the popup. Menu entries that stay enabled

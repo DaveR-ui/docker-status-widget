@@ -57,5 +57,12 @@
       <label>Minutes until the widget powers the machine off after the shutdown button is pressed. Must be a whole number greater than 10.</label>
       <default>15</default>
     </entry>
+
+    <entry name="updateCheckIntervalHours" type="Int">
+      <label>Hours between update checks. The widget quietly fetches a release manifest and shows a line when a newer version is available; it stays silent when offline. 0 disables the checks entirely.</label>
+      <default>6</default>
+      <min>0</min>
+      <max>168</max>
+    </entry>
   </group>
 </kcfg>
