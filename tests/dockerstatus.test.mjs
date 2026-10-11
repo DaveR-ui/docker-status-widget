@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import {
     chmodSync,
     existsSync,
+    mkdirSync,
     mkdtempSync,
     readFileSync,
     rmSync,
@@ -49,6 +50,12 @@ const {
     SEVERITY_NEUTRAL,
     SEVERITY_NEGATIVE,
     SEVERITY_MUTED,
+    UPDATE_CHECK_URL,
+    UPDATE_CHECK_MAX_TIME_SECONDS,
+    UPDATE_CHECK_MARKER,
+    UPDATE_CHECK_CURL_BINARY,
+    PACKAGE_ID,
+    INSTALLED_METADATA_PATH,
     parseDaemonState,
     parseContainers,
     countByState,
@@ -77,6 +84,12 @@ const {
     resolveShutdownMinutes,
     shutdownRemainingSeconds,
     formatCountdown,
+    buildUpdateCheckCommand,
+    splitUpdateCheckOutput,
+    parseWidgetVersion,
+    parseLatestVersion,
+    compareVersions,
+    isUpdateAvailable,
 } = sandbox;
 
 test("the shipped module exposes the documented constants", () => {
@@ -980,6 +993,372 @@ test("formatCountdown refuses negatives, non-finite values and garbage", () => {
 
 /*
  * ---------------------------------------------------------------------------
+ * Update check
+ * ---------------------------------------------------------------------------
+ * A human-approved reversal of the "no network code" goal: the installed widget
+ * fetches a release manifest from a FIXED URL, compares it with its own
+ * metadata.json, and shows one line. The command is the THIRD sanctioned
+ * boundary and mints no command-building exception because it is assembled
+ * entirely from fixed constants -- so these tests are mostly about the version
+ * maths that must never cry wolf, and about the one-shot degrading to silence.
+ * The shell test mirrors the download one: a stub curl on PATH, a real
+ * metadata.json under a temp $HOME, and the assembled run through /bin/sh.
+ */
+
+const REAL_METADATA_URL = new URL(
+    "../package/io.github.daver-ui.dockerstatus/metadata.json",
+    import.meta.url,
+);
+const realMetadataBytes = readFileSync(REAL_METADATA_URL, "utf8");
+
+test("the update-check constants are exactly as specified", () => {
+    // The URL is the one thing that would make this configurable, and it is a
+    // constant on purpose: a misconfiguration must not be able to point the widget
+    // elsewhere. Pin it, its scheme and its file name.
+    assert.equal(
+        UPDATE_CHECK_URL,
+        "https://dave-r-ui.github.io/docker-status-widget/latest.json",
+    );
+    assert.ok(UPDATE_CHECK_URL.indexOf("https://") === 0, "https only");
+    assert.ok(UPDATE_CHECK_URL.slice(-"/latest.json".length) === "/latest.json");
+
+    assert.equal(UPDATE_CHECK_MAX_TIME_SECONDS, 5);
+    assert.equal(UPDATE_CHECK_MARKER, "@dockerstatus-manifest@");
+    assert.equal(UPDATE_CHECK_CURL_BINARY, "curl");
+    assert.equal(PACKAGE_ID, "io.github.daver-ui.dockerstatus");
+
+    // Literal double quotes so the shell expands ${XDG_DATA_HOME:-$HOME/.local/share}
+    // itself; the path names the widget's own package id.
+    assert.equal(
+        INSTALLED_METADATA_PATH,
+        '"${XDG_DATA_HOME:-$HOME/.local/share}/plasma/plasmoids/'
+            + "io.github.daver-ui.dockerstatus/metadata.json\"",
+    );
+});
+
+test("buildUpdateCheckCommand assembles the documented fixed command", () => {
+    assert.equal(
+        buildUpdateCheckCommand(),
+        "cat \"${XDG_DATA_HOME:-$HOME/.local/share}/plasma/plasmoids/"
+            + "io.github.daver-ui.dockerstatus/metadata.json\" 2>/dev/null; "
+            + "printf '\\n%s\\n' '@dockerstatus-manifest@'; "
+            + "curl -fsSL --max-time 5 "
+            + "'https://dave-r-ui.github.io/docker-status-widget/latest.json'",
+    );
+});
+
+test("buildUpdateCheckCommand's marker printf starts a fresh line whatever cat ends with", () => {
+    // The leading \n is the whole reason splitUpdateCheckOutput can match an exact line:
+    // an installed metadata.json without its trailing newline fuses its last line with
+    // the marker's output, and the marker still has to begin its own line.
+    const command = buildUpdateCheckCommand();
+    assert.ok(
+        command.includes("printf '\\n%s\\n' '@dockerstatus-manifest@'"),
+        command,
+    );
+
+    // Prove it against a real shell: a metadata file with NO trailing newline, then the
+    // real command's marker, then the manifest. The marker must be its own line.
+    const home = mkdtempSync(join(tmpdir(), "dockerstatus-marker-"));
+    try {
+        const metaDir = join(
+            home,
+            ".local/share/plasma/plasmoids/io.github.daver-ui.dockerstatus",
+        );
+        mkdirSync(metaDir, { recursive: true });
+        writeFileSync(join(metaDir, "metadata.json"), '{"Version":"0.5.0"}', "utf8");
+
+        const stubDir = mkdtempSync(join(tmpdir(), "dockerstatus-stub-"));
+        try {
+            writeFileSync(join(stubDir, "curl"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+            const stdout = execFileSync("/bin/sh", ["-c", buildUpdateCheckCommand()], {
+                encoding: "utf8",
+                env: { ...process.env, HOME: home, XDG_DATA_HOME: "", PATH: `${stubDir}:/usr/bin:/bin` },
+            });
+            assert.deepEqual(plain(splitUpdateCheckOutput(stdout)), {
+                installed: '{"Version":"0.5.0"}',
+                manifest: "",
+            });
+        } finally {
+            rmSync(stubDir, { recursive: true, force: true });
+        }
+    } finally {
+        rmSync(home, { recursive: true, force: true });
+    }
+});
+
+test("buildUpdateCheckCommand is fixed, one shell line, and never hangs", () => {
+    const command = buildUpdateCheckCommand();
+
+    // --max-time is the guarantee that the one-shot can never hang the engine.
+    assert.ok(command.includes("--max-time 5"), command);
+    // curl -fsSL bundles the four documented flags in one token: -f fails on an HTTP
+    // status >= 400, -s silences the progress meter, -S lets curl's OWN stderr through,
+    // and -L follows redirects. Pin the exact token and its position.
+    assert.ok(command.includes("curl -fsSL --max-time 5 "), command);
+    // The whole command, token aside, is a single shell line: the engine gets no newline.
+    assert.ok(!command.includes("\n"), "the engine gets a single shell line");
+
+    // 2>/dev/null guards only the cat, never curl: curl's stderr is deliberately let
+    // through and simply ignored, so there is no second redirection meant to silence it.
+    assert.equal(
+        command.split("2>/dev/null").length - 1,
+        1,
+        "2>/dev/null guards the cat only, never curl",
+    );
+});
+
+test("buildUpdateCheckCommand appends a run token only when one is given", () => {
+    const bare = buildUpdateCheckCommand({});
+    assert.equal(bare, buildUpdateCheckCommand(), "an empty options mints no token");
+    assert.ok(!bare.includes("# plasma-run"), "no token means no trailing comment");
+
+    const tokened = buildUpdateCheckCommand({ token: 7 });
+    assert.ok(tokened.startsWith(bare), "token is appended, not replaces the command");
+    assert.ok(tokened.endsWith("# plasma-run-7"), tokened);
+});
+
+test("buildUpdateCheckCommand ignores a null token like the other builders", () => {
+    assert.equal(buildUpdateCheckCommand({ token: null }), buildUpdateCheckCommand());
+    assert.equal(buildUpdateCheckCommand({ token: undefined }), buildUpdateCheckCommand());
+});
+
+/*
+ * The strongest available check for this boundary, mirroring the download command's:
+ * run the REAL assembled command through /bin/sh with a stub curl on PATH and a real
+ * metadata.json under a temp $HOME, then assert the stub received the URL as exactly one
+ * argument and that the single stdout splits cleanly into the installed half (the file
+ * cat printed) and the manifest half (the stub curl printed). A quoting failure would
+ * show up as a split URL or a corrupted split, and --max-time keeps the run bounded even
+ * if a real curl somehow blocked.
+ */
+function runUpdateCheckInShell() {
+    const stubDir = mkdtempSync(join(tmpdir(), "dockerstatus-updatecheck-"));
+    const homeDir = join(stubDir, "home");
+    const metadataDir = join(homeDir, ".local/share/plasma/plasmoids", PACKAGE_ID);
+    mkdirSync(metadataDir, { recursive: true });
+    writeFileSync(join(metadataDir, "metadata.json"), realMetadataBytes, "utf8");
+
+    const argsFile = join(stubDir, "curl-args.txt");
+    const stub = join(stubDir, "curl");
+    const manifest = '{"version":"0.99.0"}';
+    // Record argv one-per-line to a file (NOT stdout, which must stay clean for the split),
+    // then emit the manifest on stdout with no trailing newline.
+    writeFileSync(
+        stub,
+        "#!/bin/sh\n"
+            + "for a in \"$@\"; do printf '%s\\n' \"$a\" >> \"" + argsFile + "\"; done\n"
+            + "printf '%s' '" + manifest + "'\n",
+        "utf8",
+    );
+    chmodSync(stub, 0o755);
+
+    try {
+        const command = buildUpdateCheckCommand();
+        const stdout = execFileSync("/bin/sh", ["-c", command], {
+            encoding: "utf8",
+            // XDG_DATA_HOME: "" forces ${XDG_DATA_HOME:-$HOME/.local/share} to fall back to
+            // the temp HOME, which is where the real metadata.json was written. The timeout
+            // is a belt-and-braces guard; --max-time is the real one.
+            env: {
+                ...process.env,
+                HOME: homeDir,
+                PATH: `${stubDir}:${process.env.PATH}`,
+                XDG_DATA_HOME: "",
+            },
+            timeout: 10000,
+        });
+
+        const curlArgs = readFileSync(argsFile, "utf8").split("\n").filter((line) => line !== "");
+        return { stdout, curlArgs };
+    } finally {
+        rmSync(stubDir, { recursive: true, force: true });
+    }
+}
+
+test("the assembled update check runs through a real shell and splits into two halves", () => {
+    const { stdout, curlArgs } = runUpdateCheckInShell();
+
+    // The stub curl got the URL as exactly one argument, with the documented flags.
+    assert.deepEqual(curlArgs, ["-fsSL", "--max-time", "5", UPDATE_CHECK_URL]);
+    assert.equal(curlArgs[curlArgs.length - 1], UPDATE_CHECK_URL);
+
+    // The marker is present exactly once, so the one-shot carries both halves.
+    assert.equal(stdout.split(UPDATE_CHECK_MARKER).length - 1, 1);
+
+    // Each half parses, and the comparison is a true, strictly-greater answer.
+    const halves = splitUpdateCheckOutput(stdout);
+    assert.equal(parseWidgetVersion(halves.installed), "0.5.0");
+    assert.equal(parseLatestVersion(halves.manifest), "0.99.0");
+    assert.equal(
+        isUpdateAvailable(parseWidgetVersion(halves.installed), parseLatestVersion(halves.manifest)),
+        true,
+    );
+});
+
+test("parseWidgetVersion reads the real shipped metadata.json version", () => {
+    assert.equal(parseWidgetVersion(realMetadataBytes), "0.5.0");
+});
+
+test("parseWidgetVersion accepts one-to-three numeric segments", () => {
+    assert.equal(parseWidgetVersion('{"Version":"1.2.3"}'), "1.2.3");
+    assert.equal(parseWidgetVersion('{"Version":"2"}'), "2");
+    assert.equal(parseWidgetVersion('{"Version":"0"}'), "0");
+    assert.equal(parseWidgetVersion('{"Version": "10.20.30"}'), "10.20.30");
+});
+
+test("parseWidgetVersion refuses empty, missing-key, non-numeric and malformed input", () => {
+    assert.equal(parseWidgetVersion(""), "");
+    assert.equal(parseWidgetVersion(undefined), "");
+    assert.equal(parseWidgetVersion(null), "");
+    assert.equal(parseWidgetVersion('{"KPackageStructure":"Plasma/Applet"}'), "", "missing key");
+    assert.equal(parseWidgetVersion('{"Version":""}'), "", "empty value");
+    assert.equal(parseWidgetVersion('{"Version":"v1.2"}'), "", "non-numeric");
+    assert.equal(parseWidgetVersion('{"Version":"1.2.3.4"}'), "", "too many segments");
+    assert.equal(parseWidgetVersion('{"Version":"1.a"}'), "", "non-numeric segment");
+    assert.equal(parseWidgetVersion('{"Version":"01.2"}'), "", "leading-zero segment");
+    assert.equal(parseWidgetVersion("this is not json"), "", "malformed");
+    // A different key that merely contains "Version" must not match.
+    assert.equal(parseWidgetVersion('{"X-Plasma-API-Minimum-Version":"6.0"}'), "");
+});
+
+test("parseLatestVersion reads the version from a valid manifest", () => {
+    assert.equal(parseLatestVersion('{"version":"1.2.3"}'), "1.2.3");
+    assert.equal(parseLatestVersion('{"version":"1.2.3","url":"https://x/y"}'), "1.2.3");
+    assert.equal(parseLatestVersion('{ "version" : "0.10" }'), "0.10");
+});
+
+test("parseLatestVersion refuses wrong shape, invalid JSON, empty, null and array", () => {
+    assert.equal(parseLatestVersion('{"release":"1.2.3"}'), "", "wrong key");
+    assert.equal(parseLatestVersion('{"version":"v1"}'), "", "non-numeric");
+    assert.equal(parseLatestVersion('{"version":123}'), "", "not a string");
+    assert.equal(parseLatestVersion('{"version":1.2}'), "", "not a string");
+    assert.equal(parseLatestVersion('{"version":"1.2.3.4"}'), "", "too many segments");
+    assert.equal(parseLatestVersion("not json"), "", "invalid JSON");
+    assert.equal(parseLatestVersion(""), "");
+    assert.equal(parseLatestVersion(undefined), "");
+    assert.equal(parseLatestVersion(null), "");
+    assert.equal(parseLatestVersion("null"), "", "JSON null");
+    assert.equal(parseLatestVersion("[1,2,3]"), "", "array");
+    assert.equal(parseLatestVersion("[]"), "", "empty array");
+});
+
+test("splitUpdateCheckOutput separates the two halves at the marker", () => {
+    const raw = '{"KPlugin":{}}\n' + UPDATE_CHECK_MARKER + '\n{"version":"1.0.0"}';
+    assert.deepEqual(plain(splitUpdateCheckOutput(raw)), {
+        installed: '{"KPlugin":{}}',
+        manifest: '{"version":"1.0.0"}',
+    });
+});
+
+test("splitUpdateCheckOutput treats a marker-less run as an empty install", () => {
+    assert.deepEqual(plain(splitUpdateCheckOutput('{"version":"1.0.0"}')), {
+        installed: "",
+        manifest: '{"version":"1.0.0"}',
+    });
+});
+
+test("splitUpdateCheckOutput handles an empty manifest half", () => {
+    const raw = '{"KPlugin":{}}\n' + UPDATE_CHECK_MARKER + "\n";
+    assert.deepEqual(plain(splitUpdateCheckOutput(raw)), {
+        installed: '{"KPlugin":{}}',
+        manifest: "",
+    });
+});
+
+test("splitUpdateCheckOutput only splits at a marker that begins its own line", () => {
+    // This is exactly why buildUpdateCheckCommand()'s marker printf carries a LEADING
+    // newline: the split is an exact LINE match, so a marker that does not begin a line is
+    // not a split point. The consequence is the safe direction -- the whole run is treated
+    // as an unreadable manifest and the widget says nothing -- and it is unreachable in
+    // the command as assembled, which prints the leading newline unconditionally.
+    const raw = '{"KPlugin":{"Version":"0.5.0"}}' + UPDATE_CHECK_MARKER + '\n{"version":"1.0.0"}';
+    assert.deepEqual(plain(splitUpdateCheckOutput(raw)), {
+        installed: "",
+        manifest: raw,
+    });
+});
+
+test("splitUpdateCheckOutput cannot be spoofed by manifest content", () => {
+    // A manifest carrying the marker on its own line must not be able to forge an install
+    // half: only the FIRST marker splits, so everything after it becomes the manifest, and
+    // a two-JSON-body manifest is not JSON at all -- parseLatestVersion answers "".
+    const raw = UPDATE_CHECK_MARKER + '\n{"version":"1.0.0"}\n'
+        + UPDATE_CHECK_MARKER + '\n{"version":"9.9.9"}';
+    const halves = plain(splitUpdateCheckOutput(raw));
+    assert.equal(halves.installed, "");
+    assert.equal(parseLatestVersion(halves.manifest), "", "the doubled marker poisons the manifest");
+});
+
+test("splitUpdateCheckOutput never throws and always returns both string keys", () => {
+    for (const bad of [undefined, null, "", "   ", 123, "no-marker-at-all"]) {
+        const halves = splitUpdateCheckOutput(bad);
+        assert.equal(typeof halves, "object");
+        assert.equal(typeof halves.installed, "string");
+        assert.equal(typeof halves.manifest, "string");
+    }
+});
+
+test("compareVersions compares numerically, not lexicographically", () => {
+    assert.equal(compareVersions("0.9", "0.10"), -1, "0.9 is older than 0.10");
+    assert.equal(compareVersions("0.10", "0.9"), 1);
+    assert.equal(compareVersions("1.2.3", "1.2.3"), 0);
+    assert.equal(compareVersions("1.2", "1.3"), -1);
+    assert.equal(compareVersions("2.0", "1.9"), 1);
+});
+
+test("compareVersions lets a longer run of segments win a shared prefix", () => {
+    assert.equal(compareVersions("1.2", "1.2.1"), -1, "1.2 is older than 1.2.1");
+    assert.equal(compareVersions("1.2.1", "1.2"), 1);
+    assert.equal(compareVersions("1.2", "1.2"), 0);
+});
+
+test("compareVersions returns null when either side is not a version string", () => {
+    assert.equal(compareVersions("", "1.0"), null);
+    assert.equal(compareVersions("1.0", ""), null);
+    assert.equal(compareVersions("1.a", "1.0"), null);
+    assert.equal(compareVersions("1.0", "1.b"), null);
+    assert.equal(compareVersions("1.2.3.4", "1.2.3"), null);
+    assert.equal(compareVersions("1.2.3", "1.2.3.4"), null);
+    assert.equal(compareVersions("v1", "1.0"), null);
+    assert.equal(compareVersions(undefined, "1.0"), null);
+    assert.equal(compareVersions("1.0", null), null);
+    assert.equal(compareVersions("", ""), null);
+});
+
+test("compareVersions refuses a leading-zero segment on either side", () => {
+    assert.equal(compareVersions("01.2", "1.2"), null);
+    assert.equal(compareVersions("1.2", "01.2"), null);
+    assert.equal(compareVersions("1.02", "1.2"), null);
+    assert.equal(compareVersions("1.2", "1.2.03"), null);
+});
+
+test("isUpdateAvailable is true only when latest is strictly greater", () => {
+    assert.equal(isUpdateAvailable("0.5.0", "0.6.0"), true);
+    assert.equal(isUpdateAvailable("0.9", "0.10"), true);
+    assert.equal(isUpdateAvailable("1.2", "1.2.1"), true);
+});
+
+test("isUpdateAvailable is false for identical or remote-lower versions", () => {
+    assert.equal(isUpdateAvailable("0.6.0", "0.6.0"), false, "identical");
+    assert.equal(isUpdateAvailable("1.0.0", "0.9.0"), false, "remote lower");
+    assert.equal(isUpdateAvailable("0.10", "0.9"), false, "remote lower");
+});
+
+test("isUpdateAvailable never cries wolf on garbage on either side", () => {
+    assert.equal(isUpdateAvailable("", "1.0.0"), false);
+    assert.equal(isUpdateAvailable("1.0.0", ""), false);
+    assert.equal(isUpdateAvailable("garbage", "1.0.0"), false);
+    assert.equal(isUpdateAvailable("1.0.0", "later"), false);
+    assert.equal(isUpdateAvailable(undefined, "1.0.0"), false);
+    assert.equal(isUpdateAvailable("1.0.0", null), false);
+    assert.equal(isUpdateAvailable("", ""), false);
+    assert.equal(isUpdateAvailable("1.0.0", "1.2.3.4"), false);
+    assert.equal(isUpdateAvailable("01.0.0", "1.0.1"), false);
+});
+
+/*
+ * ---------------------------------------------------------------------------
  * Configurable tagline, cookies feedback and the action row geometry
  * ---------------------------------------------------------------------------
  * Four pieces of shipped QML that a runtime test cannot reach: a kcfg default, the
@@ -1548,6 +1927,193 @@ test("the inline field reaches its error path and is disabled while a countdown 
     assert.ok(
         fullQml.includes("enabled: !fullRoot.shutdownPending && !fullRoot.shutdownInFlight"),
         "the field must be disabled while a countdown is pending or in flight",
+    );
+});
+
+/*
+ * ---------------------------------------------------------------------------
+ * Update check: the QML wiring and the config surface, pinned as text
+ * ---------------------------------------------------------------------------
+ * The update check crosses the four surfaces a runtime test cannot reach: two
+ * DataSources and one handler in main.qml, the context-menu action plus the forwarding
+ * that carry it into the popup, the single line in FullRepresentation.qml, and the kcfg
+ * entry with its SpinBox. Every one of them compiles and renders when it is silently
+ * dropped, and the failure only shows up as a check that never runs or a line that never
+ * appears -- so the wiring is pinned as static text, in the established style.
+ */
+
+test("main.qml wires the two update-check sources against the fixed command", () => {
+    // The command is a constant assembled in the pure core, never in QML.
+    assert.ok(
+        mainQml.includes(
+            "readonly property string updateCheckCommand: DockerStatus.buildUpdateCheckCommand({})",
+        ),
+    );
+    assert.ok(
+        mainQml.includes(
+            "readonly property int updateCheckIntervalMs: "
+                + "Math.max(0, Plasmoid.configuration.updateCheckIntervalHours * 3600 * 1000)",
+        ),
+    );
+
+    // Read each source by its own block, so a binding belonging to one cannot stand in
+    // for the other's.
+    const blocks = mainQml.split("P5Support.DataSource {");
+    const polled = blocks.find((block) => block.includes("id: updateCheckSource"));
+    const forced = blocks.find((block) => block.includes("id: updateCheckForced"));
+
+    assert.ok(polled, "main.qml must declare updateCheckSource");
+    assert.ok(forced, "main.qml must declare updateCheckForced");
+
+    // The polled source IS the load-time check: the engine runs it once on connect, and
+    // it disconnects itself ([]) when the interval is 0.
+    assert.ok(
+        polled.includes("connectedSources: root.updateCheckIntervalMs > 0 ? [root.updateCheckCommand] : []"),
+        polled,
+    );
+
+    // The one-shot is assigned per click through the run token, because a polled source's
+    // connectedSources is a binding and cannot be reassigned.
+    assert.ok(forced.includes("interval: 0"), forced);
+    assert.ok(
+        mainQml.includes("DockerStatus.withRunToken(root.updateCheckCommand, root.nextRunToken())"),
+        "the manual one-shot must tokenise the fixed command like every other one-shot",
+    );
+});
+
+test("main.qml's update-check handler degrades to silence, never to text", () => {
+    assert.ok(mainQml.includes("function checkForUpdates()"), "the action needs a function to call");
+    assert.ok(
+        mainQml.includes("function handleUpdateCheck(sourceName, data)"),
+        "both sources deliver to one named handler",
+    );
+
+    const handlerStart = mainQml.indexOf("function handleUpdateCheck(sourceName, data)");
+    assert.ok(handlerStart >= 0);
+
+    // Slice the whole function by matching braces, so a nested block's closing brace
+    // cannot cut the slice short and hide the guarantees below.
+    let depth = 0;
+    let handlerEnd = -1;
+    for (let i = handlerStart; i < mainQml.length; i += 1) {
+        if (mainQml[i] === "{") {
+            depth += 1;
+        }
+        if (mainQml[i] === "}") {
+            depth -= 1;
+            if (depth === 0) {
+                handlerEnd = i + 1;
+                break;
+            }
+        }
+    }
+    assert.ok(handlerEnd > handlerStart, "handleUpdateCheck's body must close");
+    const handler = mainQml.slice(handlerStart, handlerEnd);
+
+    // The event-without-exit-code guard, the split, and the conservative decision.
+    assert.ok(handler.includes('const exitCode = data["exit code"]'), handler);
+    assert.ok(handler.includes("if (exitCode === undefined)"), handler);
+    assert.ok(handler.includes('DockerStatus.splitUpdateCheckOutput(data["stdout"])'), handler);
+    assert.ok(
+        handler.includes("DockerStatus.isUpdateAvailable(installed, latest)"),
+        handler,
+    );
+
+    // The decision is made on THIS run's parsed installed copy, never on the cached
+    // property: a package swapped under a live widget must not leave a stale version to be
+    // compared against a fresh manifest.
+    assert.ok(
+        handler.includes("const installed = halves.installed !== \"\""),
+        handler,
+    );
+    assert.ok(!handler.includes("root.installedVersion, latest"), handler);
+
+    // The silent path is the explicit offline branch: an empty manifest OR an empty
+    // installed version, both read from this run's own bytes.
+    assert.ok(
+        handler.includes('if (latest === "" || installed === "")'),
+        handler,
+    );
+
+    // stderr is NEVER read from this source, in any branch: there is no error text
+    // anywhere in the update check.
+    assert.ok(
+        !handler.includes('data["stderr"]'),
+        "the update check must never surface stderr; it fails silently by design",
+    );
+});
+
+test("main.qml adds the check-for-updates action and forwards the update state to the popup", () => {
+    const actionsStart = mainQml.indexOf("Plasmoid.contextualActions:");
+    const representationsStart = mainQml.indexOf("// --- Representations");
+    assert.ok(actionsStart >= 0 && representationsStart > actionsStart);
+    const actions = mainQml.slice(actionsStart, representationsStart);
+
+    // The third action, after Refresh and Start Docker daemon. The widget opens no
+    // browser, so it only re-runs the check.
+    assert.ok(actions.includes('text: i18n("Check for updates")'), actions);
+    assert.ok(actions.includes('icon.name: "system-software-update"'), actions);
+    assert.ok(actions.includes("enabled: !root.updateCheckInFlight"), actions);
+    assert.ok(actions.includes("onTriggered: root.checkForUpdates()"), actions);
+
+    const blockStart = mainQml.indexOf("fullRepresentation: FullRepresentation {");
+    assert.ok(blockStart >= 0, "main.qml must define the full representation");
+    const block = mainQml.slice(blockStart);
+
+    assert.ok(block.includes("updateAvailable: root.updateAvailable"), "the popup must receive the flag");
+    assert.ok(block.includes("updateFeedback: root.updateFeedback"));
+    assert.ok(block.includes("onUpdateCheckRequested: root.checkForUpdates()"));
+
+    // The version travels inside updateFeedback (i18nc("Version %1 is available.", ...)),
+    // so the representation is deliberately not handed a second copy of it to ignore.
+    assert.ok(!block.includes("latestVersion: root.latestVersion"));
+});
+
+test("FullRepresentation.qml carries the visible-guarded update line and its signal", () => {
+    // Inbound properties and the outbound signal.
+    assert.ok(fullQml.includes("property bool updateAvailable: false"));
+    assert.ok(fullQml.includes('property string updateFeedback: ""'));
+    assert.ok(fullQml.includes("signal updateCheckRequested()"));
+
+    // It is a Label, not a button, and it opens no browser.
+    assert.ok(!fullQml.includes("openUrl"), "the widget opens no browser");
+    const updateLine = fullQml
+        .split("PlasmaComponents3.Label {")
+        .find((block) => block.includes("text: fullRoot.updateFeedback"));
+    assert.ok(updateLine, "the update line must be a PlasmaComponents3.Label");
+
+    const lineBody = updateLine.slice(0, updateLine.indexOf("\n        }"));
+    assert.ok(
+        lineBody.includes("visible: fullRoot.updateAvailable"),
+        "the line must render nothing when no update is available",
+    );
+    assert.ok(!lineBody.includes("onClicked"), "the update line must not be a button");
+});
+
+test("main.xml declares the update-check interval as an Int defaulting to 6", () => {
+    const entry = kcfgEntry(mainXml, "updateCheckIntervalHours");
+
+    assert.ok(entry.attributes.includes('type="Int"'), entry.attributes);
+    assert.ok(entry.body.includes("<default>6</default>"), entry.body);
+    assert.ok(entry.body.includes("<min>0</min>"), entry.body);
+    assert.ok(entry.body.includes("<max>168</max>"), entry.body);
+    // The label explains the hours between checks and that 0 disables them.
+    assert.ok(/0 disables/.test(entry.body), entry.body);
+});
+
+test("ConfigGeneral.qml aliases the update-check interval to a plain SpinBox value", () => {
+    assert.ok(
+        configGeneral.includes(
+            "property alias cfg_updateCheckIntervalHours: updateCheckIntervalHours.value",
+        ),
+        "Plasma reads the setting through the cfg_<entryName> alias",
+    );
+
+    // The alias target is a SpinBox's own writable value property, modelled exactly on
+    // the poll interval's cfg_pollIntervalSeconds alias.
+    assert.ok(
+        /QQC2\.SpinBox\s*\{\s*\n\s*id: updateCheckIntervalHours/.test(configGeneral),
+        "the alias target must be a QQC2.SpinBox with id updateCheckIntervalHours",
     );
 });
 

@@ -12,17 +12,20 @@ status: active
 
 ## What this slice is
 
-The QML layer Plasma loads: one KPackage that selects a representation, polls two commands, exposes
-two contextual actions, renders a panel item and a popup, and hosts a config page. The form matters —
+The QML layer Plasma loads: one KPackage that selects a representation, polls two Docker commands and a
+fixed update check, exposes three contextual actions, renders a panel item and a popup, and hosts a
+config page. The form matters —
 **the files ARE the widget**. There is no compile step, no transpile, no bundling: the bytes under
 `package/io.github.daver-ui.dockerstatus/contents/` are exactly what runs.
 
 ## Boundaries
 
-**In:** representation selection and layout; the seven `P5Support.DataSource` instances and their wiring
-(four for the Docker side, two for the download row, one for the power-off); `Plasmoid.contextualActions`
-and the start/stop/refresh handlers; the download handler and its observable state; the shutdown
-countdown, its ticker, its inline minutes editor and its observable state; i18n strings, tooltips and
+**In:** representation selection and layout; the nine `P5Support.DataSource` instances and their wiring
+(four for the Docker side, two for the download row, one for the power-off, two for the update check);
+`Plasmoid.contextualActions` and the start/stop/refresh/update handlers; the download handler and its
+observable state; the shutdown
+countdown, its ticker, its inline minutes editor and its observable state; the update check and its
+observable state, including the single muted line it can render; i18n strings, tooltips and
 `Plasmoid.title`; the
 severity-to-colour mapping; the kcfg entries and the `cfg_*` alias wiring; the config page widgets.
 
@@ -46,18 +49,20 @@ assembly lives in the [status slice](../status/status-slice.md) and whose bounda
 ## How it works
 
 `PlasmoidItem` is the root. `preferredRepresentation` is the full representation on a planar
-(desktop) form factor and null in a panel, which falls back to the compact one. Seven `DataSource`
+(desktop) form factor and null in a panel, which falls back to the compact one. Nine `DataSource`
 instances with the `executable` engine carry every command:
 
 | id | connectedSources | interval | role |
 |---|---|---|---|
-| `daemonSource` | `systemctl is-active docker` | `effectivePollIntervalMs` | the only unconditional poll |
+| `daemonSource` | `systemctl is-active docker` | `effectivePollIntervalMs` | the only unconditional Docker probe |
 | `containerSource` | the `docker ps -a` command while enabled, `[]` otherwise | the same interval, or `0` when disabled | polled only while the daemon is up |
 | `forcedDaemonRead` | assigned on demand | `0` | one-shot immediate re-read after an action |
 | `daemonAction` | assigned on demand | `0` | the privileged action, `systemctl start docker` or `systemctl stop docker`; one source serves both because only one action can be in flight |
 | `homeSource` | `printf %s "$HOME"` (a constant) | `0` | one-shot at load: the shell expands `$HOME`; the result is validated before it is used |
 | `downloadAction` | the assembled yt-dlp command, assigned on demand | `0` | one-shot video download; the single event at exit closes the run, and the consumer still guards and accumulates in case a future engine streams |
 | `powerAction` | the fixed `systemctl poweroff`, assigned on demand | `0` | one-shot at countdown expiry; clears `shutdownInFlight` and surfaces the exit code and `stderr`; can stay alive while `systemctl` waits for the shutdown job |
+| `updateCheckSource` | the fixed `updateCheckCommand` while `updateCheckIntervalHours > 0`, `[]` otherwise | `updateCheckIntervalMs` | the polled update check; the engine runs it once on connect, so the load-time check is free, and the `connectedSources` binding disconnects it (`[]`) when the interval is `0` |
+| `updateCheckForced` | assigned on demand | `0` | one-shot manual re-check behind "Check for updates"; a polled source's `connectedSources` is a binding and cannot be reassigned per click, so the tokenised command rides this one instead |
 
 `effectivePollIntervalMs` is `max(1000, pollIntervalSeconds * 1000)`, so a configured sub-second
 interval is silently floored. `onNewData` handlers write `root.daemonState` and `root.containers`;
@@ -101,13 +106,31 @@ without persisting, skips a redundant write, and otherwise writes
 `Plasmoid.configuration.shutdownCountdownMinutes`. The representation validates its field through the same
 resolver but reads and writes no configuration ([[adr-0010-inline-shutdown-minutes-in-the-representation]]).
 
+The update check is the second polled source, and it is deliberately not a third command-building
+exception: `DockerStatus.buildUpdateCheckCommand()` assembles `updateCheckCommand` entirely from fixed
+constants, so no configuration value and no user input reaches it
+([[adr-0013-widget-update-check-and-release-site]]). `handleUpdateCheck()` is the one handler both sources
+deliver to; it reads only the closing event, splits the output at the marker and decides with
+`DockerStatus.isUpdateAvailable()`. Every failure branch is silent by construction: offline, no `curl`, an
+unreadable `metadata.json` or an unparseable manifest all clear the state and render nothing — there is no
+error text anywhere in this feature. `checkForUpdates()` is the manual one-shot behind the third contextual
+action ("Check for updates", `enabled: !root.updateCheckInFlight`), and it tokenises the fixed command
+because a polled source's `connectedSources` is a binding. State ownership is unchanged: `main.qml` owns
+`installedVersion`, `updateCheckInFlight`, `updateAvailable` and `updateFeedback`, and the
+representation is a pure consumer. `FullRepresentation.qml` renders the feature's entire footprint as one
+muted, centred label — visible only while `updateAvailable`, reading `updateFeedback`, reusing the
+tagline's style — and it is deliberately neither a button nor a `SeverityDot` nor a link: the widget opens
+no browser.
+
 ## Conventions of this slice
 
 - Commands are `readonly` constants in `main.qml`, with ONE deliberate exception: the video-download
   command. It is assembled by `DockerStatus.buildVideoDownloadCommand()` from a validated URL and
   validated configuration values, and every interpolated value is shell-quoted. Configuration never
   supplies a command; it supplies values inside one. A second exception needs a new ADR — see
-  [ADR-0006](../adrs/adr-0006-video-downloader-command-boundary.md).
+  [ADR-0006](../adrs/adr-0006-video-downloader-command-boundary.md). The update-check command is also
+  built in the pure module, but entirely from fixed constants, so it mints no second exception
+  ([[adr-0013-widget-update-check-and-release-site]]).
 - The shutdown countdown is widget-owned and its command is a fixed constant (`powerOffCommand`). The
   configured minutes size a local `Date.now()` deadline and never reach a shell; the cancel path is purely
   local and needs no privilege ([[adr-0009-widget-owned-shutdown-countdown]]).
@@ -134,11 +157,14 @@ resolver but reads and writes no configuration ([[adr-0010-inline-shutdown-minut
 
 ## Dependencies
 
-**Upstream:** `dockerstatus.js` for parsing, severity and the download-command builder; `metadata.json`
+**Upstream:** `dockerstatus.js` for parsing, severity, the download-command builder and the update-check
+helpers; `metadata.json`
 and `main.xml` for plugin identity and config defaults; the probed behaviour of Plasma 6.7.4 and
 plasma5support 6.7.4. **Runtime (download only):** a `yt-dlp` executable reachable on plasmashell's
 `PATH`; for YouTube a JavaScript runtime (`node` or `deno`); cookies from the configured browser (default
-Firefox) for X and for age-gated YouTube.
+Firefox) for X and for age-gated YouTube. **Runtime (update check only):** a `curl` reachable on
+plasmashell's `PATH`, plus network reachability to the fixed Pages URL; a missing `curl` or an offline
+machine is not an error — it is simply no update notice.
 **Downstream:** the installer copies this package; the privilege slice decides whether the start
 button prompts; the verification slice can lint these files but can only *observe* this slice inside
 a running Plasma session.
@@ -159,6 +185,9 @@ a running Plasma session.
   would change this slice's assumptions about which command answers.
 - The download row cannot be instantiated outside plasmashell either; only its command boundary is
   unit tested, so its layout and enable/disable behaviour are reviewed until they run in a session.
+- The update check's QML surface — the two sources, the silent handler and the muted line — is
+  review-and-lint only, exactly like every other QML wrapper here. The Node suite pins its pure helpers and
+  its wiring as static text, which proves the arrangement, not the running behaviour.
 - The countdown lives in QML, so the play/stop timing, the inline field's interaction and the effective
   passwordless power-off are reviewed, not tested; the pure resolver (`resolveShutdownMinutes`), the two
   helpers (`shutdownRemainingSeconds`, `formatCountdown`) and the inline field's wiring (inbound property,

@@ -1,0 +1,101 @@
+name: pages
+
+# Publishes the release site for the widget on every push to master.
+#
+# Every push regenerates latest.json from the plasmoid's metadata.json before the
+# site is published, so the machine endpoint the widget polls and the version the
+# page advertises come from the one file Plasma itself reads,
+# package/io.github.daver-ui.dockerstatus/metadata.json, and cannot drift:
+# nothing about the release version is ever authored twice. The regeneration
+# happens in the checkout and is shipped inside dist/ — nothing is committed back.
+#
+# Deployment mode is the Pages workflow (actions/upload-pages-artifact +
+# actions/deploy-pages), not a gh-pages branch, so the published artifact is
+# assembled fresh here into dist/ and no generated file is ever committed.
+#
+# dist/ is site/* plus the assets the site references at its own root:
+#   latest.json            regenerated from metadata.json
+#   icons/dockerstatus.svg  copied from the KPackage (contents/icons/)
+#   screenshots/*.png     copied from the repo's screenshots/ (at least one)
+# site/e2e/ is NOT published: it is the Playwright scaffold, not the site.
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+# Least privilege, scoped per job: the build job checks out and runs user scripts and
+# uploads an artifact, so it needs nothing but read. Only the deploy job writes to Pages
+# or mints an OIDC token, so only the deploy job is granted that.
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # Keep master honest: the same two gates the pull request runs, before
+      # anything is published. A broken master must not ship a site.
+      - name: Validate the documentation corpus
+        run: node docs/validate.js
+
+      - name: Run the unit suite
+        run: node --test tests/
+
+      - name: Regenerate site/latest.json from metadata.json
+        run: node .github/scripts/sync-manifest.mjs --write
+
+      - name: Assemble the publishable site
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rm -rf dist
+          mkdir -p dist/icons dist/screenshots
+
+          for f in site/index.html site/styles.css site/latest.json; do
+            if [ ! -f "$f" ]; then
+              echo "::error::missing $f — the site sources must exist before Pages can publish"
+              exit 1
+            fi
+            cp "$f" "dist/$(basename "$f")"
+          done
+
+          cp package/io.github.daver-ui.dockerstatus/contents/icons/dockerstatus.svg dist/icons/
+          cp screenshots/*.png dist/screenshots/
+
+          echo "dist contents:"
+          find dist -type f | sort
+
+      - name: Upload the Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    name: deploy
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

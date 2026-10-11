@@ -251,3 +251,27 @@ action, not a systemd `manage-units` verb, so a rule would not create a password
 weaken the docker grant. Changing logind's default is a system-policy edit, outside this widget.
 **Reference:** [privilege-slice.md](../privilege/privilege-slice.md) — why the power-off is outside the
 grant and does not prompt.
+
+## the widget never says an update is available
+
+**Context:** the widget has been running for a while, the repository advertises a newer version, and the
+popup shows no update notice.
+**Root cause:** silence is the contract, not a fault. The notice appears only when the fetched manifest's
+`version` is *strictly* greater than the widget's own; there is no "up to date" message and no error text
+anywhere in the feature, so any of these renders nothing — `updateCheckIntervalHours` is `0` (the check is
+disabled); the machine is offline or `curl` is not on plasmashell's `PATH`; the installed `metadata.json`
+is absent or unreadable (for example a plain-copy install in a directory plasmashell is not reading); the
+manifest fetch returns an empty or non-JSON body; or the remote version is equal to or lower than the
+installed one. The comparison is numeric and strictly-greater, so `1.2` and `1.2.0` compare equal and show
+nothing.
+**Fix:** none is needed while the widget is current. To check on demand, use the "Check for updates" entry
+in the widget's right-click menu, and confirm on the config page that the interval is not `0` (default 6
+hours). If a newer release genuinely exists and the line still does not appear, confirm plasmashell can
+reach the network and has `curl`, then compare the installed version (`./install.sh status`) with the
+manifest at `https://dave-r-ui.github.io/docker-status-widget/latest.json`. A stale manifest in a source
+checkout is a maintenance fault, not a widget fault: regenerate it with
+`node .github/scripts/sync-manifest.mjs --write`. Note that the static version text in `site/index.html` is
+hand-maintained and is **not** guarded by `sync-manifest.mjs --check`, which checks the manifest only.
+**Reference:** [../adrs/adr-0013-widget-update-check-and-release-site.md](../adrs/adr-0013-widget-update-check-and-release-site.md)
+— the reversal, the manifest contract and the silence contract; [status-slice.md](../status/status-slice.md)
+— `isUpdateAvailable` and `compareVersions`.

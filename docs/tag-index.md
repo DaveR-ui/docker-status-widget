@@ -4,14 +4,15 @@ Tag → document, for when a question arrives in vocabulary the tree does not ob
 by `node docs/validate.js --write`; regenerate rather than edit.
 
 <!-- BEGIN GENERATED: tags -->
-<!-- snapshot: 2026-10-10 -->
+<!-- snapshot: 2026-10-11 -->
 ## Generated tag index
 
-- **adr** — adr-0001-corpus-location-and-entry-point, adr-0002-lowercase-naming-convention, adr-0003-slice-taxonomy, adr-0004-scoped-polkit-grant, adr-0005-doc-classes-and-body-shape-exceptions, adr-0006-video-downloader-command-boundary, adr-0007-stop-button-confirmation-and-narrow-grant, adr-0008-configurable-cookies-browser-and-bottom-text, adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation, adr-0011-fixed-dark-palette-from-mockup, adr-index, adr-template
+- **adr** — adr-0001-corpus-location-and-entry-point, adr-0002-lowercase-naming-convention, adr-0003-slice-taxonomy, adr-0004-scoped-polkit-grant, adr-0005-doc-classes-and-body-shape-exceptions, adr-0006-video-downloader-command-boundary, adr-0007-stop-button-confirmation-and-narrow-grant, adr-0008-configurable-cookies-browser-and-bottom-text, adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation, adr-0011-fixed-dark-palette-from-mockup, adr-0013-widget-update-check-and-release-site, adr-index, adr-template
 - **bootstrap** — bootstrap-checklist
 - **brownfield** — adr-0003-slice-taxonomy, slice-generalities-template
 - **catalog** — interface-surface-template
 - **checklist** — bootstrap-checklist, new-note-checklist
+- **ci** — adr-0013-widget-update-check-and-release-site
 - **cli** — installer-index, installer-slice
 - **command-boundary** — adr-0006-video-downloader-command-boundary
 - **components** — ui-inventory-template
@@ -28,6 +29,7 @@ by `node docs/validate.js --write`; regenerate rather than edit.
 - **evidence** — verification-index, verification-slice
 - **failures** — troubleshooting
 - **generality** — installer-slice, privilege-slice, status-slice, verification-slice, widget-slice
+- **github-pages** — adr-0013-widget-update-check-and-release-site
 - **hub** — adr-index, hub-template, installer-index, privilege-index, status-index, verification-index, widget-index
 - **index** — adr-index, installer-index, privilege-index, readme, status-index, verification-index, widget-index
 - **installer** — installer-index, installer-slice
@@ -37,6 +39,7 @@ by `node docs/validate.js --write`; regenerate rather than edit.
 - **logic** — status-index, status-slice
 - **naming** — adr-0002-lowercase-naming-convention
 - **navigation** — hub-template, readme
+- **network** — adr-0013-widget-update-check-and-release-site
 - **packaging** — installer-slice
 - **polkit** — adr-0004-scoped-polkit-grant, adr-0007-stop-button-confirmation-and-narrow-grant, privilege-index, privilege-slice
 - **power-management** — adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation
@@ -61,6 +64,7 @@ by `node docs/validate.js --write`; regenerate rather than edit.
 - **tooling** — adr-0002-lowercase-naming-convention
 - **troubleshooting** — troubleshooting, troubleshooting-template
 - **ui** — adr-0007-stop-button-confirmation-and-narrow-grant, adr-0008-configurable-cookies-browser-and-bottom-text, adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation, adr-0011-fixed-dark-palette-from-mockup, ui-inventory-template, widget-ui-surfaces
+- **update-check** — adr-0013-widget-update-check-and-release-site
 - **validator** — adr-0002-lowercase-naming-convention
 - **verification** — troubleshooting, verification-index, verification-slice
 - **video-download** — adr-0006-video-downloader-command-boundary, adr-0008-configurable-cookies-browser-and-bottom-text
