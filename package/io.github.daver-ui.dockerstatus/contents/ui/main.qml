@@ -127,7 +127,11 @@ PlasmoidItem {
 
     // --- Plasmoid metadata ---------------------------------------------------
     Plasmoid.title: i18n("Docker Status")
-    Plasmoid.backgroundHints: PlasmaCore.Types.DefaultBackground | PlasmaCore.Types.ConfigurableBackground
+    // NoBackground is a sanctioned choice: the widget now paints its own 20px-radius dark
+    // card (see FullRepresentation.qml), and contents/config/main.xml carries no background
+    // entry, so dropping ConfigurableBackground removes no user-facing setting. Plasma's
+    // frame would otherwise show through on a light system theme.
+    Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground
 
     // On the desktop show the full widget; in a panel fall back to the compact
     // representation, which expands into a popup on click.

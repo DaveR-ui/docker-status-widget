@@ -1,5 +1,5 @@
 ---
-last_updated: 2026-09-21
+last_updated: 2026-10-10
 status: active
 description: Entry point of the Docker Status documentation corpus — what it is, how to navigate it, and the rules every note obeys.
 tags: [index, entry-point, navigation, documentation]
@@ -105,3 +105,4 @@ rescued — if it is lost, rerun the generator.
 | [adrs/adr-0008-configurable-cookies-browser-and-bottom-text.md](adrs/adr-0008-configurable-cookies-browser-and-bottom-text.md) | The cookies browser becomes a validated setting, reversing ADR-0006's browser-constancy clause; the bottom text is configuration, and the stop button gets a fixed narrow width. |
 | [adrs/adr-0009-widget-owned-shutdown-countdown.md](adrs/adr-0009-widget-owned-shutdown-countdown.md) | A widget-owned "Countdown to Extinction" shutdown: the power-off is a fixed command, the duration is a validated setting that never reaches it, and, unlike the docker stop, it does not prompt. Its inline-field rejection is superseded by ADR-0010. |
 | [adrs/adr-0010-inline-shutdown-minutes-in-the-representation.md](adrs/adr-0010-inline-shutdown-minutes-in-the-representation.md) | The shutdown minutes become an inline field in the representation: it emits a value-carrying signal and `main.qml` stays the only writer of the kcfg entry; the duration still never reaches a shell. |
+| [adrs/adr-0011-fixed-dark-palette-from-mockup.md](adrs/adr-0011-fixed-dark-palette-from-mockup.md) | The widget paints the mockup's fixed dark palette and type scale instead of following the Kirigami theme: a deliberate override that reverses the colour half of the SeverityDot rule (severity still resolves only in `SeverityDot.qml`), switches the popup to its own card, and makes the action buttons equal width. |

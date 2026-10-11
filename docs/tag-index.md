@@ -4,10 +4,10 @@ Tag → document, for when a question arrives in vocabulary the tree does not ob
 by `node docs/validate.js --write`; regenerate rather than edit.
 
 <!-- BEGIN GENERATED: tags -->
-<!-- snapshot: 2026-09-21 -->
+<!-- snapshot: 2026-10-10 -->
 ## Generated tag index
 
-- **adr** — adr-0001-corpus-location-and-entry-point, adr-0002-lowercase-naming-convention, adr-0003-slice-taxonomy, adr-0004-scoped-polkit-grant, adr-0005-doc-classes-and-body-shape-exceptions, adr-0006-video-downloader-command-boundary, adr-0007-stop-button-confirmation-and-narrow-grant, adr-0008-configurable-cookies-browser-and-bottom-text, adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation, adr-index, adr-template
+- **adr** — adr-0001-corpus-location-and-entry-point, adr-0002-lowercase-naming-convention, adr-0003-slice-taxonomy, adr-0004-scoped-polkit-grant, adr-0005-doc-classes-and-body-shape-exceptions, adr-0006-video-downloader-command-boundary, adr-0007-stop-button-confirmation-and-narrow-grant, adr-0008-configurable-cookies-browser-and-bottom-text, adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation, adr-0011-fixed-dark-palette-from-mockup, adr-index, adr-template
 - **bootstrap** — bootstrap-checklist
 - **brownfield** — adr-0003-slice-taxonomy, slice-generalities-template
 - **catalog** — interface-surface-template
@@ -43,7 +43,7 @@ by `node docs/validate.js --write`; regenerate rather than edit.
 - **privilege** — adr-0004-scoped-polkit-grant, adr-0007-stop-button-confirmation-and-narrow-grant, privilege-index, privilege-slice
 - **project** — project
 - **project-md** — project-md-template
-- **qml** — widget-index, widget-slice, widget-ui-surfaces
+- **qml** — adr-0011-fixed-dark-palette-from-mockup, widget-index, widget-slice, widget-ui-surfaces
 - **routing** — adr-0003-slice-taxonomy, project
 - **schema** — adr-0005-doc-classes-and-body-shape-exceptions
 - **security** — adr-0004-scoped-polkit-grant, adr-0006-video-downloader-command-boundary, adr-0007-stop-button-confirmation-and-narrow-grant, adr-0009-widget-owned-shutdown-countdown, privilege-slice
@@ -57,9 +57,10 @@ by `node docs/validate.js --write`; regenerate rather than edit.
 - **symptoms** — troubleshooting, troubleshooting-template
 - **template** — adr-template, document-template, hub-template, interface-surface-template, project-md-template, slice-generalities-template, troubleshooting-template, ui-inventory-template
 - **tests** — verification-index, verification-slice
+- **theming** — adr-0011-fixed-dark-palette-from-mockup
 - **tooling** — adr-0002-lowercase-naming-convention
 - **troubleshooting** — troubleshooting, troubleshooting-template
-- **ui** — adr-0007-stop-button-confirmation-and-narrow-grant, adr-0008-configurable-cookies-browser-and-bottom-text, adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation, ui-inventory-template, widget-ui-surfaces
+- **ui** — adr-0007-stop-button-confirmation-and-narrow-grant, adr-0008-configurable-cookies-browser-and-bottom-text, adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation, adr-0011-fixed-dark-palette-from-mockup, ui-inventory-template, widget-ui-surfaces
 - **validator** — adr-0002-lowercase-naming-convention
 - **verification** — troubleshooting, verification-index, verification-slice
 - **video-download** — adr-0006-video-downloader-command-boundary, adr-0008-configurable-cookies-browser-and-bottom-text

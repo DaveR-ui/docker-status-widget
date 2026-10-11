@@ -1,5 +1,5 @@
 ---
-last_updated: 2026-09-21
+last_updated: 2026-10-10
 status: active
 description: Agent-facing entry point for the Docker Status plasmoid — stack, slices, commands, conventions, vocabulary and symptom routing.
 tags: [project, entry-point, routing, slices]
@@ -93,7 +93,8 @@ package/io.github.daver-ui.dockerstatus/      the plasmoid KPackage — what Pla
         ├── main.qml                  PlasmoidItem: fixed commands, polling, actions, download wiring, state
         ├── CompactRepresentation.qml panel: icon + severity dot
         ├── FullRepresentation.qml    popup/desktop: state, list, start/stop action row, feedback, download row, shutdown countdown, tagline
-        ├── SeverityDot.qml           the single severity -> theme colour mapping
+        ├── SeverityDot.qml           the single severity -> palette colour mapping
+        ├── DockerStatusPalette.qml   the mockup's fixed dark palette and type scale (neutral chrome tokens)
         ├── dockerstatus.js           pure logic, no QML types, unit tested
         └── config/ConfigGeneral.qml  config page widgets (poll, icon, list, download settings)
 polkit/49-docker-status-widget.rules  the scoped privilege grant (installed by hand)
@@ -113,8 +114,9 @@ docs/                                 this corpus — entry: readme.md, routing:
   `connectedSources` as a **set**, so an identical command string is not re-executed.
 - `dockerstatus.js` carries no QML types and no side effects; keep it ES5-style. The test harness
   strips only the `.pragma library` line and evaluates the shipped bytes.
-- Severity is decided in `dockerstatus.js`; QML only maps severity onto theme colours. That mapping
-  lives in `SeverityDot.qml` and nowhere else.
+- Severity is decided in `dockerstatus.js`; QML only maps severity onto the mockup palette
+  ([[adr-0011-fixed-dark-palette-from-mockup]]). That mapping lives in `SeverityDot.qml` and nowhere
+  else.
 - `unknown` is a first-class state and must never render as "stopped": it gets the muted colour,
   never the neutral one.
 - Privilege is granted only by the polkit rule: one action id, one unit (`docker.service`), one verb

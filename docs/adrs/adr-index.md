@@ -36,7 +36,8 @@ re-litigated from the code alone does not need a record either — only the *why
   click, with the polkit grant deliberately left at `["start"]` so stop prompts while start does not.
 - [[adr-0008-configurable-cookies-browser-and-bottom-text]] — the cookies browser becomes a validated
   setting, reversing ADR-0006's browser-constancy clause; the bottom text is configuration, and the stop
-  button gets a fixed narrow width.
+  button gets a fixed narrow width. Its fixed narrow-width clause is superseded by
+  [[adr-0011-fixed-dark-palette-from-mockup]]; the rest still stands.
 - [[adr-0009-widget-owned-shutdown-countdown]] — the shutdown countdown is widget-owned (a wall-clock
   deadline with a local cancel), the power-off is a fixed command that adds no second command-building
   exception, and, unlike the docker stop, it does not prompt: logind's `allow_active=yes` default makes a
@@ -46,6 +47,11 @@ re-litigated from the code alone does not need a record either — only the *why
   in the representation: it emits a value-carrying signal and `main.qml` stays the only writer of the
   `shutdownCountdownMinutes` kcfg entry, validating through the unchanged resolver; the duration still
   never reaches a shell, so no second command-building exception is minted.
+- [[adr-0011-fixed-dark-palette-from-mockup]] — the widget paints the mockup's fixed dark palette and
+  pixel type scale instead of following the Kirigami theme: a deliberate human-operator override that
+  reverses the colour half of the SeverityDot rule (severity still resolves only in `SeverityDot.qml`),
+  switches the popup to its own card via `PlasmaCore.Types.NoBackground`, and makes the two action buttons
+  equal width; every command stays fixed and `unknown` stays muted.
 
 ## Elsewhere
 

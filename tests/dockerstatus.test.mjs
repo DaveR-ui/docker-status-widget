@@ -1170,7 +1170,7 @@ test("FullRepresentation.qml resolves the displayed browser through the command'
     assert.ok(fullQml.includes(': i18nc("@info", "Cookies: not used")'));
 });
 
-test("the stop button is fixed-width while the start button still fills the row", () => {
+test("both action buttons fill the row, so the row cannot reflow between labels", () => {
     // Select by the button's own label, not by icon name: the Countdown to Extinction
     // play/cancel buttons reuse the same media-playback-start/stop icons, so an
     // icon-name match would silently depend on file order.
@@ -1183,24 +1183,27 @@ test("the stop button is fixed-width while the start button still fills the row"
     assert.ok(startBlock, "the action row must still have a start button");
     assert.ok(stopBlock, "the action row must still have a stop button");
 
-    assert.ok(startBlock.includes("Layout.fillWidth: true"), "Start must keep sharing the row");
+    // Comments are stripped before matching. The stop block names the superseded narrow
+    // rule in prose, so a pin a comment can satisfy would guard the comment instead of
+    // the code -- and would keep passing after the equal-width rule was deleted.
+    const startCode = stripQmlComments(startBlock);
+    const stopCode = stripQmlComments(stopBlock);
+
+    assert.ok(startCode.includes("Layout.fillWidth: true"), "Start must fill the row");
 
     // Read from the stop button's own block and from its own line on, so a fillWidth that
     // belongs to another widget cannot stand in for the stop button's.
-    const stopHeader = stopBlock
-        .slice(stopBlock.indexOf('icon.name: "media-playback-stop"'))
+    const stopHeader = stopCode
+        .slice(stopCode.indexOf('icon.name: "media-playback-stop"'))
         .split("\n")
         .slice(0, 10)
         .join("\n");
 
     assert.ok(
-        stopHeader.includes("Layout.fillWidth: false"),
-        "the stop button must not fill the row",
-    );
-    assert.ok(
-        stopHeader.includes("Layout.preferredWidth: Kirigami.Units.gridUnit * 7"),
-        "the stop button must keep one fixed narrow width, so the row cannot reflow "
-            + "between \"Stop daemon\" and \"Confirm stop\"",
+        stopHeader.includes("Layout.fillWidth: true"),
+        "Stop must fill the row too, so the row cannot reflow between "
+            + "\"Stop daemon\" and \"Confirm stop\": both buttons keep their width and "
+            + "only their labels change",
     );
 });
 

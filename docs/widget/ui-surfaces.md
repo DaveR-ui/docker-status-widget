@@ -33,17 +33,17 @@ There is no other surface. A new one is a design decision, not an implementation
 | Severity is computed in `dockerstatus.js`; colour is chosen only in `SeverityDot.qml`. | No other file may map a state to a colour. |
 | Representations are pure consumers: properties in, signals out. | No `DataSource` access, and `Plasmoid.configuration` only for the compact icon name. |
 | Configuration never supplies a command, only validated values inside one. | The video-download row is the ONE place user input enters a command; the URL is validated against a host allow-list and every interpolated value is shell-quoted, so the run token stays safe. A second exception needs a new ADR ([[adr-0006-video-downloader-command-boundary]]). |
-| `unknown` never looks healthy. | Muted (`disabledTextColor`), never neutral. |
-| Secondary text stays secondary. | `opacity: 0.7` for small labels, `0.3` for the separator, `1.0`/`0.5` for the panel icon. |
+| `unknown` never looks healthy. | Muted (the palette's `muted` grey), never neutral (the palette's `orange` accent). |
+| Secondary text stays secondary. | The palette's `muted` colour for small labels and footer text; `opacity: 0.5` for the tagline, `0.38` for a disabled button, `1.0`/`0.5` for the panel icon. |
 | Everything user-visible is translated. | `i18n(...)` for plain strings, `i18nc("@info", ...)` when the argument needs context. |
 
 Verification tooling: two `qmllint` binaries exist on this machine and they are not interchangeable. The
 one on `PATH` is Qt5 (`qt5-declarative 5.15.19`) and reports syntax only. The matching
-`/usr/lib/qt6/bin/qmllint` (`qt6-declarative 6.11.2`) is the semantic tool for a Plasma 6 target. Measured
-on the four `contents/ui/*.qml` files it reports 0 errors, 75 warnings (every one `[unqualified]`) and 43
-infos, of which 2 are `[unused-imports]`; on `contents/ui/config/*.qml` it reports 0 errors, 22 warnings
-(all `[unqualified]`) and 6 infos, of which 1 is `[unused-imports]`. Across the five files that is 0
-errors, 97 warnings and 49 infos (3 `[unused-imports]`), and none of `[missing-property]`,
+`/usr/lib/qt6/bin/qmllint` (`qt6-declarative 6.12.0`) is the semantic tool for a Plasma 6 target. Measured
+on the five `contents/ui/*.qml` files it reports 0 errors, 99 warnings (every one `[unqualified]`) and 51
+infos, of which 2 are `[unused-imports]`; on `contents/ui/config/*.qml` it reports 0 errors, 32 warnings
+(all `[unqualified]`) and 5 infos, none of them `[unused-imports]`. Across the six files that is 0
+errors, 131 warnings and 56 infos (2 `[unused-imports]`), and none of `[missing-property]`,
 `[incompatible-type]`, `[unresolved-type]` or `[import]`. Every
 "Verification" line below means both binaries were run; "the Qt6 semantic run is clean" records that
 measured result, and the exit code is not the evidence (Qt6 exits 0 unless `--max-warnings` is set).
@@ -54,7 +54,9 @@ measured result, and the exit code is not the evidence (Qt6 exits 0 unless `--ma
 
 #### Purpose
 The panel presence: the configured theme icon plus a severity dot, so the daemon state is readable
-without opening anything.
+without opening anything. It is restyled only through the shared tokens — the dot reads the mockup
+palette via `SeverityDot` — while the icon deliberately stays a theme icon, so the panel still follows
+the user's theme ([[adr-0011-fixed-dark-palette-from-mockup]]).
 
 #### Path
 `package/io.github.daver-ui.dockerstatus/contents/ui/CompactRepresentation.qml`
@@ -81,9 +83,13 @@ delegating to `SeverityDot`. Hiding the dot when the state is unknown.
 ### FullRepresentation
 
 #### Purpose
-The popup/desktop surface: what the daemon is doing, how many containers run, which ones, a start/stop
-button row, a refresh button, any failure feedback, the video-download row, the cookies-browser line, the
-"Countdown to Extinction" shutdown section, and the configurable bottom text.
+The popup/desktop surface, restyled to the mockup's fixed dark palette: a topbar (logo tile, eyebrow and
+title, refresh icon-button), a status card (daemon state, an ONLINE/OFFLINE pill, a running-container
+count and progress bar, the start/stop button row), the container list, the video-download row with its
+cookies-browser line, the "Countdown to Extinction" shutdown section, the configurable bottom text and a
+footer. It paints its own dark 20px-radius card, so Plasma's own background is switched off
+(`Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground` in `main.qml`;
+[[adr-0011-fixed-dark-palette-from-mockup]]).
 
 #### Path
 `package/io.github.daver-ui.dockerstatus/contents/ui/FullRepresentation.qml`
@@ -103,32 +109,48 @@ All state flows down as properties from `main.qml`; the signals flow back up and
 `root.startShutdownCountdown()`, `root.stopShutdownCountdown()` and `root.setShutdownMinutes(text)`. The
 container list model is the parsed array itself. `actionKind` (`DockerStatus.ACTION_START` / `ACTION_STOP`)
 says which action owns an in-flight reply, so the row can show the matching label while both actions share
-one `actionInFlight` flag.
+one `actionInFlight` flag. The view derives its own display values from those properties:
+`runningContainerRatio` (`DockerStatus.countByState(containers, "running")` over the container count,
+guarded against a zero total) feeds the progress bar; `containerIconFor(name)` hashes a container name
+into a fixed list of generic theme icons for the row tile; and every severity accent reads
+`statusDot.severityColor`.
 
 #### Usage Pattern
-Shown directly as the desktop widget and as the panel popup. Both buttons are always visible so their
-position never moves: start keeps `Layout.fillWidth: true` and absorbs the spare width, while stop is
-pinned to a fixed narrow width (`Kirigami.Units.gridUnit * 7`, `Layout.fillWidth: false`) so the
-destructive action stays visually smaller and the row cannot reflow between "Stop daemon" and
-"Confirm stop". Start is disabled while an action is in flight or while the daemon already runs, and
-stop is disabled while an action is in flight or while the daemon is not running. Stop never fires on one
-click — the first click arms a confirmation and shows a negative warning ("Stopping the daemon stops every
-running container. Press again to confirm."), the second click runs the stop, and the arming expires after
-five seconds so a forgotten armed button cannot be completed by a later click. A confirmation arriving
-sooner than half a second after the arming (`stopConfirmMinDwellMs`) is treated as the tail of the same
-physical gesture and does not confirm, so one double-click cannot stop every running container. Start stays
-passwordless
-when the polkit rule is installed; stop always prompts, because the grant is deliberately not widened for
-it ([[adr-0007-stop-button-confirmation-and-narrow-grant]]). A failure appears below the row as normalised
-`stderr` (CR stripped, trimmed), or as a generic message when `stderr` is empty. The download row appears
-only while the `showVideoDownloader` setting is on; its button is disabled while a download is in flight,
-while the paste is empty, or until the one-shot `homeSource` has reported `$HOME`. The browser is
-configured on the same page and resolved through `DockerStatus.resolveCookiesBrowser()`, the same function
-`main.qml` feeds into the command, so the muted `Cookies from: <browser>` line under the row can never
-claim a browser the download is not using; an opted-out setting reads `Cookies: not used`. The last child
-is a muted, centre-aligned line carrying the configured bottom text (default
-`Persiguiendo la singularidad`) that disappears entirely when the setting is empty; it carries no state and
-is the only text allowed on this surface's periphery.
+Shown directly as the desktop widget and as the panel popup. The root is an `Item` wrapping a
+`ColumnLayout` — a layout-managed item must not carry anchors, so the mockup's one dark card is painted
+behind the column at `z: -1` and the column supplies the inner padding. The topbar carries the logo tile,
+an uppercase eyebrow over the title, the in-flight busy indicator and a refresh icon-button. The status
+card shows the daemon state beside a severity dot (`halo: true`), an ONLINE/OFFLINE pill whose text and
+tint both derive from that dot's `severityColor`, the running/total figure (`DockerStatus.countByState()`
+over the container count) over a progress bar whose fill is the same severity colour, and the action row.
+Every severity accent on the card — dot, pill, progress fill, footer dot — is read from
+`statusDot.severityColor`; no colour is computed here. Both buttons are always visible and equal width
+(`Layout.fillWidth: true`), which supersedes ADR-0008's narrow-stop clause (`gridUnit * 7`); the row still
+cannot reflow between "Stop daemon" and "Confirm stop", because both fill and only their labels change.
+Start is disabled while an action is in flight or while the daemon already runs, and stop is disabled
+while an action is in flight or while the daemon is not running. Stop never fires on one click — the first
+click arms a confirmation and shows a negative warning ("Stopping the daemon stops every running
+container. Press again to confirm."), the second click runs the stop, and the arming expires after five
+seconds so a forgotten armed button cannot be completed by a later click. A confirmation arriving sooner
+than half a second after the arming (`stopConfirmMinDwellMs`) is treated as the tail of the same physical
+gesture and does not confirm, so one double-click cannot stop every running container. Start stays
+passwordless when the polkit rule is installed; stop always prompts, because the grant is deliberately not
+widened for it ([[adr-0007-stop-button-confirmation-and-narrow-grant]]). A failure appears below the row
+as normalised `stderr` (CR stripped, trimmed), or as a generic message when `stderr` is empty.
+
+The container list is a `ListView` over the parsed array; each row shows a deterministic theme-icon tile
+(`containerIconFor(name)`, a cheap hash into a fixed list of generic theme names, so the same container
+always gets the same tile and a missing theme icon degrades to nothing), the container name, and a
+six-pixel severity dot beside the state. The download row appears only while the `showVideoDownloader`
+setting is on; its button is disabled while a download is in flight, while the paste is empty, or until
+the one-shot `homeSource` has reported `$HOME`. The browser is configured on the same page and resolved
+through `DockerStatus.resolveCookiesBrowser()`, the same function `main.qml` feeds into the command, so
+the muted `Cookies from: <browser>` line under the row can never claim a browser the download is not
+using; an opted-out setting reads `Cookies: not used`. The configured bottom text (default
+`Persiguiendo la singularidad`) is a muted, centre-aligned line that disappears entirely when the setting
+is empty; it is configured copy, not a status message. A footer closes the card: a hairline rule, the
+static "Docker Status · Local panel" label, and the daemon state beside a five-pixel dot that reuses the
+header dot's `severityColor`.
 
 The "Countdown to Extinction" section sits above the tagline: a separator, a bold title, a "Minutes until
 power-off:" label with an inline `TextField` (`shutdownMinutesField`), a wide play button ("Shut down" /
@@ -235,20 +257,26 @@ The single severity-to-colour mapping, shared by every representation.
 `package/io.github.daver-ui.dockerstatus/contents/ui/SeverityDot.qml`
 
 #### Interface
-Takes `severity` (one of `positive`, `neutral`, `negative`, `muted`) and an optional `diameter`; exposes
+Takes `severity` (one of `positive`, `neutral`, `negative`, `muted`), an optional `diameter` (default
+`Kirigami.Units.gridUnit / 3`) and an opt-in `halo` (a 4px ring at 0.1 alpha, off by default); exposes
 the resolved `severityColor`.
 
 #### Data Flow
-`severity` is always produced by `dockerstatus.js`; the component resolves it against Kirigami theme
-colours and nothing else flows out.
+`severity` is always produced by `dockerstatus.js`; the component resolves it against the mockup palette
+(`DockerStatusPalette.qml`) — positive → green `#55d69e`, negative → red `#ff737d`, neutral → orange
+`#ffad5c`, muted → grey `#9aa9b1` — and nothing else flows out. The palette holds neutral chrome only;
+it never maps a severity.
 
 #### Usage Pattern
-Used by the compact icon row, the popup header and every container row. The `default` branch resolves to
-the muted colour on purpose.
+Used by the compact icon row, the popup status card, the running-count progress fill, the footer dot, the
+download and shutdown feedback rows and every container row. The status card opts into `halo: true` (the
+mockup's soft ring); the six-pixel list dots do not, so a consumer opts in rather than getting a bigger
+dot by accident. The `default` branch resolves to the muted colour on purpose — never neutral.
 
 #### Anti-Patterns
 Passing a daemon *state* into this component instead of a severity — the mapping would then live in two
-places. Reusing `neutral` for unknown states, which would make a broken probe look merely stopped.
+places. Mapping a severity to a palette colour anywhere else: every consumer reads `severityColor`.
+Reusing `neutral` for unknown states, which would make a broken probe look merely stopped.
 
 #### Verification
 `qmllint` (both binaries — see the verification-tooling note; the Qt6 semantic run is clean); the underlying severity mapping is covered by the Node harness.
@@ -256,20 +284,24 @@ places. Reusing `neutral` for unknown states, which would make a broken probe lo
 ### ConfigGeneral
 
 #### Purpose
-The configuration page: poll interval, panel icon name, whether containers are listed, and the
-download settings.
+The configuration page, restyled to the palette as five section cards (Docker, Container list, Video
+download, Shutdown countdown, Appearance): poll interval, panel icon name, whether containers are listed,
+the download settings, the shutdown minutes and the bottom text. The page keeps Plasma's chrome — unlike
+the popup it does not switch the background off — and paints the palette's optional dark page surface
+(`paintPageBackground`) behind the cards; `import ".."` lets the palette `QtObject` resolve from `ui/`
+([[adr-0011-fixed-dark-palette-from-mockup]]).
 
 #### Path
 `package/io.github.daver-ui.dockerstatus/contents/ui/config/ConfigGeneral.qml`
 (the `source` in `contents/config/config.qml` is resolved relative to `contents/ui/`, not `contents/`).
 
 #### Interface
-Eight `cfg_*` aliases — `cfg_pollIntervalSeconds`, `cfg_iconName`, `cfg_showContainerList`,
-`cfg_showVideoDownloader`, `cfg_downloadDirectory`, `cfg_jsRuntime`, `cfg_ytDlpBinary` and
-`cfg_taglineText` — each bound to a plain writable property of a widget, plus a plain string
-`cfg_cookiesBrowser`. The bottom text is a setting like the rest: display-only copy that leaves the panel
-representation untouched, and the browser is validated by `resolveCookiesBrowser()` before it reaches the
-command.
+Nine `cfg_*` aliases — `cfg_pollIntervalSeconds`, `cfg_iconName`, `cfg_showContainerList`,
+`cfg_showVideoDownloader`, `cfg_downloadDirectory`, `cfg_jsRuntime`, `cfg_ytDlpBinary`,
+`cfg_taglineText` and `cfg_shutdownCountdownMinutes` — each bound to a plain writable property of a
+widget, plus a plain string `cfg_cookiesBrowser`. The bottom text is a setting like the rest: display-only
+copy that leaves the panel representation untouched, and the browser is validated by
+`resolveCookiesBrowser()` before it reaches the command.
 
 The browser is the one setting carried by a `QQC2.ComboBox`, and that is why it alone is not an alias.
 Plasma delivers every stored value as an *initial property*, and that write arrives before the combo
@@ -361,35 +393,44 @@ Fast anchors: colour · spacing · typography · opacity
 
 ### Colour
 
+The widget paints the mockup's fixed dark palette, not the Kirigami theme. The tokens live in
+`DockerStatusPalette.qml`, and this table is a sanctioned override of the theme-following rule, recorded
+in [[adr-0011-fixed-dark-palette-from-mockup]]. The severity accents are consumed through
+`SeverityDot.severityColor`, never read directly at a call site.
+
 | Token | Used for |
 |---|---|
-| `Kirigami.Theme.positiveTextColor` | healthy daemon, running container |
-| `Kirigami.Theme.neutralTextColor` | stopped daemon, exited/created container |
-| `Kirigami.Theme.negativeTextColor` | failed daemon, crash-looping container, action feedback |
-| `Kirigami.Theme.disabledTextColor` | unknown state (muted), and the list separator |
+| `paletteTokens.green` (`#55d69e`) | healthy daemon, running container |
+| `paletteTokens.orange` (`#ffad5c`) | stopped daemon, exited/created container |
+| `paletteTokens.red` (`#ff737d`) | failed daemon, crash-looping container |
+| `paletteTokens.muted` (`#9aa9b1`) | unknown state (muted), footer text, secondary labels |
+| `paletteTokens.line` | hairline borders and the list separator |
+| `Kirigami.Theme.negativeTextColor` | functional error text only: a failed action, an armed stop, an invalid inline value (not a severity accent) |
 
 ### Spacing and sizing
 
 | Token | Used for |
 |---|---|
 | `Kirigami.Units.smallSpacing` | gaps inside every layout row |
-| `Kirigami.Units.gridUnit` | dot diameter (`/3`), popup width (`*16`), list height cap (`*10`) |
+| `Kirigami.Units.largeSpacing` | section spacing, config-card margins |
+| `Kirigami.Units.gridUnit` | dot diameter (`/3`), popup width (`*34`, minimum `*30`), list height cap (`*10`) |
 | `Kirigami.Units.iconSizes.smallMedium` | the panel icon |
-| `Kirigami.Units.iconSizes.small` | the busy indicator |
+| `Kirigami.Units.iconSizes.small` | the busy indicators |
 
 ### Typography
 
 | Token | Used for |
 |---|---|
-| `Kirigami.Theme.smallFont` | secondary labels: badge, container state, feedback, empty-list message |
+| `paletteTokens.fontFamily` (Inter) with the pixel sizes | every label on the popup and config page: body 14, title 19, section 13, metric 26, subtle 11, label 12 |
+| `Kirigami.Theme.smallFont` | the config page's one inline error label (functional error text) |
 
 ### Opacity
 
 | Value | Used for |
 |---|---|
 | `1.0` / `0.5` | panel icon when the daemon runs / when it does not |
-| `0.7` | secondary labels |
-| `0.3` | the container-list separator |
+| `0.5` | the configured bottom text |
+| `0.38` | a disabled button |
 
 ## Related
 

@@ -120,7 +120,10 @@ resolver but reads and writes no configuration ([[adr-0010-inline-shutdown-minut
   representation reads `Plasmoid.configuration` only for the panel icon; persisting a setting goes through
   a value-carrying signal to `main.qml`, never through configuration access in the representation
   ([[adr-0010-inline-shutdown-minutes-in-the-representation]]).
-- The severity-to-colour switch lives only in `SeverityDot.qml`. A new state adds a severity in
+- The severity-to-colour switch lives only in `SeverityDot.qml`, and now resolves against the mockup
+  palette (`DockerStatusPalette.qml`) rather than the Kirigami theme; the neutral chrome tokens live in
+  that palette file, and the palette never maps a severity
+  ([[adr-0011-fixed-dark-palette-from-mockup]]). A new state adds a severity in
   [status-slice](../status/status-slice.md), never a colour here.
 - The `cfg_*` alias target must stay a plain writable property; aliasing an expression saves nothing
   and reports nothing. A setting carried by a combo box is the exception: the initial property Plasma
