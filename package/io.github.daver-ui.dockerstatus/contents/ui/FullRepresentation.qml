@@ -280,30 +280,20 @@ Item {
                     }
                 }
 
-                // Two-line identity block: the uppercase eyebrow over the title.
-                ColumnLayout {
+                // One-line identity block: the uppercase eyebrow only. The mockup's big
+                // title was removed at the human operator's request in the follow-up to
+                // the restyle (commit 2f93f3e): the logo tile now carries the identity,
+                // and dropping the title row also trims the popup's vertical length.
+                PlasmaComponents3.Label {
                     Layout.fillWidth: true
                     Layout.alignment: Qt.AlignVCenter
-                    spacing: 2
-
-                    PlasmaComponents3.Label {
-                        text: i18n("Workspace")
-                        color: paletteTokens.muted
-                        font.family: paletteTokens.fontFamily
-                        font.pixelSize: paletteTokens.eyebrowPixelSize
-                        font.weight: Font.DemiBold
-                        font.letterSpacing: 1.3
-                        font.capitalization: Font.AllUppercase
-                    }
-
-                    PlasmaComponents3.Label {
-                        text: i18n("Docker Control Center")
-                        color: paletteTokens.text
-                        font.family: paletteTokens.fontFamily
-                        font.pixelSize: paletteTokens.titlePixelSize
-                        font.weight: Font.DemiBold
-                        font.letterSpacing: -0.7
-                    }
+                    text: i18n("Workspace")
+                    color: paletteTokens.muted
+                    font.family: paletteTokens.fontFamily
+                    font.pixelSize: paletteTokens.eyebrowPixelSize
+                    font.weight: Font.DemiBold
+                    font.letterSpacing: 1.3
+                    font.capitalization: Font.AllUppercase
                 }
 
                 // Shown only while an action is in flight, so the row stays quiet at rest.
@@ -342,10 +332,13 @@ Item {
                 }
             }
 
-            // The topbar's bottom hairline, spanning the content column.
+            // The topbar's bottom hairline, spanning the content column. Its top
+            // margin is deliberately the one spacing trim of the contrast/length turn:
+            // with the big title gone the topbar is shorter, and the hairline sits
+            // closer to the card below it.
             Rectangle {
                 Layout.fillWidth: true
-                Layout.topMargin: 20
+                Layout.topMargin: 16
                 Layout.preferredHeight: 1
                 color: paletteTokens.line
             }
@@ -567,32 +560,25 @@ Item {
                     Layout.fillWidth: true
                     spacing: 0
 
+                    // Single-row header: title and right-side meta on one line, no
+                    // subtitle. The elide guard keeps a long localized title from
+                    // reaching the meta label at the popup's minimum width.
                     RowLayout {
                         Layout.fillWidth: true
                         Layout.leftMargin: 16
                         Layout.rightMargin: 16
-                        Layout.topMargin: 14
-                        Layout.bottomMargin: 14
+                        Layout.topMargin: 12
+                        Layout.bottomMargin: 12
                         spacing: 12
 
-                        ColumnLayout {
+                        PlasmaComponents3.Label {
                             Layout.fillWidth: true
-                            spacing: 4
-
-                            PlasmaComponents3.Label {
-                                text: i18n("Containers")
-                                color: paletteTokens.text
-                                font.family: paletteTokens.fontFamily
-                                font.pixelSize: paletteTokens.sectionTitlePixelSize
-                                font.weight: 650
-                            }
-
-                            PlasmaComponents3.Label {
-                                text: i18n("Application services")
-                                color: paletteTokens.muted
-                                font.family: paletteTokens.fontFamily
-                                font.pixelSize: paletteTokens.subtlePixelSize
-                            }
+                            text: i18n("Containers")
+                            color: paletteTokens.text
+                            elide: Text.ElideRight
+                            font.family: paletteTokens.fontFamily
+                            font.pixelSize: paletteTokens.sectionTitlePixelSize
+                            font.weight: 650
                         }
 
                         PlasmaComponents3.Label {
@@ -740,32 +726,24 @@ Item {
                     Layout.fillWidth: true
                     spacing: 0
 
+                    // Single-row header, as in the containers section: title and the
+                    // right-side arrow glyph on one line, no subtitle.
                     RowLayout {
                         Layout.fillWidth: true
                         Layout.leftMargin: 16
                         Layout.rightMargin: 16
-                        Layout.topMargin: 14
-                        Layout.bottomMargin: 14
+                        Layout.topMargin: 12
+                        Layout.bottomMargin: 12
                         spacing: 12
 
-                        ColumnLayout {
+                        PlasmaComponents3.Label {
                             Layout.fillWidth: true
-                            spacing: 4
-
-                            PlasmaComponents3.Label {
-                                text: i18n("Import content")
-                                color: paletteTokens.text
-                                font.family: paletteTokens.fontFamily
-                                font.pixelSize: paletteTokens.sectionTitlePixelSize
-                                font.weight: 650
-                            }
-
-                            PlasmaComponents3.Label {
-                                text: i18n("Add a video to process")
-                                color: paletteTokens.muted
-                                font.family: paletteTokens.fontFamily
-                                font.pixelSize: paletteTokens.subtlePixelSize
-                            }
+                            text: i18n("Import content")
+                            color: paletteTokens.text
+                            elide: Text.ElideRight
+                            font.family: paletteTokens.fontFamily
+                            font.pixelSize: paletteTokens.sectionTitlePixelSize
+                            font.weight: 650
                         }
 
                         Text {
@@ -933,36 +911,26 @@ Item {
                 anchors.margins: 16
                 spacing: 0
 
+                // Single-row header: title beside the timer tile, no subtitle line
+                // underneath (the follow-up that also removed the topbar's big title).
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: 12
 
-                    ColumnLayout {
+                    PlasmaComponents3.Label {
                         Layout.fillWidth: true
-                        spacing: 5
-
-                        PlasmaComponents3.Label {
-                            text: i18n("Countdown to Extinction")
-                            color: paletteTokens.text
-                            font.family: paletteTokens.fontFamily
-                            font.pixelSize: paletteTokens.sectionTitlePixelSize
-                            font.weight: 650
-                        }
-
-                        PlasmaComponents3.Label {
-                            Layout.fillWidth: true
-                            text: i18n("Schedule an automatic power-off")
-                            color: paletteTokens.muted
-                            wrapMode: Text.WordWrap
-                            font.family: paletteTokens.fontFamily
-                            font.pixelSize: paletteTokens.labelPixelSize
-                        }
+                        text: i18n("Countdown to Extinction")
+                        color: paletteTokens.text
+                        elide: Text.ElideRight
+                        font.family: paletteTokens.fontFamily
+                        font.pixelSize: paletteTokens.sectionTitlePixelSize
+                        font.weight: 650
                     }
 
                     Rectangle {
                         Layout.preferredWidth: 35
                         Layout.preferredHeight: 35
-                        Layout.alignment: Qt.AlignTop
+                        Layout.alignment: Qt.AlignVCenter
                         radius: paletteTokens.controlRadius
                         color: paletteTokens.iconTileSurface
 

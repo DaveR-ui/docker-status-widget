@@ -40,10 +40,10 @@ There is no other surface. A new one is a design decision, not an implementation
 Verification tooling: two `qmllint` binaries exist on this machine and they are not interchangeable. The
 one on `PATH` is Qt5 (`qt5-declarative 5.15.19`) and reports syntax only. The matching
 `/usr/lib/qt6/bin/qmllint` (`qt6-declarative 6.12.0`) is the semantic tool for a Plasma 6 target. Measured
-on the five `contents/ui/*.qml` files it reports 0 errors, 99 warnings (every one `[unqualified]`) and 51
+on the five `contents/ui/*.qml` files it reports 0 errors, 97 warnings (every one `[unqualified]`) and 53
 infos, of which 2 are `[unused-imports]`; on `contents/ui/config/*.qml` it reports 0 errors, 32 warnings
 (all `[unqualified]`) and 5 infos, none of them `[unused-imports]`. Across the six files that is 0
-errors, 131 warnings and 56 infos (2 `[unused-imports]`), and none of `[missing-property]`,
+errors, 129 warnings and 58 infos (2 `[unused-imports]`), and none of `[missing-property]`,
 `[incompatible-type]`, `[unresolved-type]` or `[import]`. Every
 "Verification" line below means both binaries were run; "the Qt6 semantic run is clean" records that
 measured result, and the exit code is not the evidence (Qt6 exits 0 unless `--max-warnings` is set).
@@ -83,8 +83,8 @@ delegating to `SeverityDot`. Hiding the dot when the state is unknown.
 ### FullRepresentation
 
 #### Purpose
-The popup/desktop surface, restyled to the mockup's fixed dark palette: a topbar (logo tile, eyebrow and
-title, refresh icon-button), a status card (daemon state, an ONLINE/OFFLINE pill, a running-container
+The popup/desktop surface, restyled to the mockup's fixed dark palette: a topbar (logo tile, workspace
+eyebrow and refresh icon-button), a status card (daemon state, an ONLINE/OFFLINE pill, a running-container
 count and progress bar, the start/stop button row), the container list, the video-download row with its
 cookies-browser line, the "Countdown to Extinction" shutdown section, the configurable bottom text and a
 footer. It paints its own dark 20px-radius card, so Plasma's own background is switched off
@@ -119,9 +119,9 @@ into a fixed list of generic theme icons for the row tile; and every severity ac
 Shown directly as the desktop widget and as the panel popup. The root is an `Item` wrapping a
 `ColumnLayout` — a layout-managed item must not carry anchors, so the mockup's one dark card is painted
 behind the column at `z: -1` and the column supplies the inner padding. The topbar carries the logo tile,
-an uppercase eyebrow over the title, the in-flight busy indicator and a refresh icon-button. The status
-card shows the daemon state beside a severity dot (`halo: true`), an ONLINE/OFFLINE pill whose text and
-tint both derive from that dot's `severityColor`, the running/total figure (`DockerStatus.countByState()`
+an uppercase workspace eyebrow, the in-flight busy indicator and a refresh icon-button, all on one row.
+The status card shows the daemon state beside a severity dot (`halo: true`), an ONLINE/OFFLINE pill whose
+text and tint both derive from that dot's `severityColor`, the running/total figure (`DockerStatus.countByState()`
 over the container count) over a progress bar whose fill is the same severity colour, and the action row.
 Every severity accent on the card — dot, pill, progress fill, footer dot — is read from
 `statusDot.severityColor`; no colour is computed here. Both buttons are always visible and equal width
@@ -264,7 +264,7 @@ the resolved `severityColor`.
 #### Data Flow
 `severity` is always produced by `dockerstatus.js`; the component resolves it against the mockup palette
 (`DockerStatusPalette.qml`) — positive → green `#55d69e`, negative → red `#ff737d`, neutral → orange
-`#ffad5c`, muted → grey `#9aa9b1` — and nothing else flows out. The palette holds neutral chrome only;
+`#ffad5c`, muted → grey `#b3c1c8` — and nothing else flows out. The palette holds neutral chrome only;
 it never maps a severity.
 
 #### Usage Pattern
@@ -403,7 +403,7 @@ in [[adr-0011-fixed-dark-palette-from-mockup]]. The severity accents are consume
 | `paletteTokens.green` (`#55d69e`) | healthy daemon, running container |
 | `paletteTokens.orange` (`#ffad5c`) | stopped daemon, exited/created container |
 | `paletteTokens.red` (`#ff737d`) | failed daemon, crash-looping container |
-| `paletteTokens.muted` (`#9aa9b1`) | unknown state (muted), footer text, secondary labels |
+| `paletteTokens.muted` (`#b3c1c8`) | unknown state (muted), footer text, secondary labels |
 | `paletteTokens.line` | hairline borders and the list separator |
 | `Kirigami.Theme.negativeTextColor` | functional error text only: a failed action, an armed stop, an invalid inline value (not a severity accent) |
 

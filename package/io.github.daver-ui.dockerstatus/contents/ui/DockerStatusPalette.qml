@@ -29,11 +29,17 @@ QtObject {
 
     // --- Text ----------------------------------------------------------------
     readonly property color text: "#edf3f5"
-    readonly property color muted: "#9aa9b1"
-    readonly property color labelText: "#c4cdd2"        // field labels, timer label
-    readonly property color footerText: "#809098"
+    // Contrast-refinement turn: the secondary text tokens were brightened
+    // (shade family preserved) at the human operator's request. Measured
+    // against the #1b2227 panel (WCAG ratio), the four went from ~4.9:1 to
+    // ~10.0:1 up to ~7.6:1 to ~11.5:1. The severity mapping is untouched:
+    // SeverityDot still resolves `muted` for the unknown state -- only the
+    // shade moved.
+    readonly property color muted: "#b3c1c8"
+    readonly property color labelText: "#d2dbe0"        // field labels, timer label
+    readonly property color footerText: "#a6b5bc"
     readonly property color placeholder: "#7f8d94"
-    readonly property color containerStateText: "#a7b1b7" // container row state label
+    readonly property color containerStateText: "#bcc7cd" // container row state label
 
     // --- Severity accents ----------------------------------------------------
     // The mockup's four semantic accents. SeverityDot.qml is the only place a
