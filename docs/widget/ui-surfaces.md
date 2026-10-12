@@ -44,11 +44,13 @@ There is no other surface. A new one is a design decision, not an implementation
 Verification tooling: two `qmllint` binaries exist on this machine and they are not interchangeable. The
 one on `PATH` is Qt5 (`qt5-declarative 5.15.19`) and reports syntax only. The matching
 `/usr/lib/qt6/bin/qmllint` (`qt6-declarative 6.12.0`) is the semantic tool for a Plasma 6 target. Measured
-on the five `contents/ui/*.qml` files it reports 0 errors, 97 warnings (every one `[unqualified]`) and 53
-infos, of which 2 are `[unused-imports]`; on `contents/ui/config/*.qml` it reports 0 errors, 32 warnings
+on the five `contents/ui/*.qml` files it reports 0 errors, 139 warnings (every one `[unqualified]`) and 89
+infos, of which 2 are `[unused-imports]`; on `contents/ui/config/*.qml` it reports 0 errors, 40 warnings
 (all `[unqualified]`) and 5 infos, none of them `[unused-imports]`. Across the six files that is 0
-errors, 129 warnings and 58 infos (2 `[unused-imports]`), and none of `[missing-property]`,
-`[incompatible-type]`, `[unresolved-type]` or `[import]`. Every
+errors, 179 warnings and 94 infos (2 `[unused-imports]`), and none of `[missing-property]`,
+`[incompatible-type]`, `[unresolved-type]` or `[import]` (measured after adr-0017 relocated the refresh and
+Podman launch buttons into the status card and removed the topbar; the earlier 97/53 and 32/5 counts
+predate that change). Every
 "Verification" line below means both binaries were run; "the Qt6 semantic run is clean" records that
 measured result, and the exit code is not the evidence (Qt6 exits 0 unless `--max-warnings` is set).
 
@@ -87,9 +89,10 @@ delegating to `SeverityDot`. Hiding the dot when the state is unknown.
 ### FullRepresentation
 
 #### Purpose
-The popup/desktop surface, restyled to the mockup's fixed dark palette: a topbar (logo tile, workspace
-eyebrow and refresh icon-button), a status card (daemon state with the update indicator beside it, an
-ONLINE/OFFLINE pill, a running-container count and progress bar, the start/stop button row), the flat
+The popup/desktop surface, restyled to the mockup's fixed dark palette: a status card (the daemon state
+label with the relocated busy indicator, the square refresh and Podman Desktop launch buttons and the
+update indicator beside it, an ONLINE/OFFLINE pill, a running-container count and progress bar, the
+start/stop button row), the flat
 container list, the video-download row with its cookies-browser line, the "Countdown to Extinction"
 shutdown section, one muted update line and its indicator, shown only when a newer release is known, the
 configurable bottom text and a
@@ -103,11 +106,12 @@ footer. It paints its own dark 20px-radius card, so Plasma's own background is s
 #### Interface
 Takes `daemonState`, `containers`, `daemonRunning`, `containerListEnabled`, `actionInFlight`,
 `actionKind`, `actionFeedback`, `composeActionInFlight`, `composeActionProject`, `composeActionKind`,
-`composeActionFeedback`, `composeActionFeedbackSeverity`, `downloaderEnabled`, `taglineText`, `cookiesBrowser`, `downloadReady`,
+`composeActionFeedback`, `composeActionFeedbackSeverity`, `podmanLaunchInFlight`, `podmanLaunchFeedback`,
+`podmanLaunchFeedbackSeverity`, `downloaderEnabled`, `taglineText`, `cookiesBrowser`, `downloadReady`,
 `downloadInFlight`, `downloadFeedback`, `downloadFeedbackSeverity`, `shutdownReady`, `shutdownMinutes`,
 `shutdownMinutesText`, `shutdownPending`, `shutdownInFlight`, `shutdownRemainingSeconds`, `shutdownFeedback`,
 `shutdownFeedbackSeverity`, `updateAvailable` and `updateFeedback`; emits `startRequested()`,
-`stopRequested()`, `refreshRequested()`,
+`stopRequested()`, `refreshRequested()`, `podmanLaunchRequested()`,
 `downloadRequested(url)`, `shutdownStartRequested()`, `shutdownStopRequested()`,
 `shutdownMinutesEdited(text)`, `updateCheckRequested()`, `composeStartRequested(project)` and
 `composeStopRequested(project)`.
@@ -132,8 +136,10 @@ into a fixed list of generic theme icons for the row tile; and every severity ac
 #### Usage Pattern
 Shown directly as the desktop widget and as the panel popup. The root is an `Item` wrapping a
 `ColumnLayout` — a layout-managed item must not carry anchors, so the mockup's one dark card is painted
-behind the column at `z: -1` and the column supplies the inner padding. The topbar carries the logo tile,
-an uppercase workspace eyebrow, the in-flight busy indicator and a refresh icon-button, all on one row.
+behind the column at `z: -1` and the column supplies the inner padding. There is no topbar: the popup opens
+directly on the status card, whose head row carries the busy indicator, the square refresh and Podman Desktop
+launch buttons beside the daemon-state label, and the update indicator
+([[adr-0017-podman-launch-button-and-topbar-removal]]).
 The status card shows the daemon state beside a severity dot (`halo: true`), an ONLINE/OFFLINE pill whose
 text and tint both derive from that dot's `severityColor`, the running/total figure (`DockerStatus.countByState()`
 over the container count) over a progress bar whose fill is the same severity colour, and the action row.
@@ -151,6 +157,16 @@ gesture and does not confirm, so one double-click cannot stop every running cont
 passwordless when the polkit rule is installed; stop always prompts, because the grant is deliberately not
 widened for it ([[adr-0007-stop-button-confirmation-and-narrow-grant]]). A failure appears below the row
 as normalised `stderr` (CR stripped, trimmed), or as a generic message when `stderr` is empty.
+
+The status card's head row carries the controls the removed topbar used to hold: the busy indicator while an
+action is in flight, the square 28x28 refresh button and the square 28x28 Podman Desktop launch button beside
+the daemon-state label, and the update indicator on its own gate. The refresh button keeps its
+`refreshRequested()` signal into `root.refreshDaemonState()`; the launch button emits `podmanLaunchRequested()`,
+which `main.qml` answers with the retained `DockerStatus.buildPodmanDesktopCommand()` boundary
+(`Plasmoid.configuration.podmanDesktopPath`, shell-quoted, plus the run token and nothing else), and a failed
+launch renders the card's small feedback row instead of being swallowed. There is no topbar: the "Workspace"
+eyebrow and logo tile were removed at the human operator's request
+([[adr-0017-podman-launch-button-and-topbar-removal]]).
 
 The container list is a `ListView` over the grouped model; each group is one flat header row — the
 bundled `contents/icons/dockerstatus.svg` box glyph on a 28px tile (resolved with `Qt.resolvedUrl`, so
@@ -343,9 +359,8 @@ Eleven `cfg_*` aliases — `cfg_pollIntervalSeconds`, `cfg_iconName`, `cfg_showC
 `cfg_showVideoDownloader`, `cfg_downloadDirectory`, `cfg_jsRuntime`, `cfg_ytDlpBinary`,
 `cfg_podmanDesktopPath`, `cfg_taglineText`, `cfg_shutdownCountdownMinutes` and `cfg_updateCheckIntervalHours` — each bound to a
 plain writable property of a
-widget, plus a plain string `cfg_cookiesBrowser`. The Podman Desktop path field outlived the popup launch
-section it once fed (removed per [[adr-0016-containers-flat-rows-and-podman-section-removal]]); the setting
-is retained by explicit human decision. The bottom text is a setting like the rest: display-only
+widget, plus a plain string `cfg_cookiesBrowser`. The Podman Desktop path field feeds the square launch
+button in the status card ([[adr-0017-podman-launch-button-and-topbar-removal]]). The bottom text is a setting like the rest: display-only
 copy that leaves the panel representation untouched, and the browser is validated by
 `resolveCookiesBrowser()` before it reaches the command.
 

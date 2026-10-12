@@ -10,8 +10,8 @@ hand.
 
 ### Overview
 
-- Markdown files: 43
-- Context docs: 2 | Notes: 8 | Hubs: 6 | ADRs: 15 | Templates: 8 | Checklists: 2
+- Markdown files: 44
+- Context docs: 2 | Notes: 8 | Hubs: 6 | ADRs: 16 | Templates: 8 | Checklists: 2
 
 ### Tree
 
@@ -34,6 +34,7 @@ hand.
   - adr-0014-compose-grouping-and-podman-desktop-launch.md — adr, id: `adr-0014-compose-grouping-and-podman-desktop-launch`
   - adr-0015-update-indicator-opens-the-release-page.md — adr, id: `adr-0015-update-indicator-opens-the-release-page`
   - adr-0016-containers-flat-rows-and-podman-section-removal.md — adr, id: `adr-0016-containers-flat-rows-and-podman-section-removal`
+  - adr-0017-podman-launch-button-and-topbar-removal.md — adr, id: `adr-0017-podman-launch-button-and-topbar-removal`
   - adr-index.md — hub, id: `adr-index`
 - checklists/
   - bootstrap-checklist.md — checklist, id: `bootstrap-checklist`

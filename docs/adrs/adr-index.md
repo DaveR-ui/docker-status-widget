@@ -76,6 +76,13 @@ re-litigated from the code alone does not need a record either — only the *why
   play/stop controls, and the Podman Desktop section is removed while its builders, kcfg entry and tests are
   retained; it supersedes [[adr-0014-compose-grouping-and-podman-desktop-launch]]'s UI-section clause, and the
   compose boundary still stands.
+- [[adr-0017-podman-launch-button-and-topbar-removal]] — the Podman Desktop launch returns as a
+  square 28x28 button beside the daemon-status label in the status card, wired back to the retained
+  builder and one-shot source (eleven data sources again), and the "Workspace" topbar — logo tile,
+  eyebrow, busy indicator, refresh button and hairline — is removed, with the refresh button and the
+  busy indicator relocated into the status card; it supersedes
+  [[adr-0016-containers-flat-rows-and-podman-section-removal]]'s Podman Desktop UI-removal clause,
+  and the flat container rows still stand.
 
 ## Elsewhere
 

@@ -20,8 +20,8 @@ config page. The form matters —
 
 ## Boundaries
 
-**In:** representation selection and layout; the ten `P5Support.DataSource` instances and their wiring
-(five for the Docker side, two for the download row, one for the power-off, two for the update check);
+**In:** representation selection and layout; the eleven `P5Support.DataSource` instances and their wiring
+(five for the Docker side, one for the Podman Desktop launch, two for the download row, one for the power-off, two for the update check);
 the grouped compose containers section and its per-group play/stop controls;
 `Plasmoid.contextualActions` and the start/stop/refresh/update handlers; the download handler and its
 observable state; the shutdown
@@ -52,7 +52,7 @@ assembly lives in the [status slice](../status/status-slice.md) and whose bounda
 ## How it works
 
 `PlasmoidItem` is the root. `preferredRepresentation` is the full representation on a planar
-(desktop) form factor and null in a panel, which falls back to the compact one. Ten `DataSource`
+(desktop) form factor and null in a panel, which falls back to the compact one. Eleven `DataSource`
 instances with the `executable` engine carry every command:
 
 | id | connectedSources | interval | role |
@@ -64,6 +64,7 @@ instances with the `executable` engine carry every command:
 | `composeAction` | assigned on demand | `0` | the unprivileged `docker start`/`docker stop` for one compose project, built by `DockerStatus.buildComposeProjectCommand()`; one-shot whose exit code and `stderr` are surfaced like `daemonAction`'s |
 | `homeSource` | `printf %s "$HOME"` (a constant) | `0` | one-shot at load: the shell expands `$HOME`; the result is validated before it is used |
 | `downloadAction` | the assembled yt-dlp command, assigned on demand | `0` | one-shot video download; the single event at exit closes the run, and the consumer still guards and accumulates in case a future engine streams |
+| `podmanLaunch` | the shell-quoted resolved Podman Desktop path, assigned on demand | `0` | one-shot Podman Desktop launch behind the status card's square button, built by `DockerStatus.buildPodmanDesktopCommand()`; stays in flight for as long as the app runs — the engine delivers exactly one event, at exit — so the flag is released when it closes and a wrong path fails immediately with the binary's own message |
 | `powerAction` | the fixed `systemctl poweroff`, assigned on demand | `0` | one-shot at countdown expiry; clears `shutdownInFlight` and surfaces the exit code and `stderr`; can stay alive while `systemctl` waits for the shutdown job |
 | `updateCheckSource` | the fixed `updateCheckCommand` while `updateCheckIntervalHours > 0`, `[]` otherwise | `updateCheckIntervalMs` | the polled update check; the engine runs it once on connect, so the load-time check is free, and the `connectedSources` binding disconnects it (`[]`) when the interval is `0` |
 | `updateCheckForced` | assigned on demand | `0` | one-shot manual re-check behind "Check for updates"; a polled source's `connectedSources` is a binding and cannot be reassigned per click, so the tokenised command rides this one instead |
@@ -96,14 +97,15 @@ command in the representation: it emits a signal naming the project and the acti
 assembles the command with `DockerStatus.buildComposeProjectCommand()` and runs it on the `composeAction`
 one-shot. The popup stays a pure consumer — everything crosses a property in and a signal out.
 
-The Podman Desktop section ADR-0014 added as the popup's fourth collapsible card is gone, and with it the
-launch button, the feedback row and the `podmanLaunchRequested()` signal. The now-unreachable wiring in
-`main.qml` — the `podmanLaunch` one-shot, `launchPodmanDesktop()`, the podman state properties and the
-popup forwarding — was removed with it, dropping the data-source count from eleven to ten. The backing
-logic is retained **by explicit human decision**: `DockerStatus.buildPodmanDesktopCommand()` and
-`DockerStatus.resolvePodmanDesktopPath()`, the `podmanDesktopPath` kcfg entry, the `ConfigGeneral`
-setting and their unit tests all stand, so the capability is preserved even though no QML surface calls
-it ([[adr-0016-containers-flat-rows-and-podman-section-removal]]).
+The Podman Desktop launch ADR-0014 added as the popup's fourth collapsible card, and ADR-0016 removed, is back
+as a square 28x28 `ToolButton` beside the daemon-status label in the status card: `FullRepresentation.qml`
+emits `podmanLaunchRequested()` and `main.qml` answers with `launchPodmanDesktop()`, running
+`DockerStatus.buildPodmanDesktopCommand()` on the restored `podmanLaunch` one-shot — one source, one in-flight
+flag, exit code 0 clears the feedback and anything else surfaces stderr verbatim (or a generic fallback naming
+the exit code), with the button disabled while the app runs. The data-source count is eleven again
+([[adr-0017-podman-launch-button-and-topbar-removal]]). The backing logic —
+`DockerStatus.buildPodmanDesktopCommand()`, `DockerStatus.resolvePodmanDesktopPath()`, the `podmanDesktopPath`
+kcfg entry and the `ConfigGeneral` setting — is the retained adr-0014 boundary and has a QML caller again.
 
 `downloadVideo(url)` is the one handler that accepts input. It classifies the paste with
 `DockerStatus.classifyVideoUrl()` before a command exists; a refused paste sets `downloadFeedback` and
@@ -162,9 +164,9 @@ call, and the URL is never configuration
   ([[adr-0006-video-downloader-command-boundary]]), and the compose project play/stop plus the Podman
   Desktop launch, assembled by `DockerStatus.buildComposeProjectCommand()` /
   `DockerStatus.buildPodmanDesktopCommand()` ([[adr-0014-compose-grouping-and-podman-desktop-launch]]).
-  The compose builder is called by `main.qml`; the Podman Desktop builder remains a recorded boundary in
-  the pure core but currently has no QML caller, because the popup section that called it was removed
-  ([[adr-0016-containers-flat-rows-and-podman-section-removal]]).
+  The compose builder is called by `main.qml`; the Podman Desktop builder is called by `main.qml` again
+  too, from the relocated status-card button
+  ([[adr-0017-podman-launch-button-and-topbar-removal]]).
   No other configuration value is a command; everywhere else configuration supplies only values inside
   a command the widget builds. The update-check command is also
   built in the pure module, but entirely from fixed constants, so it mints no further exception
@@ -214,9 +216,9 @@ plasmashell's `PATH`, plus network reachability to the fixed Pages URL; a missin
 machine is not an error — it is simply no update notice.
 **Runtime (Podman launch only):** the Podman Desktop executable, on plasmashell's `PATH` (default
 `podman-desktop`) or named by an absolute or `~/`-expanded path in the widget's options; a wrong
-setting fails at click time with the binary's own message, not at load time. The popup surface that ran
-this was removed ([[adr-0016-containers-flat-rows-and-podman-section-removal]]), so the requirement no
-longer has a UI trigger; the setting and resolver remain.
+setting fails at click time with the binary's own message, not at load time. The status card's square
+launch button is the UI trigger again ([[adr-0017-podman-launch-button-and-topbar-removal]]); a wrong
+setting fails at click time with the binary's own message, not at load time.
 **Downstream:** the installer copies this package; the privilege slice decides whether the start
 button prompts; the verification slice can lint these files but can only *observe* this slice inside
 a running Plasma session.
@@ -255,17 +257,10 @@ a running Plasma session.
 - The flat grouped container section is a QML surface like the rest: the grouping pipeline and the
   compose command boundary are pinned by the Node suite, but its layout and interaction are reviewed
   until they run in a session.
-- The `podmanDesktopPath` setting survives with no popup surface to consume it: the kcfg entry, the
-  `ConfigGeneral` card and `DockerStatus.resolvePodmanDesktopPath()` all remain, but the Podman Desktop
-  section that launched it was removed
-  ([[adr-0016-containers-flat-rows-and-podman-section-removal]]). Accepted debt by explicit human
-  decision — the capability is kept even though nothing currently calls it.
 - A compose stack that disappears between the last poll and the click makes `docker start`/`docker stop`
   exit non-zero with docker's own `requires at least 1 container argument`, surfaced verbatim on the
   feedback line rather than swallowed.
 - Grouping depends on the `com.docker.compose.project` label. A docker that does not answer it (or does
   not support the `.Label` template function) degrades the list to one standalone group, never to an
   empty list.
-- The Podman path is a PATH name by default, so a wrong `podmanDesktopPath` would fail at click time with
-  the binary's own message (for example `podman-desktop: not found`), not at load time — but with the
-  launch surface removed nothing currently reaches that failure.
+- The Podman path is a PATH name by default, so a wrong `podmanDesktopPath` fails at click time with the binary's own message (for example `podman-desktop: not found`), not at load time — the relocated status-card button reports it on the card's feedback row ([[adr-0017-podman-launch-button-and-topbar-removal]]).

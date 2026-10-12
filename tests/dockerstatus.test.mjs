@@ -2818,16 +2818,38 @@ test("the compose controls are small flat icon buttons, not the 38px surfaces", 
 });
 
 /*
- * The Podman Desktop section was removed at the human operator's request
- * (adr-0016): the card, its launch signal and its properties are all gone. The
- * backing logic is retained -- the pure builders, the podmanDesktopPath kcfg
- * entry, the ConfigGeneral setting and their unit tests all still exist -- only
- * the popup surface was removed. Pinned as text because a resurrected card is
- * exactly the kind of silent re-addition these pins exist to catch.
+ * The Podman Desktop launch returned as a square status-card button (adr-0017)
+ * after the ADR-0016 section removal: the section, its collapse and its full-width
+ * card are gone, but the launch itself came back -- not as a surface the popup
+ * owns, but as a 28x28 button beside the daemon-status label whose click emits
+ * into main.qml. Pinned as text because the surface moved rather than simply
+ * vanishing: the topbar's removal is what took the old "Workspace"/refresh row
+ * with it, and a resurrected card or a resurrected topbar is exactly the kind of
+ * silent re-addition these pins exist to catch.
  */
-test("FullRepresentation.qml no longer renders the Podman Desktop section", () => {
-    assert.ok(!/\bpodman\b/i.test(fullQml), "no Podman reference may survive in the popup");
-    assert.ok(!fullQml.includes("signal podmanLaunchRequested()"), "the launch signal is gone with the card");
+test("FullRepresentation.qml renders the relocated Podman launch button in the status card", () => {
+    // The signal the button emits, and the properties main.qml forwards back into it.
+    assert.ok(fullQml.includes("signal podmanLaunchRequested()"), "the launch signal must return with the button");
+
+    // The relocated controls live between the status-card marker and the stats row.
+    const headRegion = fullQml.slice(
+        fullQml.indexOf("// --- Status card"),
+        fullQml.indexOf("// stats:"),
+    );
+    for (const pin of [
+        "id: refreshButton",
+        "onClicked: fullRoot.refreshRequested()",
+        "running: fullRoot.actionInFlight",
+        "id: podmanButton",
+        'icon.name: "system-run"',
+        "onClicked: fullRoot.podmanLaunchRequested()",
+    ]) {
+        assert.ok(headRegion.includes(pin), `the status head row must carry ${pin}`);
+    }
+
+    // The topbar and the removed section leave nothing behind.
+    assert.ok(!fullQml.includes('i18n("Workspace")'), "the Workspace eyebrow is gone with the topbar (adr-0017)");
+    assert.ok(!fullQml.includes("podmanSectionExpanded"), "the launch is a button, not a collapsible section (adr-0017)");
 });
 
 /*
@@ -2864,8 +2886,9 @@ test("main.qml declares the compose one-shot source and its handler", () => {
         "composeAction must surface stderr verbatim on a failure",
     );
 
-    // The removed launch section took its one-shot source with it (adr-0016).
-    assert.ok(!blocks.some((block) => block.includes("id: podmanLaunch")), "the podmanLaunch source is gone with the UI section");
+    // The launch source the removed section took with it (adr-0016) returned as the
+    // retained boundary's caller (adr-0017); its own declaration is pinned by the
+    // dedicated test below, not here.
 
     // The handler clears its own in-flight flag and clears the feedback on success.
     assert.ok(compose.includes("root.composeActionInFlight = false;"), compose);
@@ -2911,14 +2934,23 @@ test("main.qml builds the compose command only through the pure builder", () => 
     );
 });
 
-test("main.qml carries no Podman wiring at all", () => {
-    // The removed section took its one-shot source, its launcher and its state
-    // with it (adr-0016); the pure builder and the kcfg entry stay, but main.qml
-    // has nothing left to wire them to.
-    assert.ok(!mainQml.includes("podmanLaunch"), "the podmanLaunch source is gone");
-    assert.ok(!mainQml.includes("launchPodmanDesktop"), "the launcher function is gone");
-    assert.ok(!mainQml.includes("podmanLaunchInFlight"), "the in-flight state is gone");
-    assert.ok(!mainQml.includes("podmanDesktopPath"), "the resolved-path property is gone with the display line");
+test("main.qml wires the retained Podman Desktop launch back to its surface", () => {
+    // The removed section took its caller off this surface (adr-0016); the retained
+    // boundary (builder, kcfg entry, resolver) is put back into use as a status-card
+    // button (adr-0017), so the launcher and its one-shot return here.
+    assert.ok(mainQml.includes("function launchPodmanDesktop()"), "the launcher function must return");
+    assert.ok(mainQml.includes("DockerStatus.buildPodmanDesktopCommand("), "the launch must come from the pure builder");
+    assert.ok(mainQml.includes("path: Plasmoid.configuration.podmanDesktopPath,"), "the path comes from the kcfg entry");
+    assert.ok(mainQml.includes("home: root.homeDirectory,"), "the home directory is the resolver's tilde base");
+    assert.ok(mainQml.includes("token: root.nextRunToken()"), "every one-shot assignment carries a run token");
+    assert.ok(mainQml.includes("property bool podmanLaunchInFlight: false"), "the in-flight state must return");
+
+    const blocks = mainQml.split("P5Support.DataSource {");
+    const podman = blocks.find((block) => block.includes("id: podmanLaunch"));
+
+    assert.ok(podman, "main.qml must declare the podmanLaunch source");
+    assert.ok(podman.includes("interval: 0"), "podmanLaunch must be a one-shot");
+    assert.ok(podman.includes("connectedSources: []"), "podmanLaunch must start disconnected");
 });
 
 test("main.qml forwards the compose state into the popup", () => {
@@ -2932,6 +2964,9 @@ test("main.qml forwards the compose state into the popup", () => {
         "composeActionKind: root.composeActionKind",
         "composeActionFeedback: root.composeActionFeedback",
         "composeActionFeedbackSeverity: root.composeActionFeedbackSeverity",
+        "podmanLaunchInFlight: root.podmanLaunchInFlight",
+        "podmanLaunchFeedback: root.podmanLaunchFeedback",
+        "podmanLaunchFeedbackSeverity: root.podmanLaunchFeedbackSeverity",
     ]) {
         assert.ok(block.includes(forwarding), `the popup must receive ${forwarding}`);
     }
@@ -2939,13 +2974,10 @@ test("main.qml forwards the compose state into the popup", () => {
     for (const handler of [
         "onComposeStartRequested: (project) => root.startComposeProject(project)",
         "onComposeStopRequested: (project) => root.stopComposeProject(project)",
+        "onPodmanLaunchRequested: root.launchPodmanDesktop()",
     ]) {
         assert.ok(block.includes(handler), `the popup must wire ${handler}`);
     }
-
-    // The removed launch section took its display line and its signal with it.
-    assert.ok(!block.includes("onPodmanLaunchRequested"), "no Podman handler may be wired");
-    assert.ok(!block.includes("podman"), "the popup must receive no Podman state");
 });
 
 test("main.qml's source-count comment stays consistent with the new sources", () => {
@@ -2956,16 +2988,16 @@ test("main.qml's source-count comment stays consistent with the new sources", ()
         mainQml.indexOf("P5Support.DataSource {", commentStart),
     );
 
-    assert.ok(comment.includes("ninth and tenth"), comment);
-    assert.ok(comment.includes("eight before them"), comment);
+    assert.ok(comment.includes("tenth and eleventh"), comment);
+    assert.ok(comment.includes("nine before them"), comment);
     assert.ok(comment.includes("composeAction"), comment);
-    assert.ok(!comment.includes("podmanLaunch"), "the removed launch source must not be counted any more");
+    assert.ok(comment.includes("podmanLaunch"), "the restored launch source must be counted");
 
-    // The comment is only honest if the file really declares ten sources.
+    // The comment is only honest if the file really declares eleven sources.
     assert.equal(
         mainQml.split("P5Support.DataSource {").length - 1,
-        10,
-        "main.qml must declare ten data sources, as its own comment says",
+        11,
+        "main.qml must declare eleven data sources, as its own comment says",
     );
 });
 

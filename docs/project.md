@@ -24,9 +24,9 @@ grant; `systemctl stop docker.service`, which is deliberately not covered by tha
 through polkit's interactive password prompt; and `systemctl poweroff`, which runs only when a
 widget-owned countdown expires and, unlike the stop, does not prompt. Containers are grouped by their
 Docker Compose project, each group carrying its own play/stop controls; the Podman Desktop path
-setting and its command builder remain in the core and config
-([[adr-0014-compose-grouping-and-podman-desktop-launch]]), although the popup section that launched it
-was removed ([[adr-0016-containers-flat-rows-and-podman-section-removal]]).
+setting and its command builder remain in the core and config, and the launch is a square button
+beside the daemon-status label in the popup's status card
+([[adr-0014-compose-grouping-and-podman-desktop-launch]], [[adr-0017-podman-launch-button-and-topbar-removal]]).
 
 Anti-goals, stated so nobody adds them by accident: no stop on a single click — stopping the daemon is
 destructive to every running container, so the stop button arms on the first click and runs on the
@@ -140,8 +140,8 @@ docs/                                 this corpus — entry: readme.md, routing:
   ([[adr-0006-video-downloader-command-boundary]]), and the compose project play/stop and Podman
   Desktop launch, built in `dockerstatus.js` from a docker-reported project label and a validated
   executable path respectively ([[adr-0014-compose-grouping-and-podman-desktop-launch]]); the Podman
-  Desktop builder is retained but has no QML caller since the popup section that launched it was
-  removed ([[adr-0016-containers-flat-rows-and-podman-section-removal]]). No other
+  Desktop builder is called again by the status card's square launch button
+  ([[adr-0017-podman-launch-button-and-topbar-removal]]). No other
   configuration value is a command; everywhere else configuration supplies only values inside a command
   the widget builds. The update-check command is also built in `dockerstatus.js`, but entirely from
   fixed constants, so it is deliberately not a third boundary
@@ -180,9 +180,9 @@ docs/                                 this corpus — entry: readme.md, routing:
   (`COMPOSE_PROJECT_STANDALONE`, `""`) last and only when non-empty.
 - **Podman Desktop path** — the validated executable name or path behind the `podmanDesktopPath` kcfg
   entry; resolved by `resolvePodmanDesktopPath()` (default `podman-desktop`), and the only
-  configuration value that is itself a command. The setting and resolver are retained while the popup
-  surface that launched it was removed
-  ([[adr-0016-containers-flat-rows-and-podman-section-removal]]).
+  configuration value that is itself a command. The status card's square launch button resolves it
+  again through the retained builder
+  ([[adr-0017-podman-launch-button-and-topbar-removal]]).
 - **Run token** — a unique trailing shell comment (`# plasma-run-N`) that makes a repeated command a
   distinct source for the `executable` engine.
 - **Video link** — the raw text pasted into the download row; accepted only as an `https` URL on the

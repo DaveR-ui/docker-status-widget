@@ -18,14 +18,11 @@
  *     exceptions. The video download needs the URL the user pasted, so it is assembled
  *     by DockerStatus.buildVideoDownloadCommand(), which validates the URL against a
  *     host allow-list and shell-quotes every interpolated value -- including the
- *     configuration (adr-0006). The per-project compose play/stop is the second, and the
- *     only one of the two now in active use: its command is assembled by
- *     DockerStatus.buildComposeProjectCommand(), which interpolates a docker-reported
- *     project label into one shell-quoted argument and exposes no free-form channel
- *     (adr-0014). The removed launch section took its builder with it off this surface:
- *     the pure builders, the kcfg entry and the setting all still exist in
- *     dockerstatus.js and the config page as the recorded adr-0014 boundary, but nothing
- *     in this file calls them any more (adr-0016). Both remaining exceptions shell-quote
+ *     configuration (adr-0006). The per-project compose play/stop and the Podman
+ *     Desktop launch are the second: their commands are assembled by
+ *     DockerStatus.buildComposeProjectCommand() / buildPodmanDesktopCommand(), which
+ *     interpolate a value into one shell-quoted argument and expose no free-form channel
+ *     (adr-0014). Both remaining exceptions shell-quote
  *     every interpolated value, and that is what makes the trailing shell-comment token
  *     safe everywhere else. Do not add a third exception without reading
  *     dockerstatus.js and the tests that run the assembled command through a real shell.
@@ -54,13 +51,15 @@
  *     popup emits raw text and this file stays the SINGLE writer of the kcfg entry,
  *     refusing anything the resolver cannot use so both surfaces cannot drift.
  *
- *  6. The compose action is the one remaining UNPRIVILEGED mutation surface: it runs as
- *     the logged-in user against that user's own docker socket, so it adds no polkit rule
- *     and ALLOWED_VERBS stays ["start"] (adr-0004, adr-0007, adr-0014). The per-group stop
- *     is a container-level action, NOT `systemctl stop docker`, so it needs no password:
- *     its safeguard is the single shell-quoted label argument plus the visible feedback
- *     line, and a vanished group fails at click time with docker's own message, never at
- *     load time.
+ *  6. The compose and Podman Desktop actions are UNPRIVILEGED mutations: they run as the
+ *     logged-in user against that user's own docker socket and that user's own session, so
+ *     they add no polkit rule and ALLOWED_VERBS stays ["start"] (adr-0004, adr-0007,
+ *     adr-0014). The per-group stop is a container-level action, NOT `systemctl stop
+ *     docker`, so it needs no password: its safeguard is the single shell-quoted label
+ *     argument plus the visible feedback line, and a vanished group fails at click time
+ *     with docker's own message. The Podman launch is likewise unprivileged -- a wrong
+ *     Podman path fails at click time with the binary's own message, never at load time
+ *     (adr-0017).
  */
 
 import QtQuick
@@ -142,6 +141,15 @@ PlasmoidItem {
     property string composeActionKind: ""     // DockerStatus.COMPOSE_ACTION_* ; "" while idle
     property string composeActionFeedback: ""
     property string composeActionFeedbackSeverity: DockerStatus.SEVERITY_MUTED
+
+    // Podman Desktop launch. Mirrors composeAction's handler: an UNPRIVILEGED mutation
+    // (the user's own session) that widens no polkit grant, with one one-shot source and
+    // one in-flight flag; exit code 0 clears the feedback and anything else surfaces
+    // stderr verbatim (or a generic fallback), so a failed launch is never swallowed
+    // (adr-0014, adr-0017).
+    property bool podmanLaunchInFlight: false
+    property string podmanLaunchFeedback: ""
+    property string podmanLaunchFeedbackSeverity: DockerStatus.SEVERITY_MUTED
 
     property string homeDirectory: ""
     property bool downloadInFlight: false
@@ -275,6 +283,29 @@ PlasmoidItem {
         root.composeActionFeedback = "";
         root.composeActionFeedbackSeverity = DockerStatus.SEVERITY_MUTED;
         composeAction.connectedSources = [command];
+    }
+
+    // Podman Desktop launch. The retained pure boundary builds the command: its only
+    // interpolated value is the configured executable path, resolved and shell-quoted
+    // inside buildPodmanDesktopCommand(), so the command is the quoted path plus the run
+    // token and nothing else. One guard, one flag, one one-shot -- the same shape
+    // runComposeProject() uses (adr-0014, adr-0017).
+    function launchPodmanDesktop() {
+        if (root.podmanLaunchInFlight) {
+            return;
+        }
+
+        root.podmanLaunchInFlight = true;
+        root.podmanLaunchFeedback = "";
+        root.podmanLaunchFeedbackSeverity = DockerStatus.SEVERITY_MUTED;
+
+        podmanLaunch.connectedSources = [
+            DockerStatus.buildPodmanDesktopCommand({
+                path: Plasmoid.configuration.podmanDesktopPath,
+                home: root.homeDirectory,
+                token: root.nextRunToken()
+            })
+        ];
     }
 
     // Pasted links are validated before a command exists, and again inside
@@ -659,9 +690,37 @@ PlasmoidItem {
         }
     }
 
-    // Update check: two sources, the ninth and tenth in this file (the eight before them
+    // One-shot: the Podman Desktop launch, assembled by DockerStatus.buildPodmanDesktopCommand()
+    // and run by launchPodmanDesktop(). Mirrors composeAction: one source, one in-flight flag,
+    // exit code 0 clears the feedback and anything else surfaces stderr verbatim (or a generic
+    // fallback) so a failed launch is never swallowed (adr-0014, adr-0017).
+    P5Support.DataSource {
+        id: podmanLaunch
+        engine: "executable"
+        interval: 0
+        connectedSources: []
+
+        onNewData: (sourceName, data) => {
+            root.podmanLaunchInFlight = false;
+
+            const exitCode = Number(data["exit code"]);
+            if (exitCode === 0) {
+                root.podmanLaunchFeedback = "";
+                root.podmanLaunchFeedbackSeverity = DockerStatus.SEVERITY_MUTED;
+                return;
+            }
+
+            const stderr = DockerStatus.normalizeOutput(data["stderr"]);
+            root.podmanLaunchFeedback = stderr !== ""
+                ? stderr
+                : i18nc("@info", "Podman Desktop failed to start (exit code %1).", exitCode);
+            root.podmanLaunchFeedbackSeverity = DockerStatus.SEVERITY_NEGATIVE;
+        }
+    }
+
+    // Update check: two sources, the tenth and eleventh in this file (the nine before them
     // are the two docker probes, forcedDaemonRead, daemonAction, composeAction, powerAction,
-    // homeSource and downloadAction). A polled source runs the fixed command --
+    // homeSource, downloadAction and podmanLaunch). A polled source runs the fixed command --
     // the engine runs it once on connect, so the load-time check is free -- and disconnects
     // itself when the interval is 0 via the connectedSources binding. A one-shot carries the
     // manual "Check for updates": a polled source's connectedSources is a binding and cannot
@@ -750,6 +809,9 @@ PlasmoidItem {
         composeActionKind: root.composeActionKind
         composeActionFeedback: root.composeActionFeedback
         composeActionFeedbackSeverity: root.composeActionFeedbackSeverity
+        podmanLaunchInFlight: root.podmanLaunchInFlight
+        podmanLaunchFeedback: root.podmanLaunchFeedback
+        podmanLaunchFeedbackSeverity: root.podmanLaunchFeedbackSeverity
 
         onStartRequested: root.startDaemon()
         onStopRequested: root.stopDaemon()
@@ -761,5 +823,6 @@ PlasmoidItem {
         onUpdateCheckRequested: root.checkForUpdates()
         onComposeStartRequested: (project) => root.startComposeProject(project)
         onComposeStopRequested: (project) => root.stopComposeProject(project)
+        onPodmanLaunchRequested: root.launchPodmanDesktop()
     }
 }

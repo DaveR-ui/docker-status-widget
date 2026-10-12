@@ -315,13 +315,9 @@ per-group controls.
 **Root cause:** the default is the PATH name `podman-desktop`, resolved by `resolvePodmanDesktopPath()`.
 plasmashell's `PATH` is not the interactive shell's, so an executable outside it was not found — and the
 failure appeared at click time, not at load time, because the path was only resolved and run on click.
-**Fix:** none is needed today. The Podman Desktop section — its card, launch button, feedback row and
-`podmanLaunchRequested()` signal — was removed from the popup
-([[adr-0016-containers-flat-rows-and-podman-section-removal]]), and the now-unreachable `main.qml` wiring
-went with it, so nothing can surface this failure unless a launch surface returns. The backing logic is
-retained by explicit human decision: `resolvePodmanDesktopPath()` and `buildPodmanDesktopCommand()`, the
-`podmanDesktopPath` kcfg entry, the `ConfigGeneral` setting and their tests all stand, and the resolver
-contract is unchanged. If a surface returns, set "Podman Desktop path" in the widget's options to an
+**Fix:** the launch surface returned as the square button beside the daemon status in the status card
+([[adr-0017-podman-launch-button-and-topbar-removal]]), so the failure is visible again on the card's
+feedback row, exactly as the removed section reported it. Set "Podman Desktop path" in the widget's options to an
 absolute or `~/`-expanded path, for example `~/.local/bin/podman-desktop`, or make the executable
 reachable on the session `PATH` (check `systemctl --user show-environment`); clearing the field re-arms
 the `podman-desktop` default.

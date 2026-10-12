@@ -53,10 +53,6 @@ QtObject {
     readonly property color iconTileSurface: "#2b343a"  // container icon tile, timer icon tile
     readonly property color iconTileText: "#a9bbc4"     // glyph tint in the container tile
     readonly property color iconTileTextAlt: "#c1cdd2"  // glyph tint in the timer tile
-    readonly property color logoTileTop: "#355c68"      // header logo gradient, 145 degrees
-    readonly property color logoTileBottom: "#263b46"
-    readonly property color logoTileBorder: "#4c6974"
-    readonly property color logoTileText: "#d8f4ff"
 
     // --- Controls ------------------------------------------------------------
     readonly property color buttonSurface: "#293238"
@@ -103,8 +99,7 @@ QtObject {
     readonly property int cardRadius: 14                // status card, sections
     readonly property int controlRadius: 10             // buttons, text fields, timer tile
     readonly property int tileRadius: 9                 // container icon tile, container row
-    readonly property int logoTileRadius: 12            // header logo tile
-    readonly property int iconButtonRadius: 11          // header refresh icon-button
+    readonly property int iconButtonRadius: 0           // square icon button: refresh + Podman launch in the status card (adr-0017)
     readonly property int appBorderWidth: 1
 
     // --- Typography ----------------------------------------------------------
@@ -115,7 +110,6 @@ QtObject {
     readonly property string fontFamily: "Inter"
     readonly property int bodyPixelSize: 14             // body text, buttons
     readonly property int titlePixelSize: 19            // the app title, logo glyph
-    readonly property int eyebrowPixelSize: 10          // the uppercase eyebrow label
     readonly property int sectionTitlePixelSize: 13     // section headings
     readonly property int metricPixelSize: 26           // the running-count figure
     readonly property int subtlePixelSize: 11           // pill, helper, footer, subtitles

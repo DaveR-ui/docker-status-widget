@@ -7,7 +7,7 @@ by `node docs/validate.js --write`; regenerate rather than edit.
 <!-- snapshot: 2026-10-12 -->
 ## Generated tag index
 
-- **adr** — adr-0001-corpus-location-and-entry-point, adr-0002-lowercase-naming-convention, adr-0003-slice-taxonomy, adr-0004-scoped-polkit-grant, adr-0005-doc-classes-and-body-shape-exceptions, adr-0006-video-downloader-command-boundary, adr-0007-stop-button-confirmation-and-narrow-grant, adr-0008-configurable-cookies-browser-and-bottom-text, adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation, adr-0011-fixed-dark-palette-from-mockup, adr-0013-widget-update-check-and-release-site, adr-0014-compose-grouping-and-podman-desktop-launch, adr-0015-update-indicator-opens-the-release-page, adr-0016-containers-flat-rows-and-podman-section-removal, adr-index, adr-template
+- **adr** — adr-0001-corpus-location-and-entry-point, adr-0002-lowercase-naming-convention, adr-0003-slice-taxonomy, adr-0004-scoped-polkit-grant, adr-0005-doc-classes-and-body-shape-exceptions, adr-0006-video-downloader-command-boundary, adr-0007-stop-button-confirmation-and-narrow-grant, adr-0008-configurable-cookies-browser-and-bottom-text, adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation, adr-0011-fixed-dark-palette-from-mockup, adr-0013-widget-update-check-and-release-site, adr-0014-compose-grouping-and-podman-desktop-launch, adr-0015-update-indicator-opens-the-release-page, adr-0016-containers-flat-rows-and-podman-section-removal, adr-0017-podman-launch-button-and-topbar-removal, adr-index, adr-template
 - **bootstrap** — bootstrap-checklist
 - **brownfield** — adr-0003-slice-taxonomy, slice-generalities-template
 - **catalog** — interface-surface-template
@@ -42,7 +42,7 @@ by `node docs/validate.js --write`; regenerate rather than edit.
 - **navigation** — hub-template, readme
 - **network** — adr-0013-widget-update-check-and-release-site, adr-0015-update-indicator-opens-the-release-page
 - **packaging** — installer-slice
-- **podman** — adr-0014-compose-grouping-and-podman-desktop-launch, adr-0016-containers-flat-rows-and-podman-section-removal
+- **podman** — adr-0014-compose-grouping-and-podman-desktop-launch, adr-0016-containers-flat-rows-and-podman-section-removal, adr-0017-podman-launch-button-and-topbar-removal
 - **polkit** — adr-0004-scoped-polkit-grant, adr-0007-stop-button-confirmation-and-narrow-grant, privilege-index, privilege-slice
 - **power-management** — adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation
 - **privilege** — adr-0004-scoped-polkit-grant, adr-0007-stop-button-confirmation-and-narrow-grant, privilege-index, privilege-slice
@@ -65,7 +65,7 @@ by `node docs/validate.js --write`; regenerate rather than edit.
 - **theming** — adr-0011-fixed-dark-palette-from-mockup
 - **tooling** — adr-0002-lowercase-naming-convention
 - **troubleshooting** — troubleshooting, troubleshooting-template
-- **ui** — adr-0007-stop-button-confirmation-and-narrow-grant, adr-0008-configurable-cookies-browser-and-bottom-text, adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation, adr-0011-fixed-dark-palette-from-mockup, adr-0015-update-indicator-opens-the-release-page, adr-0016-containers-flat-rows-and-podman-section-removal, ui-inventory-template, widget-ui-surfaces
+- **ui** — adr-0007-stop-button-confirmation-and-narrow-grant, adr-0008-configurable-cookies-browser-and-bottom-text, adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation, adr-0011-fixed-dark-palette-from-mockup, adr-0015-update-indicator-opens-the-release-page, adr-0016-containers-flat-rows-and-podman-section-removal, adr-0017-podman-launch-button-and-topbar-removal, ui-inventory-template, widget-ui-surfaces
 - **update-check** — adr-0013-widget-update-check-and-release-site, adr-0015-update-indicator-opens-the-release-page
 - **validator** — adr-0002-lowercase-naming-convention
 - **verification** — troubleshooting, verification-index, verification-slice

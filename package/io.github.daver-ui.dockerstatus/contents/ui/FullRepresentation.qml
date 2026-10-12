@@ -87,6 +87,14 @@ Item {
     property string composeActionFeedback: ""
     property string composeActionFeedbackSeverity: "muted"
 
+    // Podman Desktop launch. main.qml owns the resolved path and the one-shot; this file
+    // only renders the in-flight flag and a failure, never a command. The launch returned
+    // as a square status-card button (adr-0017) after its section was removed (adr-0016);
+    // a failed launch is surfaced, never swallowed.
+    property bool podmanLaunchInFlight: false
+    property string podmanLaunchFeedback: ""
+    property string podmanLaunchFeedbackSeverity: "muted"
+
     // Local view state and nothing else: which of the two collapsible sections
     // have their body open. This is deliberately NOT persisted and NOT routed
     // through a signal -- main.qml still owns every shell and kcfg boundary, and
@@ -125,6 +133,10 @@ Item {
     signal shutdownStopRequested()
     signal shutdownMinutesEdited(string text)
     signal updateCheckRequested()
+    // The Podman Desktop launch request: the representation emits it and builds no command,
+    // exactly like every other action here -- main.qml owns the resolved path and the
+    // one-shot (adr-0014, adr-0017).
+    signal podmanLaunchRequested()
     // Per-project compose actions name the project; the representation builds no command
     // and reaches for no data source -- it hands the project back to main.qml.
     signal composeStartRequested(string project)
@@ -298,101 +310,6 @@ Item {
         anchors.bottomMargin: 22
         spacing: Kirigami.Units.largeSpacing
 
-        // --- Topbar ----------------------------------------------------------
-        ColumnLayout {
-            Layout.fillWidth: true
-            spacing: 0
-
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: Kirigami.Units.largeSpacing
-
-                // Logo tile: 40x40, vertical gradient, hairline border, centred glyph.
-                Rectangle {
-                    Layout.preferredWidth: 40
-                    Layout.preferredHeight: 40
-                    Layout.alignment: Qt.AlignVCenter
-                    radius: paletteTokens.logoTileRadius
-                    border.width: paletteTokens.appBorderWidth
-                    border.color: paletteTokens.logoTileBorder
-                    gradient: Gradient {
-                        GradientStop { position: 0.0; color: paletteTokens.logoTileTop }
-                        GradientStop { position: 1.0; color: paletteTokens.logoTileBottom }
-                    }
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "◈"
-                        color: paletteTokens.logoTileText
-                        font.family: paletteTokens.fontFamily
-                        font.pixelSize: paletteTokens.titlePixelSize
-                    }
-                }
-
-                // One-line identity block: the uppercase eyebrow only. The mockup's big
-                // title was removed at the human operator's request in the follow-up to
-                // the restyle (commit 2f93f3e): the logo tile now carries the identity,
-                // and dropping the title row also trims the popup's vertical length.
-                PlasmaComponents3.Label {
-                    Layout.fillWidth: true
-                    Layout.alignment: Qt.AlignVCenter
-                    text: i18n("Workspace")
-                    color: paletteTokens.muted
-                    font.family: paletteTokens.fontFamily
-                    font.pixelSize: paletteTokens.eyebrowPixelSize
-                    font.weight: Font.DemiBold
-                    font.letterSpacing: 1.3
-                    font.capitalization: Font.AllUppercase
-                }
-
-                // Shown only while an action is in flight, so the row stays quiet at rest.
-                PlasmaComponents3.BusyIndicator {
-                    Layout.alignment: Qt.AlignVCenter
-                    Layout.preferredWidth: Kirigami.Units.iconSizes.small
-                    Layout.preferredHeight: Kirigami.Units.iconSizes.small
-                    running: fullRoot.actionInFlight
-                    visible: fullRoot.actionInFlight
-                }
-
-                // Refresh icon-button. Kept a ToolButton so its ToolTip renders (a
-                // PlasmaComponents3.ToolTip only shows when its parent is an AbstractButton);
-                // the mockup's square surface is supplied by the overridden background.
-                PlasmaComponents3.ToolButton {
-                    id: refreshButton
-                    Layout.preferredWidth: 38
-                    Layout.preferredHeight: 38
-                    Layout.alignment: Qt.AlignVCenter
-                    icon.name: "view-refresh"
-                    icon.color: paletteTokens.iconButtonText
-                    display: PlasmaComponents3.AbstractButton.IconOnly
-                    flat: false
-                    onClicked: fullRoot.refreshRequested()
-
-                    background: Rectangle {
-                        radius: paletteTokens.iconButtonRadius
-                        color: refreshButton.hovered ? paletteTokens.iconButtonSurfaceHover : paletteTokens.iconButtonSurface
-                        border.width: paletteTokens.appBorderWidth
-                        border.color: paletteTokens.line
-                    }
-
-                    PlasmaComponents3.ToolTip {
-                        text: i18n("Refresh now")
-                    }
-                }
-            }
-
-            // The topbar's bottom hairline, spanning the content column. Its top
-            // margin is deliberately the one spacing trim of the contrast/length turn:
-            // with the big title gone the topbar is shorter, and the hairline sits
-            // closer to the card below it.
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.topMargin: 16
-                Layout.preferredHeight: 1
-                color: paletteTokens.line
-            }
-        }
-
         // --- Status card -----------------------------------------------------
         Rectangle {
             Layout.fillWidth: true
@@ -433,6 +350,74 @@ Item {
                         font.family: paletteTokens.fontFamily
                         font.pixelSize: paletteTokens.bodyPixelSize
                         font.weight: Font.DemiBold
+                    }
+
+                    // Relocated from the removed topbar (adr-0017): the in-flight busy
+                    // state lives in the status card's head row now, so actionInFlight is
+                    // never orphaned. Kept verbatim from the topbar it left.
+                    PlasmaComponents3.BusyIndicator {
+                        Layout.alignment: Qt.AlignVCenter
+                        Layout.preferredWidth: Kirigami.Units.iconSizes.small
+                        Layout.preferredHeight: Kirigami.Units.iconSizes.small
+                        running: fullRoot.actionInFlight
+                        visible: fullRoot.actionInFlight
+                    }
+
+                    // Relocated from the removed topbar (adr-0017) and rendered SQUARE: a
+                    // 28x28 tile with no rounded radius (iconButtonRadius is 0). Kept a
+                    // ToolButton so its ToolTip renders (a PlasmaComponents3.ToolTip only
+                    // shows when its parent is an AbstractButton); the square surface is
+                    // supplied by the overridden background, which reads the palette token.
+                    PlasmaComponents3.ToolButton {
+                        id: refreshButton
+                        Layout.preferredWidth: 28
+                        Layout.preferredHeight: 28
+                        Layout.alignment: Qt.AlignVCenter
+                        icon.name: "view-refresh"
+                        icon.color: paletteTokens.iconButtonText
+                        display: PlasmaComponents3.AbstractButton.IconOnly
+                        flat: false
+                        onClicked: fullRoot.refreshRequested()
+
+                        background: Rectangle {
+                            radius: paletteTokens.iconButtonRadius
+                            color: refreshButton.hovered ? paletteTokens.iconButtonSurfaceHover : paletteTokens.iconButtonSurface
+                            border.width: paletteTokens.appBorderWidth
+                            border.color: paletteTokens.line
+                        }
+
+                        PlasmaComponents3.ToolTip {
+                            text: i18n("Refresh now")
+                        }
+                    }
+
+                    // Re-added to the popup as a SQUARE status-card button (adr-0017): its
+                    // launch section was removed (adr-0016), so the launch returns here, the
+                    // same 28x28 surface as the refresh button. main.qml owns the resolved
+                    // path and the one-shot; this only emits the request.
+                    PlasmaComponents3.ToolButton {
+                        id: podmanButton
+                        Layout.preferredWidth: 28
+                        Layout.preferredHeight: 28
+                        Layout.alignment: Qt.AlignVCenter
+                        icon.name: "system-run"
+                        icon.color: paletteTokens.iconButtonText
+                        display: PlasmaComponents3.AbstractButton.IconOnly
+                        flat: false
+                        enabled: !fullRoot.podmanLaunchInFlight
+                        opacity: enabled ? 1 : 0.38
+                        onClicked: fullRoot.podmanLaunchRequested()
+
+                        background: Rectangle {
+                            radius: paletteTokens.iconButtonRadius
+                            color: podmanButton.hovered ? paletteTokens.iconButtonSurfaceHover : paletteTokens.iconButtonSurface
+                            border.width: paletteTokens.appBorderWidth
+                            border.color: paletteTokens.line
+                        }
+
+                        PlasmaComponents3.ToolTip {
+                            text: i18n("Open Podman Desktop")
+                        }
                     }
 
                     // Shown ONLY while an update is actually available, so an offline machine, a
@@ -480,6 +465,30 @@ Item {
                             font.pixelSize: paletteTokens.subtlePixelSize
                             font.weight: 700
                         }
+                    }
+                }
+
+                // A failed Podman launch is surfaced, never swallowed (adr-0014, adr-0017):
+                // the same feedback contract the removed section used, restored as a small
+                // row in the status card. Invisible rows take no layout space.
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.topMargin: 9
+                    visible: fullRoot.podmanLaunchFeedback !== ""
+                    spacing: 6
+
+                    SeverityDot {
+                        Layout.alignment: Qt.AlignVCenter
+                        severity: fullRoot.podmanLaunchFeedbackSeverity
+                    }
+
+                    PlasmaComponents3.Label {
+                        Layout.fillWidth: true
+                        text: fullRoot.podmanLaunchFeedback
+                        color: paletteTokens.text
+                        wrapMode: Text.WordWrap
+                        font.family: paletteTokens.fontFamily
+                        font.pixelSize: paletteTokens.subtlePixelSize
                     }
                 }
 
