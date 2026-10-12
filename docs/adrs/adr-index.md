@@ -58,6 +58,12 @@ re-litigated from the code alone does not need a record either — only the *why
   `metadata.json` stays the single source of version truth through `sync-manifest.mjs`; CI gates on `test` +
   `qmllint` + `docs` while Playwright stays non-gating; and `site/` and `.github/` are documented in the
   Repository Structure because the sixth-slice question is left to the human.
+- [[adr-0014-compose-grouping-and-podman-desktop-launch]] — containers group by the
+  `com.docker.compose.project` label (the no-project bucket is a group like any other), a per-project
+  play/stop runs a label-filtered `docker start|stop` as a new container-level mutation, and the Podman
+  Desktop path is one validated setting quoted into a fixed command; it is the container-level exception
+  [[adr-0006-video-downloader-command-boundary]] reserved a record for, and the polkit grant stays at
+  `["start"]`.
 
 ## Elsewhere
 

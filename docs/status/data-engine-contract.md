@@ -23,7 +23,7 @@ committed test — see the evidence layers in
 [verification-slice](../verification/verification-slice.md#how-it-works). Anything not in these tables is
 unverified, and treating
 it as a guarantee is how a widget silently stops updating. This is a *contract* sheet, not a catalog:
-the nine sources that implement it are listed in
+the eleven sources that implement it are listed in
 [widget-slice](../widget/widget-slice.md#how-it-works).
 
 ### Field groups
@@ -41,7 +41,7 @@ the nine sources that implement it are listed in
 |---|---|---|
 | Purpose | continuous state | an action, or an immediate re-read |
 | The identical command assigned again | re-runs on the next tick | **not re-run** — the assignment is a set no-op |
-| Instances | `daemonSource`, `containerSource`, `updateCheckSource` | `forcedDaemonRead`, `daemonAction`, `homeSource`, `downloadAction`, `powerAction`, `updateCheckForced` |
+| Instances | `daemonSource`, `containerSource`, `updateCheckSource` | `forcedDaemonRead`, `daemonAction`, `composeAction`, `homeSource`, `downloadAction`, `powerAction`, `podmanLaunch`, `updateCheckForced` |
 | Output delivery | one `onNewData` per run | exactly one `onNewData`, at process exit, carrying the whole run |
 
 Measured event counts for the trap that shapes this design:
@@ -69,7 +69,8 @@ That is why the download row shows a busy indicator instead of a progress bar.
 
 The last row is why `withRunToken()` exists: appending a unique trailing shell comment makes each
 assignment a distinct source, so the command re-runs. Because that trick appends a shell comment, it is
-safe only for command strings the project itself builds — fixed constants, never configuration.
+safe only for command strings the project itself builds — fixed constants, or the sanctioned
+command-building exceptions, whose values are validated and shell-quoted before the token is appended.
 
 ### Normalization rules
 
@@ -85,12 +86,16 @@ safe only for command strings the project itself builds — fixed constants, nev
   is defence against a future engine that streams, not a response to observed chunking. The consumer
   treats the event that carries `exit code` as the end of the run either way, which is why
   `downloadAction` ignores an event without that key while the fast one-shots (`forcedDaemonRead`,
-  `daemonAction`, `homeSource`) read it unconditionally. `daemonAction` serves both privileged actions:
+  `daemonAction`, `composeAction`, `homeSource`, `podmanLaunch`) read it unconditionally. `daemonAction` serves both privileged actions:
   only one of start and stop can be in flight at a time, so one one-shot source and one `actionInFlight`
   flag are enough, and `actionKind` distinguishes the reply's owner. `powerAction` is the third one-shot
   that can outlive its own click: `systemctl poweroff` can stay alive while the shutdown job completes, so
   the source keeps `shutdownInFlight` set and the popup shows the neutral "Powering off…" line until the
   event arrives; its exit code and `stderr` are surfaced exactly like `daemonAction`'s.
+- `composeAction` reads the closing event like `daemonAction`: a present `exit code` is the end of the
+  run, exit code `0` clears the feedback, and a non-zero exit surfaces `stderr` verbatim, with the same
+  generic fallback when `stderr` is empty. `podmanLaunch` behaves the same way on its own feedback line,
+  so a path that is not found shows the binary's own `not found` message instead of failing silently.
 - The update check is the deliberate exception to failure-surfacing, and the second consumer (after the
   download row) to read a *partial* run as normal. Its command concatenates two independent fetches with a
   marker line between them, so one run can legitimately deliver a good manifest half and an empty local
@@ -104,6 +109,6 @@ safe only for command strings the project itself builds — fixed constants, nev
 ## Related sheets
 
 - [status-slice.md](status-slice.md) — the logic that consumes this payload.
-- [widget-slice.md](../widget/widget-slice.md) — the nine sources that implement this contract.
+- [widget-slice.md](../widget/widget-slice.md) — the eleven sources that implement this contract.
 - [troubleshooting.md](../verification/troubleshooting.md#the-start-daemon-button-does-nothing-on-the-second-click)
   — the symptom a consumer sees when the set semantics are ignored.

@@ -20,8 +20,10 @@ config page. The form matters —
 
 ## Boundaries
 
-**In:** representation selection and layout; the nine `P5Support.DataSource` instances and their wiring
-(four for the Docker side, two for the download row, one for the power-off, two for the update check);
+**In:** representation selection and layout; the eleven `P5Support.DataSource` instances and their wiring
+(five for the Docker side, two for the download row, one for the power-off, two for the update check,
+one for the Podman launch); the grouped compose containers section and its per-group play/stop controls;
+the Podman Desktop section;
 `Plasmoid.contextualActions` and the start/stop/refresh/update handlers; the download handler and its
 observable state; the shutdown
 countdown, its ticker, its inline minutes editor and its observable state; the update check and its
@@ -33,9 +35,11 @@ severity-to-colour mapping; the kcfg entries and the `cfg_*` alias wiring; the c
 the privilege grant belongs to [privilege-slice](../privilege/privilege-slice.md); installing the
 package belongs to [installer-slice](../installer/installer-slice.md); linting and evidence belong to
 [verification-slice](../verification/verification-slice.md). Assembling a command from configuration
-is out of scope for every slice; the single sanctioned exception is the video-download command, whose
-assembly lives in the [status slice](../status/status-slice.md) and whose boundary is recorded in
-[ADR-0006](../adrs/adr-0006-video-downloader-command-boundary.md).
+is out of scope for every slice; the two sanctioned command-building exceptions are the video-download
+command and the compose/Podman commands, whose
+assembly lives in the [status slice](../status/status-slice.md) and whose boundaries are recorded in
+[ADR-0006](../adrs/adr-0006-video-downloader-command-boundary.md) and
+[ADR-0014](../adrs/adr-0014-compose-grouping-and-podman-desktop-launch.md).
 
 ## Entry points
 
@@ -49,7 +53,7 @@ assembly lives in the [status slice](../status/status-slice.md) and whose bounda
 ## How it works
 
 `PlasmoidItem` is the root. `preferredRepresentation` is the full representation on a planar
-(desktop) form factor and null in a panel, which falls back to the compact one. Nine `DataSource`
+(desktop) form factor and null in a panel, which falls back to the compact one. Eleven `DataSource`
 instances with the `executable` engine carry every command:
 
 | id | connectedSources | interval | role |
@@ -58,15 +62,19 @@ instances with the `executable` engine carry every command:
 | `containerSource` | the `docker ps -a` command while enabled, `[]` otherwise | the same interval, or `0` when disabled | polled only while the daemon is up |
 | `forcedDaemonRead` | assigned on demand | `0` | one-shot immediate re-read after an action |
 | `daemonAction` | assigned on demand | `0` | the privileged action, `systemctl start docker` or `systemctl stop docker`; one source serves both because only one action can be in flight |
+| `composeAction` | assigned on demand | `0` | the unprivileged `docker start`/`docker stop` for one compose project, built by `DockerStatus.buildComposeProjectCommand()`; one-shot whose exit code and `stderr` are surfaced like `daemonAction`'s |
 | `homeSource` | `printf %s "$HOME"` (a constant) | `0` | one-shot at load: the shell expands `$HOME`; the result is validated before it is used |
 | `downloadAction` | the assembled yt-dlp command, assigned on demand | `0` | one-shot video download; the single event at exit closes the run, and the consumer still guards and accumulates in case a future engine streams |
 | `powerAction` | the fixed `systemctl poweroff`, assigned on demand | `0` | one-shot at countdown expiry; clears `shutdownInFlight` and surfaces the exit code and `stderr`; can stay alive while `systemctl` waits for the shutdown job |
+| `podmanLaunch` | assigned on demand | `0` | one-shot launch of the resolved Podman Desktop path, built by `DockerStatus.buildPodmanDesktopCommand()`; exit code and `stderr` surfaced like `daemonAction`'s |
 | `updateCheckSource` | the fixed `updateCheckCommand` while `updateCheckIntervalHours > 0`, `[]` otherwise | `updateCheckIntervalMs` | the polled update check; the engine runs it once on connect, so the load-time check is free, and the `connectedSources` binding disconnects it (`[]`) when the interval is `0` |
 | `updateCheckForced` | assigned on demand | `0` | one-shot manual re-check behind "Check for updates"; a polled source's `connectedSources` is a binding and cannot be reassigned per click, so the tokenised command rides this one instead |
 
 `effectivePollIntervalMs` is `max(1000, pollIntervalSeconds * 1000)`, so a configured sub-second
-interval is silently floored. `onNewData` handlers write `root.daemonState` and `root.containers`;
-when the daemon stops, `containers` is dropped, and the container source disconnects itself because
+interval is silently floored. `onNewData` handlers write `root.daemonState` and the parsed container
+list, which `DockerStatus.groupContainersByComposeProject()` folds into the grouped list the popup
+renders; when the daemon stops, `containers` is dropped, and the container source disconnects itself
+because
 its `connectedSources` binding then evaluates to `[]`. Feedback is explicit: exit code `0` clears
 `actionFeedback` and forces a daemon re-read; a non-zero exit shows `stderr` after
 `normalizeOutput` has stripped CR and trimmed it, or a generic
@@ -76,6 +84,20 @@ reply arrives so that generic fallback and the button labels name the action tha
 ownership is one-directional — `main.qml` owns state, the
 representations are pure consumers of properties, and `SeverityDot.qml` owns the only colour
 decision.
+
+The container list is richer than before, and the popup renders it as groups. The probe line carries
+the compose project, and the list crosses into `FullRepresentation.qml` already grouped: the popup
+draws one collapsible section per project with the same +/- affordance the other sections use, each
+compose-backed group carrying its own play and stop controls while the standalone group carries none.
+A play or stop click does not build a command in the representation: it emits a signal naming the
+project and the action, and `main.qml` assembles the command with
+`DockerStatus.buildComposeProjectCommand()` and runs it on the `composeAction` one-shot. The Podman
+Desktop section is the popup's fourth collapsible section, again with the same +/- affordance: its
+button emits a launch signal, `main.qml` resolves the path with
+`DockerStatus.resolvePodmanDesktopPath()` and runs `DockerStatus.buildPodmanDesktopCommand()` on
+`podmanLaunch`. The popup stays a pure consumer — everything crosses a property in and a signal out —
+and `main.qml` is the only writer of the `podmanDesktopPath` kcfg entry
+([[adr-0014-compose-grouping-and-podman-desktop-launch]]).
 
 `downloadVideo(url)` is the one handler that accepts input. It classifies the paste with
 `DockerStatus.classifyVideoUrl()` before a command exists; a refused paste sets `downloadFeedback` and
@@ -124,13 +146,24 @@ no browser.
 
 ## Conventions of this slice
 
-- Commands are `readonly` constants in `main.qml`, with ONE deliberate exception: the video-download
-  command. It is assembled by `DockerStatus.buildVideoDownloadCommand()` from a validated URL and
-  validated configuration values, and every interpolated value is shell-quoted. Configuration never
-  supplies a command; it supplies values inside one. A second exception needs a new ADR — see
-  [ADR-0006](../adrs/adr-0006-video-downloader-command-boundary.md). The update-check command is also
-  built in the pure module, but entirely from fixed constants, so it mints no second exception
+- Commands are `readonly` constants in `main.qml`, with **two** recorded command-building exceptions:
+  the video-download command, assembled by `DockerStatus.buildVideoDownloadCommand()` from a validated
+  URL and validated configuration values with every interpolated value shell-quoted
+  ([[adr-0006-video-downloader-command-boundary]]), and the compose project play/stop plus the Podman
+  Desktop launch, assembled by `DockerStatus.buildComposeProjectCommand()` /
+  `DockerStatus.buildPodmanDesktopCommand()` ([[adr-0014-compose-grouping-and-podman-desktop-launch]]).
+  No other configuration value is a command; everywhere else configuration supplies only values inside
+  a command the widget builds. The update-check command is also
+  built in the pure module, but entirely from fixed constants, so it mints no further exception
   ([[adr-0013-widget-update-check-and-release-site]]).
+- The per-project compose action needs no privilege — it is the user's own docker socket and the user's
+  own containers — so the daemon's start/stop asymmetry
+  ([[adr-0007-stop-button-confirmation-and-narrow-grant]]) is untouched: the per-group stop is
+  deliberately NOT `systemctl stop docker`.
+- The compose project name is interpolated as a single shell-quoted argument
+  (`DockerStatus.shellQuote()`), and the builder returns `""` for the standalone bucket or an action
+  outside `COMPOSE_ACTION_START`/`COMPOSE_ACTION_STOP`; `main.qml` refuses an empty command before it
+  reaches the engine.
 - The shutdown countdown is widget-owned and its command is a fixed constant (`powerOffCommand`). The
   configured minutes size a local `Date.now()` deadline and never reach a shell; the cancel path is purely
   local and needs no privilege ([[adr-0009-widget-owned-shutdown-countdown]]).
@@ -157,7 +190,8 @@ no browser.
 
 ## Dependencies
 
-**Upstream:** `dockerstatus.js` for parsing, severity, the download-command builder and the update-check
+**Upstream:** `dockerstatus.js` for parsing, severity, the download-command builder, the compose/Podman
+command builders and the update-check
 helpers; `metadata.json`
 and `main.xml` for plugin identity and config defaults; the probed behaviour of Plasma 6.7.4 and
 plasma5support 6.7.4. **Runtime (download only):** a `yt-dlp` executable reachable on plasmashell's
@@ -165,6 +199,9 @@ plasma5support 6.7.4. **Runtime (download only):** a `yt-dlp` executable reachab
 Firefox) for X and for age-gated YouTube. **Runtime (update check only):** a `curl` reachable on
 plasmashell's `PATH`, plus network reachability to the fixed Pages URL; a missing `curl` or an offline
 machine is not an error — it is simply no update notice.
+**Runtime (Podman launch only):** the Podman Desktop executable, on plasmashell's `PATH` (default
+`podman-desktop`) or named by an absolute or `~/`-expanded path in the widget's options; a wrong
+setting fails at click time with the binary's own message, not at load time.
 **Downstream:** the installer copies this package; the privilege slice decides whether the start
 button prompts; the verification slice can lint these files but can only *observe* this slice inside
 a running Plasma session.
@@ -200,3 +237,14 @@ a running Plasma session.
   the configurable duration are the mitigations.
 - The download depends on external tools the widget cannot probe for: a wrong `yt-dlp` binary or a
   missing JavaScript runtime fails at download time with yt-dlp's own message, not at load time.
+- The grouped container section and the Podman Desktop section are QML surfaces like the rest: the
+  grouping pipeline and both command boundaries are pinned by the Node suite, but their layout and
+  interaction are reviewed until they run in a session.
+- A compose stack that disappears between the last poll and the click makes `docker start`/`docker stop`
+  exit non-zero with docker's own `requires at least 1 container argument`, surfaced verbatim on the
+  feedback line rather than swallowed.
+- Grouping depends on the `com.docker.compose.project` label. A docker that does not answer it (or does
+  not support the `.Label` template function) degrades the list to one standalone group, never to an
+  empty list.
+- The Podman path is a PATH name by default, so a wrong `podmanDesktopPath` fails at click time with the
+  binary's own message (for example `podman-desktop: not found`), not at load time.

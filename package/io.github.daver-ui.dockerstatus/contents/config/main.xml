@@ -48,6 +48,11 @@
       <default>firefox</default>
     </entry>
 
+    <entry name="podmanDesktopPath" type="String">
+      <label>Executable that launches Podman Desktop, e.g. "podman-desktop" or "~/.local/bin/podman-desktop". "~/" is expanded to your home directory; an empty or malformed value falls back to "podman-desktop". The launch is unprivileged.</label>
+      <default>podman-desktop</default>
+    </entry>
+
     <entry name="taglineText" type="String">
       <label>Muted text shown at the bottom of the widget. Leave empty to hide it.</label>
       <default>Persiguiendo la singularidad</default>

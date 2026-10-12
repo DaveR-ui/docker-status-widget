@@ -25,9 +25,11 @@ is testable without a network.
 ## Boundaries
 
 **In:** output normalisation; `systemctl is-active` stdout to daemon state; `docker ps` rows to
-container objects; counting and the compact badge; severity mapping for both daemon and containers;
-the run-token helper; video-link classification; shell quoting; download-directory, binary, runtime
-and runtime resolution; download-command assembly; download-result parsing; the shutdown-duration
+container objects and their grouping by compose project; counting and the compact badge; severity
+mapping for both daemon and containers; the run-token helper; video-link classification; shell quoting;
+download-directory, binary, runtime
+and runtime resolution; download-command assembly; the Podman Desktop path resolver and the compose
+and Podman command builders; download-result parsing; the shutdown-duration
 resolver and the countdown formatting helpers; the update-check command builder, the marker split, the
 version parsers and the version comparison.
 
@@ -52,7 +54,8 @@ severity. The public surface, and what each function guarantees:
 |---|---|
 | `normalizeOutput(raw)` | `null`/`undefined` → `""`; CRLF → LF; trimmed |
 | `parseDaemonState(raw)` | `active`/`activating`/`reloading` → active; `inactive`/`deactivating` → inactive; `failed` → failed; **anything else, including empty output, → unknown** |
-| `parseContainers(raw)` | one `{name, state}` per line, split at the **first** `\|`; a line without a separator, or with an empty side, is skipped |
+| `parseContainers(raw)` | one `{name, state, project}` per line: name to the **first** `\|`, state to the second, the whole remainder is `project`; a two-field line parses with an empty `project`; a line without a separator, or with an empty name or state side, is skipped |
+| `groupContainersByComposeProject(list)` | `[{project, containers}]` grouped by each container's `project`, in first-seen order; the no-project bucket (`COMPOSE_PROJECT_STANDALONE`, `""`) is emitted last and only when non-empty |
 | `countByState(list, state)` | exact-state count |
 | `summarizeContainers(list)` | `"running/total"`; `"0/0"` for empty, `null` or `undefined` |
 | `withRunToken(cmd, n)` | `cmd + " # plasma-run-" + n` — a distinct source for an identical command |
@@ -63,9 +66,13 @@ severity. The public surface, and what each function guarantees:
 | `expandTilde(path, home)` | a leading `~/` (or a bare `~`) expands against home; a tilde elsewhere stays literal |
 | `resolveDownloadDirectory(cfg, home)` | absolute, `~`-expanded, trailing slashes trimmed; empty, relative or control-character value falls back to `<home>/Downloads` |
 | `resolveYtDlpBinary(cfg, home)` | a plain name or path matching `^(~/)?[A-Za-z0-9._/+-]+$`, else `yt-dlp` |
+| `resolvePodmanDesktopPath(cfg, home)` | a plain name or path matching `^(~/)?[A-Za-z0-9._/+-]+$`, a leading `~/` expanded against home; empty or malformed → `podman-desktop` (`PODMAN_DESKTOP_DEFAULT`) |
 | `resolveJsRuntime(cfg)` | a valid runtime name; empty opts out and returns `""` so the flag is omitted; garbage falls back to `node` |
 | `resolveCookiesBrowser(cfg)` | a valid `BROWSER[+KEYRING][:PROFILE]` token matching `^[A-Za-z0-9._+:,-]+$`; empty opts out and returns `""` so the flag is omitted; garbage falls back to `firefox` |
 | `buildVideoDownloadCommand(opts)` | the assembled yt-dlp command, with `--cookies-from-browser` taken from the validated browser value (omitted when that value is `""`); omits `--js-runtimes` when the runtime is `""`; appends `withRunToken()` when a token is given |
+| `COMPOSE_PROJECT_STANDALONE`, `COMPOSE_ACTION_START`, `COMPOSE_ACTION_STOP`, `PODMAN_DESKTOP_DEFAULT` | the compose/Podman constants: the no-project bucket (`""`), the two actions `buildComposeProjectCommand()` accepts, and the fallback executable name (`podman-desktop`) |
+| `buildComposeProjectCommand(opts)` | the assembled `docker start\|stop $(docker ps -aq --filter 'label=com.docker.compose.project=<project>')`, the project name one shell-quoted argument; returns `""` for the standalone bucket or an action outside `COMPOSE_ACTION_START`/`COMPOSE_ACTION_STOP`; appends `withRunToken()` when a token is given |
+| `buildPodmanDesktopCommand(opts)` | the quoted resolved path plus the run token and nothing else — no flag channel, no free-form arguments; appends `withRunToken()` when a token is given |
 | `parseDownloadedFile(output)` | the `[Merger]` path when present, else the last `[download] Destination:` line; `""` when neither appears |
 | `extractErrorLine(output)` | the last `ERROR:` line when present, else the last non-empty line; bounded to 240 characters |
 | `SHUTDOWN_MINUTES_DEFAULT` / `SHUTDOWN_MINUTES_MINIMUM` | `15` / `10` — the default when the setting is blank or absent, and the floor a usable whole number must exceed |
@@ -104,6 +111,20 @@ comparison is numeric and segment-wise on purpose (`"0.10"` is greater than `"0.
 `isUpdateAvailable()` is conservative by construction: it is true only for a strictly-greater remote, so
 the widget structurally cannot show an update line that is wrong.
 
+The compose grouping and the Podman launch own a fourth boundary, and it is the second sanctioned
+command-building exception. The probe already carries the grouping identity: `parseContainers()` reads
+`{name, state, project}` from the label-augmented `docker ps` line, and `groupContainersByComposeProject()`
+folds that flat list into `[{project, containers}]` — compose groups in first-seen order, the no-project
+bucket last and only when non-empty — so a machine that answers no label still shows one standalone group
+rather than nothing. `buildComposeProjectCommand()` turns a group into
+`docker start|stop $(docker ps -aq --filter 'label=com.docker.compose.project=<project>')`, the project name
+interpolated as exactly one shell-quoted argument and the function returning `""` for the standalone
+bucket or an unvalidated action, while `buildPodmanDesktopCommand()` assembles the quoted resolved path
+plus the run token and nothing else. Both mutations are unprivileged — the user's own docker socket and
+the user's own session — so the daemon's start/stop asymmetry is untouched; the boundary is recorded in
+[../adrs/adr-0014-compose-grouping-and-podman-desktop-launch.md](../adrs/adr-0014-compose-grouping-and-podman-desktop-launch.md)
+and the sources and surfaces that call it in the [widget slice](../widget/widget-slice.md).
+
 ## Conventions of this slice
 
 - No QML types, no imports, no I/O. `.pragma library` at the top is the only QML-ism in the file.
@@ -119,7 +140,9 @@ the widget structurally cannot show an update line that is wrong.
   `H:MM:SS` boundary of `formatCountdown` all have unit tests.
 - Quoting is proven, not asserted: the `shellQuote` round-trips and the assembled download command are
   tested against a real `/bin/sh`, with a stub `yt-dlp` on `PATH` that prints its argv. A change to the
-  quoting rule without a shell-level test is a regression waiting to happen.
+  quoting rule without a shell-level test is a regression waiting to happen. The assembled compose
+  command is exercised the same way, with a stub `docker` and a project name carrying shell
+  metacharacters.
 
 ## Dependencies
 
@@ -132,9 +155,9 @@ exact bytes; the data engine contract documents the set semantics that make `wit
 - Container states outside the mapped set (for example `removing`) degrade to `muted` by design and
   are not asserted against live `docker ps` output.
 - `withRunToken` is coupled to shell semantics. It is safe only because the commands it decorates are
-  fixed constants or, in the one sanctioned exception, values that were validated and shell-quoted
-  before the token is appended. If configuration ever supplied a command string directly, the trailing
-  comment would become injectable text.
+  fixed constants or, in the sanctioned command-building exceptions, values that were validated and
+  shell-quoted before the token is appended. If configuration ever supplied an unvalidated command
+  string directly, the trailing comment would become injectable text.
 - Malformed input is skipped rather than reported, so a systematic format change from `docker` would
   show up as an empty list rather than as an error.
 - The functions are string-driven: a change in `systemctl` or `docker` output format is caught by the

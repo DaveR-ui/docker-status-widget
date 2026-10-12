@@ -37,6 +37,7 @@ Kirigami.FormLayout {
     property alias cfg_downloadDirectory: downloadDirectory.text
     property alias cfg_jsRuntime: jsRuntime.text
     property alias cfg_ytDlpBinary: ytDlpBinary.text
+    property alias cfg_podmanDesktopPath: podmanDesktopPath.text
     property alias cfg_taglineText: taglineText.text
     property alias cfg_shutdownCountdownMinutes: shutdownCountdownMinutes.text
     property alias cfg_updateCheckIntervalHours: updateCheckIntervalHours.value
@@ -189,6 +190,66 @@ Kirigami.FormLayout {
 
                     font.family: paletteTokens.fontFamily
                     font.pixelSize: paletteTokens.labelPixelSize
+                }
+            }
+        }
+    }
+
+    // --- Podman Desktop ------------------------------------------------------
+    Rectangle {
+        Kirigami.FormData.isSection: true
+        Layout.fillWidth: true
+        implicitWidth: Math.max(podmanBody.implicitWidth, Kirigami.Units.gridUnit * 16)
+            + Kirigami.Units.largeSpacing * 4
+        implicitHeight: podmanBody.implicitHeight + Kirigami.Units.largeSpacing * 4
+        radius: paletteTokens.cardRadius
+        color: Qt.rgba(paletteTokens.panelSunken.r, paletteTokens.panelSunken.g, paletteTokens.panelSunken.b, 0.45)
+        border.width: paletteTokens.appBorderWidth
+        border.color: paletteTokens.line
+
+        ColumnLayout {
+            id: podmanBody
+            anchors.fill: parent
+            anchors.margins: Kirigami.Units.largeSpacing * 2
+            spacing: Kirigami.Units.smallSpacing
+
+            QQC2.Label {
+                text: i18n("Podman Desktop")
+                color: paletteTokens.text
+                font.family: paletteTokens.fontFamily
+                font.pixelSize: paletteTokens.sectionTitlePixelSize
+            }
+
+            QQC2.Label {
+                Layout.fillWidth: true
+                text: i18n("The executable the popup's launch button runs.")
+                color: paletteTokens.muted
+                wrapMode: Text.WordWrap
+                font.family: paletteTokens.fontFamily
+                font.pixelSize: paletteTokens.subtlePixelSize
+            }
+
+            Kirigami.FormLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: Kirigami.Units.smallSpacing
+
+                QQC2.TextField {
+                    id: podmanDesktopPath
+                    Kirigami.FormData.label: i18n("Podman Desktop path:")
+
+                    color: paletteTokens.text
+                    placeholderTextColor: paletteTokens.placeholder
+                    font.family: paletteTokens.fontFamily
+                    font.pixelSize: paletteTokens.labelPixelSize
+                    background: Rectangle {
+                        color: paletteTokens.fieldSurface
+                        border.width: 1
+                        border.color: podmanDesktopPath.activeFocus ? paletteTokens.fieldBorderFocus : paletteTokens.fieldBorder
+                        radius: paletteTokens.controlRadius
+                    }
+
+                    QQC2.ToolTip.text: i18n("Executable name or path. A leading '~/' expands to your home directory; leave empty for 'podman-desktop'.")
+                    QQC2.ToolTip.visible: hovered
                 }
             }
         }

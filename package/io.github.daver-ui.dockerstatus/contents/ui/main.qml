@@ -14,13 +14,18 @@
  *     string twice is a no-op, so without the token a second button click would
  *     silently do nothing.
  *
- *  3. Executed commands are fixed constants below, with ONE deliberate exception:
- *     the video download. It needs the URL the user pasted, so it is assembled by
- *     DockerStatus.buildVideoDownloadCommand(), which validates the URL against a
+ *  3. Executed commands are fixed constants below, with TWO deliberate, recorded
+ *     exceptions. The video download needs the URL the user pasted, so it is assembled
+ *     by DockerStatus.buildVideoDownloadCommand(), which validates the URL against a
  *     host allow-list and shell-quotes every interpolated value -- including the
- *     configuration. That is what makes the trailing shell-comment token safe
- *     everywhere else. Do not add a second exception without reading dockerstatus.js
- *     and the tests that run the assembled command through a real shell.
+ *     configuration (adr-0006). The per-project compose play/stop and the Podman
+ *     Desktop launch are the second: their commands are assembled by
+ *     DockerStatus.buildComposeProjectCommand() / buildPodmanDesktopCommand(), which
+ *     interpolate a value into one shell-quoted argument and expose no free-form
+ *     channel (adr-0014). Both exceptions shell-quote every interpolated value, and
+ *     that is what makes the trailing shell-comment token safe everywhere else. Do not
+ *     add a third exception without reading dockerstatus.js and the tests that run the
+ *     assembled command through a real shell.
  *
  *  4. Stopping the daemon is a destructive action (the power-off in note 5 is the
  *     other), and it is offered but never on a single click. The first click arms a
@@ -45,6 +50,14 @@
  *     duration is editable inline in the popup as well as on the config page; the
  *     popup emits raw text and this file stays the SINGLE writer of the kcfg entry,
  *     refusing anything the resolver cannot use so both surfaces cannot drift.
+ *
+ *  6. The compose and Podman Desktop actions are UNPRIVILEGED mutations: they run as
+ *     the logged-in user against that user's own docker socket and that user's own
+ *     session, so they add no polkit rule and ALLOWED_VERBS stays ["start"] (adr-0004,
+ *     adr-0007, adr-0014). The per-group stop is a container-level action, NOT
+ *     `systemctl stop docker`, so it needs no password: its safeguard is the single
+ *     shell-quoted label argument plus the visible feedback line, and a wrong Podman
+ *     path fails at click time with the binary's own message, never at load time.
  */
 
 import QtQuick
@@ -65,7 +78,10 @@ PlasmoidItem {
     // These three are constants on purpose. The Docker side of this widget never
     // assembles a command from input.
     readonly property string daemonStateCommand: "systemctl is-active docker"
-    readonly property string containerListCommand: "docker ps -a --format '{{.Names}}|{{.State}}'"
+    // The third field is the compose project label; a container without one parses as
+    // COMPOSE_PROJECT_STANDALONE (the empty string), so a docker that cannot answer the
+    // label degrades to one flat standalone group instead of to nothing.
+    readonly property string containerListCommand: "docker ps -a --format '{{.Names}}|{{.State}}|{{.Label \"com.docker.compose.project\"}}'"
     readonly property string daemonStartCommand: "systemctl start docker"
     readonly property string daemonStopCommand: "systemctl stop docker"
 
@@ -111,6 +127,28 @@ PlasmoidItem {
     property string actionKind: ""
     property string actionFeedback: ""
     property int runToken: 0
+
+    // Compose project actions and the Podman Desktop launch. Both are UNPRIVILEGED
+    // mutations (the user's own docker socket, the user's own session), so neither
+    // widens the polkit grant and ALLOWED_VERBS stays ["start"] (adr-0004, adr-0007,
+    // adr-0014). Both mirror daemonAction's handler: one one-shot source, one
+    // in-flight flag, exit code 0 clears the feedback, anything else surfaces
+    // stderr verbatim (or a generic fallback) so a vanished stack or a wrong path is
+    // never swallowed.
+    property bool composeActionInFlight: false
+    property string composeActionProject: ""
+    property string composeActionKind: ""     // DockerStatus.COMPOSE_ACTION_* ; "" while idle
+    property string composeActionFeedback: ""
+    property string composeActionFeedbackSeverity: DockerStatus.SEVERITY_MUTED
+
+    property bool podmanLaunchInFlight: false
+    property string podmanLaunchFeedback: ""
+    property string podmanLaunchFeedbackSeverity: DockerStatus.SEVERITY_MUTED
+
+    // Resolved, not raw: the setting holds whatever the user typed, the resolver is the
+    // single place that decides what actually runs. A "~/" expands against the probed
+    // home, and an empty or malformed value falls back to the plain PATH name.
+    readonly property string podmanDesktopPath: DockerStatus.resolvePodmanDesktopPath(Plasmoid.configuration.podmanDesktopPath, root.homeDirectory)
 
     property string homeDirectory: ""
     property bool downloadInFlight: false
@@ -203,6 +241,69 @@ PlasmoidItem {
         root.actionKind = DockerStatus.ACTION_STOP;
         daemonAction.connectedSources = [
             DockerStatus.withRunToken(root.daemonStopCommand, root.nextRunToken())
+        ];
+    }
+
+    // Per-project compose play/stop. The representation never builds a command: it emits
+    // a signal naming the project, and this assembles the label-filtered docker command.
+    function startComposeProject(project) {
+        root.runComposeProject(project, DockerStatus.COMPOSE_ACTION_START);
+    }
+
+    function stopComposeProject(project) {
+        root.runComposeProject(project, DockerStatus.COMPOSE_ACTION_STOP);
+    }
+
+    // One mutation at a time: two groups in flight at once would make the feedback
+    // untraceable (one source, one feedback line). The standalone bucket and a null
+    // project are refused BEFORE nextRunToken(), so a refused action never burns a token;
+    // the empty-command guard stays as defence in depth -- it is the builder's "there is
+    // no command" contract for the standalone bucket and an unknown action.
+    function runComposeProject(project, action) {
+        if (root.composeActionInFlight) {
+            return;
+        }
+        if (project === null || project === undefined || project === DockerStatus.COMPOSE_PROJECT_STANDALONE) {
+            return;
+        }
+
+        const command = DockerStatus.buildComposeProjectCommand({
+            project: project,
+            action: action,
+            token: root.nextRunToken()
+        });
+        if (command === "") {
+            return;
+        }
+
+        root.composeActionInFlight = true;
+        root.composeActionProject = project;
+        root.composeActionKind = action;
+        root.composeActionFeedback = "";
+        root.composeActionFeedbackSeverity = DockerStatus.SEVERITY_MUTED;
+        composeAction.connectedSources = [command];
+    }
+
+    // The Podman Desktop launch. Unprivileged, and the only command whose first word is a
+    // configured value (the resolved path, shell-quoted, plus the run token and nothing
+    // else). The one-shot stays in "in flight" for as long as Podman Desktop runs: the
+    // engine delivers exactly one event, at exit -- the same measured behaviour the
+    // download row relies on -- so the flag is released when the app closes, not when it
+    // opens. A wrong path fails immediately with the binary's own message.
+    function launchPodmanDesktop() {
+        if (root.podmanLaunchInFlight) {
+            return;
+        }
+
+        root.podmanLaunchInFlight = true;
+        root.podmanLaunchFeedback = "";
+        root.podmanLaunchFeedbackSeverity = DockerStatus.SEVERITY_MUTED;
+        podmanLaunch.connectedSources = [
+            DockerStatus.buildPodmanDesktopCommand({
+                path: Plasmoid.configuration.podmanDesktopPath,
+                home: root.homeDirectory,
+                token: root.nextRunToken()
+            })
         ];
     }
 
@@ -463,6 +564,42 @@ PlasmoidItem {
         }
     }
 
+    // One-shot: the unprivileged `docker start|stop` for one compose project, assembled by
+    // DockerStatus.buildComposeProjectCommand() and run by runComposeProject(). Mirrors
+    // daemonAction: one source, one in-flight flag, exit code 0 clears the feedback and
+    // anything else surfaces stderr verbatim (or a generic fallback naming the project and
+    // the action that actually ran) so a vanished stack is never swallowed.
+    P5Support.DataSource {
+        id: composeAction
+        engine: "executable"
+        interval: 0
+        connectedSources: []
+
+        onNewData: (sourceName, data) => {
+            const kind = root.composeActionKind;
+            const project = root.composeActionProject;
+
+            root.composeActionInFlight = false;
+            root.composeActionKind = "";
+            root.composeActionProject = "";
+
+            const exitCode = Number(data["exit code"]);
+            if (exitCode === 0) {
+                root.composeActionFeedback = "";
+                root.composeActionFeedbackSeverity = DockerStatus.SEVERITY_MUTED;
+                return;
+            }
+
+            const stderr = DockerStatus.normalizeOutput(data["stderr"]);
+            root.composeActionFeedback = stderr !== ""
+                ? stderr
+                : (kind === DockerStatus.COMPOSE_ACTION_STOP
+                    ? i18nc("@info", "Stopping compose project %1 failed (exit code %2).", project, exitCode)
+                    : i18nc("@info", "Starting compose project %1 failed (exit code %2).", project, exitCode));
+            root.composeActionFeedbackSeverity = DockerStatus.SEVERITY_NEGATIVE;
+        }
+    }
+
     // One-shot: the power-off. A single source that clears the in-flight flag, mirroring
     // daemonAction. The exit code and stderr are surfaced verbatim so a polkit denial is
     // never swallowed. The command is the fixed constant above; the configured countdown
@@ -552,14 +689,44 @@ PlasmoidItem {
         }
     }
 
-    // Update check: two sources, the eighth and ninth in this file (the seven before them
-    // are the two docker probes, forcedDaemonRead, daemonAction, powerAction, homeSource and
-    // downloadAction). A polled source runs the fixed command -- the engine runs it once on
-    // connect, so the load-time check is free -- and disconnects itself when the interval is
-    // 0 via the connectedSources binding. A one-shot carries the manual "Check for updates":
-    // a polled source's connectedSources is a binding and cannot be reassigned per click, so
-    // the tokenised command rides this one instead, exactly like the daemon re-read. Both
-    // deliver to the single handler above; neither ever surfaces stderr.
+    // One-shot: the Podman Desktop launch, mirroring daemonAction. The command is the
+    // resolved, shell-quoted path plus the run token and nothing else. It stays in flight
+    // for as long as the app runs: the engine delivers exactly one event, at exit, so the
+    // flag is released when Podman Desktop closes and a wrong path fails immediately with
+    // the binary's own message on stderr.
+    P5Support.DataSource {
+        id: podmanLaunch
+        engine: "executable"
+        interval: 0
+        connectedSources: []
+
+        onNewData: (sourceName, data) => {
+            root.podmanLaunchInFlight = false;
+
+            const exitCode = Number(data["exit code"]);
+            if (exitCode === 0) {
+                root.podmanLaunchFeedback = "";
+                root.podmanLaunchFeedbackSeverity = DockerStatus.SEVERITY_MUTED;
+                return;
+            }
+
+            const stderr = DockerStatus.normalizeOutput(data["stderr"]);
+            root.podmanLaunchFeedback = stderr !== ""
+                ? stderr
+                : i18nc("@info", "Podman Desktop failed to start (exit code %1).", exitCode);
+            root.podmanLaunchFeedbackSeverity = DockerStatus.SEVERITY_NEGATIVE;
+        }
+    }
+
+    // Update check: two sources, the tenth and eleventh in this file (the nine before them
+    // are the two docker probes, forcedDaemonRead, daemonAction, composeAction, powerAction,
+    // homeSource, downloadAction and podmanLaunch). A polled source runs the fixed command --
+    // the engine runs it once on connect, so the load-time check is free -- and disconnects
+    // itself when the interval is 0 via the connectedSources binding. A one-shot carries the
+    // manual "Check for updates": a polled source's connectedSources is a binding and cannot
+    // be reassigned per click, so the tokenised command rides this one instead, exactly like
+    // the daemon re-read. Both deliver to the single handler above; neither ever surfaces
+    // stderr.
     P5Support.DataSource {
         id: updateCheckSource
         engine: "executable"
@@ -637,6 +804,15 @@ PlasmoidItem {
         shutdownFeedbackSeverity: root.shutdownFeedbackSeverity
         updateAvailable: root.updateAvailable
         updateFeedback: root.updateFeedback
+        podmanDesktopPath: root.podmanDesktopPath
+        composeActionInFlight: root.composeActionInFlight
+        composeActionProject: root.composeActionProject
+        composeActionKind: root.composeActionKind
+        composeActionFeedback: root.composeActionFeedback
+        composeActionFeedbackSeverity: root.composeActionFeedbackSeverity
+        podmanLaunchInFlight: root.podmanLaunchInFlight
+        podmanLaunchFeedback: root.podmanLaunchFeedback
+        podmanLaunchFeedbackSeverity: root.podmanLaunchFeedbackSeverity
 
         onStartRequested: root.startDaemon()
         onStopRequested: root.stopDaemon()
@@ -646,5 +822,8 @@ PlasmoidItem {
         onShutdownStopRequested: root.stopShutdownCountdown()
         onShutdownMinutesEdited: (text) => root.setShutdownMinutes(text)
         onUpdateCheckRequested: root.checkForUpdates()
+        onComposeStartRequested: (project) => root.startComposeProject(project)
+        onComposeStopRequested: (project) => root.stopComposeProject(project)
+        onPodmanLaunchRequested: root.launchPodmanDesktop()
     }
 }

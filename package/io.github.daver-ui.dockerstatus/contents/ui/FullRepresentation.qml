@@ -73,6 +73,51 @@ Item {
     // being hidden behind a resolved default. main.qml forwards it verbatim.
     property string shutdownMinutesText: ""
 
+    // Compose grouping and per-project actions. All of this is view state or a signal
+    // out: nothing here reads configuration and nothing here runs a command. main.qml
+    // owns the in-flight flag, the captured action kind and the feedback string, and
+    // resolves the project name into a command through DockerStatus; this representation
+    // only renders those values and emits a request naming the project. The two unused
+    // here (composeActionProject, composeActionKind) are still declared because main.qml
+    // is wired against these exact names.
+    property bool composeActionInFlight: false
+    property string composeActionProject: ""
+    // DockerStatus.COMPOSE_ACTION_START / _STOP while an action is in flight, "" when idle.
+    property string composeActionKind: ""
+    property string composeActionFeedback: ""
+    property string composeActionFeedbackSeverity: "muted"
+
+    // Podman Desktop launch. podmanDesktopPath is the RESOLVED path: main.qml resolves
+    // the setting through DockerStatus.resolvePodmanDesktopPath(), whose default is the
+    // plain PATH name "podman-desktop". This file never reads the kcfg entry.
+    property string podmanDesktopPath: ""
+    property bool podmanLaunchInFlight: false
+    property string podmanLaunchFeedback: ""
+    property string podmanLaunchFeedbackSeverity: "muted"
+    // The fourth collapsible section. Like the other section flags, this is local view
+    // state: open by default, never persisted and never signalled.
+    property bool podmanSectionExpanded: true
+
+    // Local view state and nothing else: which of the three collapsible sections
+    // have their body open. This is deliberately NOT persisted and NOT routed
+    // through a signal -- main.qml still owns every shell and kcfg boundary, and
+    // the popup stays a pure consumer of configuration. The one piece of state
+    // that belongs to the popup itself is whether its own sections are open. All
+    // three default to true, so nothing regresses visually until a header is
+    // tapped, and the header, separator and section identity never collapse.
+    property bool containerSectionExpanded: true
+    property bool downloadSectionExpanded: true
+    property bool countdownSectionExpanded: true
+
+    // The countdown is the one section with an ARMED state, and adr-0009 names "the
+    // visible countdown and the cancel button" among the safeguards that let the
+    // power-off run without a password prompt. So collapse is a rest-state declutter
+    // only: while a shutdown is pending the body comes back whatever the section
+    // bool says, and an armed destructive state can never be collapsed away. The
+    // header's own toggle still flips the section bool, so a pending countdown is
+    // restored in full and stays that way until the user cancels it.
+    readonly property bool countdownBodyVisible: fullRoot.countdownSectionExpanded || fullRoot.shutdownPending
+
     // Update check. main.qml owns the whole check; this representation only renders the one
     // line it produces and can ask for a manual re-check. No severity here: the line reuses
     // the tagline's muted style, so there is deliberately no updateSeverity property.
@@ -87,6 +132,12 @@ Item {
     signal shutdownStopRequested()
     signal shutdownMinutesEdited(string text)
     signal updateCheckRequested()
+    // Per-project compose actions name the project; the representation builds no command
+    // and reaches for no data source -- it hands the project back to main.qml.
+    signal composeStartRequested(string project)
+    signal composeStopRequested(string project)
+    // The Podman Desktop launch takes no argument: main.qml owns the resolved path.
+    signal podmanLaunchRequested()
 
     // The inline field validates through the same pure resolver main.qml uses to size the
     // deadline, so the field, the play gate and the persisted value cannot drift apart.
@@ -479,6 +530,9 @@ Item {
                         Layout.fillWidth: true
                         icon.name: "media-playback-start"
                         icon.color: paletteTokens.buttonPrimaryText
+                        // Space between the left border and the content, matching
+                        // the 12px padding the text fields already carry.
+                        leftPadding: 12
                         text: fullRoot.startInFlight
                             ? i18n("Starting…")
                             : i18n("Start daemon")
@@ -505,6 +559,9 @@ Item {
                         // because both buttons fill and only their labels change.
                         Layout.fillWidth: true
                         icon.color: paletteTokens.buttonDangerText
+                        // Space between the left border and the content, matching
+                        // the 12px padding the text fields already carry.
+                        leftPadding: 12
                         text: fullRoot.stopInFlight
                             ? i18n("Stopping…")
                             : (fullRoot.stopArmed ? i18n("Confirm stop") : i18n("Stop daemon"))
@@ -570,30 +627,82 @@ Item {
                     // Single-row header: title and right-side meta on one line, no
                     // subtitle. The elide guard keeps a long localized title from
                     // reaching the meta label at the popup's minimum width.
-                    RowLayout {
+                    //
+                    // The row is wrapped in a plain Item so tapping the header can
+                    // collapse the section body below it. A layout-managed item must
+                    // not carry anchors -- the file header explains why -- so the
+                    // wrapper, a direct child of this ColumnLayout, takes the
+                    // horizontal insets the RowLayout used to carry as Layout
+                    // margins, and the RowLayout fills the wrapper and keeps its own
+                    // vertical insets as anchor margins. Only the body collapses:
+                    // the header and the separator stay visible either way.
+                    Item {
                         Layout.fillWidth: true
                         Layout.leftMargin: 16
                         Layout.rightMargin: 16
-                        Layout.topMargin: 12
-                        Layout.bottomMargin: 12
-                        spacing: 12
+                        implicitHeight: containersHeaderRow.implicitHeight + 24
 
-                        PlasmaComponents3.Label {
-                            Layout.fillWidth: true
-                            text: i18n("Containers")
-                            color: paletteTokens.text
-                            elide: Text.ElideRight
-                            font.family: paletteTokens.fontFamily
-                            font.pixelSize: paletteTokens.sectionTitlePixelSize
-                            font.weight: 650
+                        // The whole header strip is the tap target, including the
+                        // 16px gutters and the vertical padding.
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: fullRoot.containerSectionExpanded = !fullRoot.containerSectionExpanded
                         }
 
-                        PlasmaComponents3.Label {
-                            Layout.alignment: Qt.AlignVCenter
-                            text: i18nc("@info", "%1 services", fullRoot.containers.length)
-                            color: paletteTokens.muted
-                            font.family: paletteTokens.fontFamily
-                            font.pixelSize: paletteTokens.subtlePixelSize
+                        RowLayout {
+                            id: containersHeaderRow
+                            anchors.fill: parent
+                            anchors.topMargin: 12
+                            anchors.bottomMargin: 12
+                            spacing: 12
+
+                            PlasmaComponents3.Label {
+                                Layout.fillWidth: true
+                                text: i18n("Containers")
+                                color: paletteTokens.text
+                                elide: Text.ElideRight
+                                font.family: paletteTokens.fontFamily
+                                font.pixelSize: paletteTokens.sectionTitlePixelSize
+                                font.weight: 650
+                            }
+
+                            PlasmaComponents3.Label {
+                                Layout.alignment: Qt.AlignVCenter
+                                text: i18nc("@info", "%1 services", fullRoot.containers.length)
+                                color: paletteTokens.muted
+                                font.family: paletteTokens.fontFamily
+                                font.pixelSize: paletteTokens.subtlePixelSize
+                            }
+
+                            // The open/close affordance. Expanded shows the MINUS
+                            // sign (U+2212) and collapsed shows a plus, so the glyph
+                            // says which way the tap is about to go. Behind the
+                            // crisp copy sits a second, larger, low-opacity copy of
+                            // the SAME glyph as a crude halo: two plain Text items,
+                            // no shader effect and no extra import.
+                            Item {
+                                Layout.alignment: Qt.AlignVCenter
+                                implicitWidth: containersToggleGlow.implicitWidth
+                                implicitHeight: containersToggleGlow.implicitHeight
+
+                                Text {
+                                    id: containersToggleGlow
+                                    anchors.centerIn: parent
+                                    text: fullRoot.containerSectionExpanded ? "−" : "+"
+                                    color: paletteTokens.toggleIndicator
+                                    opacity: 0.3
+                                    font.family: paletteTokens.fontFamily
+                                    font.pixelSize: paletteTokens.toggleIndicatorPixelSize + 5
+                                }
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: containersToggleGlow.text
+                                    color: paletteTokens.toggleIndicator
+                                    font.family: paletteTokens.fontFamily
+                                    font.pixelSize: paletteTokens.toggleIndicatorPixelSize
+                                }
+                            }
                         }
                     }
 
@@ -604,89 +713,292 @@ Item {
                     }
                 }
 
+                // The grouped list: one collapsible group per compose project, the
+                // standalone bucket last, exactly as DockerStatus.groupContainersByComposeProject()
+                // returns them. The grouping is pure data prep done in the core, so this
+                // view stays a renderer and never reaches for a data source.
                 ListView {
-                    id: containerList
+                    id: containerGroupList
                     Layout.fillWidth: true
-                    Layout.preferredHeight: Math.min(contentHeight, Kirigami.Units.gridUnit * 10)
+                    // The grouped list needs more headroom than the old flat one: every
+                    // project now contributes its own header row above its container rows,
+                    // so the same container count occupies more vertical space. 13 grid
+                    // units (up from the flat list's 10) leaves room for a group header
+                    // plus its first rows instead of clipping mid-group.
+                    Layout.preferredHeight: Math.min(contentHeight, Kirigami.Units.gridUnit * 13)
                     clip: true
-                    visible: fullRoot.containers.length > 0
-                    model: fullRoot.containers
+                    // The collapse gate comes first, and the empty-list rule below it
+                    // is untouched: an empty list still hides the view and shows the
+                    // empty state instead, but only while the section is open.
+                    visible: fullRoot.containerSectionExpanded && fullRoot.containers.length > 0
+                    model: DockerStatus.groupContainersByComposeProject(fullRoot.containers)
 
                     delegate: Item {
-                        id: containerRow
+                        id: containerGroup
                         required property var modelData
 
-                        width: containerList.width
-                        implicitHeight: containerRowLayout.implicitHeight + 20
+                        // Per-group open/closed view state, the same rule the section
+                        // flags follow: local to this instantiated group, never persisted
+                        // and never signalled.
+                        property bool groupOpen: true
 
-                        // Faint hover tint behind the row, exactly as the mockup.
-                        Rectangle {
+                        // The standalone bucket carries no project name, so it shows a
+                        // translated label instead of the empty string.
+                        readonly property bool isComposeGroup: containerGroup.modelData.project !== DockerStatus.COMPOSE_PROJECT_STANDALONE
+                        readonly property string headerTitle: containerGroup.isComposeGroup
+                            ? containerGroup.modelData.project
+                            : i18n("Other containers")
+                        readonly property int runningCount: DockerStatus.countByState(containerGroup.modelData.containers, "running")
+
+                        width: containerGroupList.width
+                        implicitHeight: containerGroupColumn.implicitHeight
+
+                        ColumnLayout {
+                            id: containerGroupColumn
                             anchors.fill: parent
-                            radius: paletteTokens.tileRadius
-                            color: rowHover.containsMouse ? paletteTokens.rowHoverTint : "transparent"
-                        }
+                            spacing: 0
 
-                        // Hover-only: the row is not clickable, so the area accepts no button
-                        // and never swallows events aimed at the list behind it.
-                        MouseArea {
-                            id: rowHover
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            acceptedButtons: Qt.NoButton
-                        }
-
-                        RowLayout {
-                            id: containerRowLayout
-                            anchors.fill: parent
-                            anchors.leftMargin: 8
-                            anchors.rightMargin: 8
-                            anchors.topMargin: 10
-                            anchors.bottomMargin: 10
-                            spacing: 11
-
-                            // Deterministic per-container glyph, tinted on a sunken tile.
-                            Rectangle {
-                                Layout.preferredWidth: 32
-                                Layout.preferredHeight: 32
-                                Layout.alignment: Qt.AlignVCenter
-                                radius: paletteTokens.tileRadius
-                                color: paletteTokens.iconTileSurface
-
-                                Kirigami.Icon {
-                                    anchors.centerIn: parent
-                                    source: fullRoot.containerIconFor(containerRow.modelData.name)
-                                    color: paletteTokens.iconTileText
-                                    implicitWidth: 16
-                                    implicitHeight: 16
-                                }
-                            }
-
-                            PlasmaComponents3.Label {
+                            // One-line group header: icon tile, project name, running/total
+                            // count, the compose-only play/stop pair, and the +/- toggle
+                            // last, exactly like the section headers.
+                            Item {
                                 Layout.fillWidth: true
-                                Layout.alignment: Qt.AlignVCenter
-                                text: containerRow.modelData.name
-                                color: paletteTokens.text
-                                elide: Text.ElideMiddle
-                                font.family: paletteTokens.fontFamily
-                                font.pixelSize: paletteTokens.labelPixelSize
-                                font.weight: 600
-                            }
+                                implicitHeight: containerGroupHeaderRow.implicitHeight + 12
 
-                            RowLayout {
-                                Layout.alignment: Qt.AlignVCenter
-                                spacing: 6
-
-                                SeverityDot {
-                                    Layout.alignment: Qt.AlignVCenter
-                                    diameter: 6
-                                    severity: DockerStatus.containerSeverity(containerRow.modelData.state)
+                                MouseArea {
+                                    anchors.fill: parent
+                                    onClicked: containerGroup.groupOpen = !containerGroup.groupOpen
                                 }
 
-                                PlasmaComponents3.Label {
-                                    text: containerRow.modelData.state
-                                    color: paletteTokens.containerStateText
-                                    font.family: paletteTokens.fontFamily
-                                    font.pixelSize: paletteTokens.subtlePixelSize
+                                RowLayout {
+                                    id: containerGroupHeaderRow
+                                    anchors.fill: parent
+                                    anchors.topMargin: 6
+                                    anchors.bottomMargin: 6
+                                    spacing: 12
+
+                                    // The group's identity tile, drawn exactly like a
+                                    // container row's tile so a group reads as a grouping
+                                    // of those rows, not as a second kind of card.
+                                    Rectangle {
+                                        Layout.preferredWidth: 32
+                                        Layout.preferredHeight: 32
+                                        Layout.alignment: Qt.AlignVCenter
+                                        radius: paletteTokens.tileRadius
+                                        color: paletteTokens.iconTileSurface
+
+                                        Kirigami.Icon {
+                                            anchors.centerIn: parent
+                                            source: fullRoot.containerIconFor(containerGroup.headerTitle)
+                                            color: paletteTokens.iconTileText
+                                            implicitWidth: 16
+                                            implicitHeight: 16
+                                        }
+                                    }
+
+                                    PlasmaComponents3.Label {
+                                        Layout.fillWidth: true
+                                        Layout.alignment: Qt.AlignVCenter
+                                        text: containerGroup.headerTitle
+                                        color: paletteTokens.text
+                                        elide: Text.ElideMiddle
+                                        font.family: paletteTokens.fontFamily
+                                        font.pixelSize: paletteTokens.labelPixelSize
+                                        font.weight: 600
+                                    }
+
+                                    PlasmaComponents3.Label {
+                                        Layout.alignment: Qt.AlignVCenter
+                                        text: containerGroup.runningCount + "/" + containerGroup.modelData.containers.length
+                                        color: paletteTokens.muted
+                                        font.family: paletteTokens.fontFamily
+                                        font.pixelSize: paletteTokens.subtlePixelSize
+                                    }
+
+                                    // Compose-only play control. Disabled while anything is
+                                    // in flight and when every container is already running:
+                                    // `docker start` on a fully-running stack is a no-op, so
+                                    // the button says so by going inert instead of silently
+                                    // doing nothing.
+                                    PlasmaComponents3.ToolButton {
+                                        id: composeStartButton
+                                        Layout.preferredWidth: 38
+                                        Layout.preferredHeight: 38
+                                        Layout.alignment: Qt.AlignVCenter
+                                        visible: containerGroup.isComposeGroup
+                                        icon.name: "media-playback-start"
+                                        icon.color: paletteTokens.buttonPrimaryText
+                                        display: PlasmaComponents3.AbstractButton.IconOnly
+                                        flat: false
+                                        enabled: !fullRoot.composeActionInFlight
+                                            && containerGroup.runningCount !== containerGroup.modelData.containers.length
+                                        opacity: enabled ? 1 : 0.38
+                                        onClicked: fullRoot.composeStartRequested(containerGroup.modelData.project)
+
+                                        background: Rectangle {
+                                            radius: paletteTokens.iconButtonRadius
+                                            color: composeStartButton.hovered ? paletteTokens.buttonPrimaryHover : paletteTokens.buttonPrimary
+                                            border.width: paletteTokens.appBorderWidth
+                                            border.color: paletteTokens.buttonPrimary
+                                        }
+
+                                        PlasmaComponents3.ToolTip {
+                                            text: i18nc("@info", "Start %1", containerGroup.modelData.project)
+                                        }
+                                    }
+
+                                    // Compose-only stop control, the mirror of the play
+                                    // gate: with nothing running, `docker stop` would be a
+                                    // no-op, so the button is disabled rather than live.
+                                    PlasmaComponents3.ToolButton {
+                                        id: composeStopButton
+                                        Layout.preferredWidth: 38
+                                        Layout.preferredHeight: 38
+                                        Layout.alignment: Qt.AlignVCenter
+                                        visible: containerGroup.isComposeGroup
+                                        icon.name: "media-playback-stop"
+                                        icon.color: paletteTokens.buttonDangerText
+                                        display: PlasmaComponents3.AbstractButton.IconOnly
+                                        flat: false
+                                        enabled: !fullRoot.composeActionInFlight
+                                            && containerGroup.runningCount !== 0
+                                        opacity: enabled ? 1 : 0.38
+                                        onClicked: fullRoot.composeStopRequested(containerGroup.modelData.project)
+                                        Kirigami.Theme.textColor: paletteTokens.buttonDangerText
+
+                                        background: Rectangle {
+                                            radius: paletteTokens.iconButtonRadius
+                                            color: composeStopButton.hovered ? paletteTokens.buttonSurfaceHover : paletteTokens.buttonDanger
+                                            border.width: paletteTokens.appBorderWidth
+                                            border.color: paletteTokens.buttonDangerBorder
+                                        }
+
+                                        PlasmaComponents3.ToolTip {
+                                            text: i18nc("@info", "Stop %1", containerGroup.modelData.project)
+                                        }
+                                    }
+
+                                    // The open/close affordance, pixel-identical to the
+                                    // three section headers and deliberately LAST in the
+                                    // row, so a group collapse reads the same as a section
+                                    // collapse.
+                                    Item {
+                                        Layout.alignment: Qt.AlignVCenter
+                                        implicitWidth: groupToggleGlow.implicitWidth
+                                        implicitHeight: groupToggleGlow.implicitHeight
+
+                                        Text {
+                                            id: groupToggleGlow
+                                            anchors.centerIn: parent
+                                            text: containerGroup.groupOpen ? "−" : "+"
+                                            color: paletteTokens.toggleIndicator
+                                            opacity: 0.3
+                                            font.family: paletteTokens.fontFamily
+                                            font.pixelSize: paletteTokens.toggleIndicatorPixelSize + 5
+                                        }
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: groupToggleGlow.text
+                                            color: paletteTokens.toggleIndicator
+                                            font.family: paletteTokens.fontFamily
+                                            font.pixelSize: paletteTokens.toggleIndicatorPixelSize
+                                        }
+                                    }
+                                }
+                            }
+
+                            // The group body: the container rows, unchanged from the old
+                            // flat list. Gated on the group's own flag AND the section's,
+                            // so collapsing the whole section hides every group body too.
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                visible: containerGroup.groupOpen && fullRoot.containerSectionExpanded
+                                spacing: 0
+
+                                Repeater {
+                                    model: containerGroup.modelData.containers
+
+                                    delegate: Item {
+                                        id: containerRow
+                                        required property var modelData
+
+                                        Layout.fillWidth: true
+                                        implicitHeight: containerRowLayout.implicitHeight + 20
+
+                                        // Faint hover tint behind the row, exactly as the mockup.
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            radius: paletteTokens.tileRadius
+                                            color: rowHover.containsMouse ? paletteTokens.rowHoverTint : "transparent"
+                                        }
+
+                                        // Hover-only: the row is not clickable, so the area
+                                        // accepts no button and never swallows events aimed at
+                                        // the list behind it.
+                                        MouseArea {
+                                            id: rowHover
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            acceptedButtons: Qt.NoButton
+                                        }
+
+                                        RowLayout {
+                                            id: containerRowLayout
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 8
+                                            anchors.rightMargin: 8
+                                            anchors.topMargin: 10
+                                            anchors.bottomMargin: 10
+                                            spacing: 11
+
+                                            // Deterministic per-container glyph, tinted on a sunken tile.
+                                            Rectangle {
+                                                Layout.preferredWidth: 32
+                                                Layout.preferredHeight: 32
+                                                Layout.alignment: Qt.AlignVCenter
+                                                radius: paletteTokens.tileRadius
+                                                color: paletteTokens.iconTileSurface
+
+                                                Kirigami.Icon {
+                                                    anchors.centerIn: parent
+                                                    source: fullRoot.containerIconFor(containerRow.modelData.name)
+                                                    color: paletteTokens.iconTileText
+                                                    implicitWidth: 16
+                                                    implicitHeight: 16
+                                                }
+                                            }
+
+                                            PlasmaComponents3.Label {
+                                                Layout.fillWidth: true
+                                                Layout.alignment: Qt.AlignVCenter
+                                                text: containerRow.modelData.name
+                                                color: paletteTokens.text
+                                                elide: Text.ElideMiddle
+                                                font.family: paletteTokens.fontFamily
+                                                font.pixelSize: paletteTokens.labelPixelSize
+                                                font.weight: 600
+                                            }
+
+                                            RowLayout {
+                                                Layout.alignment: Qt.AlignVCenter
+                                                spacing: 6
+
+                                                SeverityDot {
+                                                    Layout.alignment: Qt.AlignVCenter
+                                                    diameter: 6
+                                                    severity: DockerStatus.containerSeverity(containerRow.modelData.state)
+                                                }
+
+                                                PlasmaComponents3.Label {
+                                                    text: containerRow.modelData.state
+                                                    color: paletteTokens.containerStateText
+                                                    font.family: paletteTokens.fontFamily
+                                                    font.pixelSize: paletteTokens.subtlePixelSize
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -696,7 +1008,9 @@ Item {
                 PlasmaComponents3.Label {
                     Layout.fillWidth: true
                     Layout.margins: 20
-                    visible: fullRoot.containers.length === 0
+                    // Collapsed together with the list above, so an open-empty state
+                    // never survives a collapsed section.
+                    visible: fullRoot.containerSectionExpanded && fullRoot.containers.length === 0
                     text: fullRoot.daemonRunning
                         ? i18n("No containers found.")
                         : i18n("Start the daemon to list containers.")
@@ -705,6 +1019,208 @@ Item {
                     wrapMode: Text.WordWrap
                     font.family: paletteTokens.fontFamily
                     font.pixelSize: paletteTokens.labelPixelSize
+                }
+
+                // Feedback for a per-project start/stop, in the same shape as the
+                // download row's feedback: a SeverityDot carries the severity and the
+                // label wraps the engine's own message. Collapsed with the section, so a
+                // stale message never survives a closed section.
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 16
+                    Layout.rightMargin: 16
+                    Layout.topMargin: 8
+                    Layout.bottomMargin: 16
+                    visible: fullRoot.containerSectionExpanded && fullRoot.composeActionFeedback !== ""
+                    spacing: 6
+
+                    SeverityDot {
+                        Layout.alignment: Qt.AlignVCenter
+                        severity: fullRoot.composeActionFeedbackSeverity
+                    }
+
+                    PlasmaComponents3.Label {
+                        Layout.fillWidth: true
+                        text: fullRoot.composeActionFeedback
+                        color: paletteTokens.text
+                        wrapMode: Text.WordWrap
+                        font.family: paletteTokens.fontFamily
+                        font.pixelSize: paletteTokens.subtlePixelSize
+                    }
+                }
+            }
+        }
+
+        // --- Podman Desktop section ------------------------------------------
+        // The fourth collapsible section, in the same card shape and with the same +/-
+        // affordance as the other three. It is deliberately NOT gated on the daemon state
+        // or on containerListEnabled: Podman Desktop is useful precisely when the Docker
+        // daemon is not running. Like every other section, this is a pure consumer -- the
+        // launch signal goes out and main.qml owns the resolved path and the command.
+        Rectangle {
+            Layout.fillWidth: true
+            implicitHeight: podmanBody.implicitHeight
+            radius: paletteTokens.cardRadius
+            border.width: paletteTokens.appBorderWidth
+            border.color: paletteTokens.line
+            color: Qt.rgba(paletteTokens.panelSunken.r, paletteTokens.panelSunken.g, paletteTokens.panelSunken.b, 0.45)
+            clip: true
+
+            ColumnLayout {
+                id: podmanBody
+                anchors.fill: parent
+                spacing: 0
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 0
+
+                    // Single-row header, exactly like the containers and download
+                    // sections: the wrapper Item carries the horizontal insets and the
+                    // RowLayout fills it, keeping its vertical insets as anchor margins
+                    // (a layout-managed item must not carry anchors).
+                    Item {
+                        Layout.fillWidth: true
+                        Layout.leftMargin: 16
+                        Layout.rightMargin: 16
+                        implicitHeight: podmanHeaderRow.implicitHeight + 24
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: fullRoot.podmanSectionExpanded = !fullRoot.podmanSectionExpanded
+                        }
+
+                        RowLayout {
+                            id: podmanHeaderRow
+                            anchors.fill: parent
+                            anchors.topMargin: 12
+                            anchors.bottomMargin: 12
+                            spacing: 12
+
+                            PlasmaComponents3.Label {
+                                Layout.fillWidth: true
+                                text: i18n("Podman Desktop")
+                                color: paletteTokens.text
+                                elide: Text.ElideRight
+                                font.family: paletteTokens.fontFamily
+                                font.pixelSize: paletteTokens.sectionTitlePixelSize
+                                font.weight: 650
+                            }
+
+                            // The open/close affordance, identical to the other three
+                            // sections' headers: MINUS (U+2212) when open, plus when
+                            // collapsed, with a larger low-opacity copy of the same glyph
+                            // behind it as a crude halo.
+                            Item {
+                                Layout.alignment: Qt.AlignVCenter
+                                implicitWidth: podmanToggleGlow.implicitWidth
+                                implicitHeight: podmanToggleGlow.implicitHeight
+
+                                Text {
+                                    id: podmanToggleGlow
+                                    anchors.centerIn: parent
+                                    text: fullRoot.podmanSectionExpanded ? "−" : "+"
+                                    color: paletteTokens.toggleIndicator
+                                    opacity: 0.3
+                                    font.family: paletteTokens.fontFamily
+                                    font.pixelSize: paletteTokens.toggleIndicatorPixelSize + 5
+                                }
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: podmanToggleGlow.text
+                                    color: paletteTokens.toggleIndicator
+                                    font.family: paletteTokens.fontFamily
+                                    font.pixelSize: paletteTokens.toggleIndicatorPixelSize
+                                }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 1
+                        color: paletteTokens.line
+                    }
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    Layout.margins: 16
+                    visible: fullRoot.podmanSectionExpanded
+                    spacing: 8
+
+                    PlasmaComponents3.Button {
+                        id: podmanLaunchButton
+                        Layout.fillWidth: true
+                        icon.name: "system-run"
+                        icon.color: paletteTokens.buttonPrimaryText
+                        // Space between the left border and the content, matching the 12px
+                        // padding the text fields already carry.
+                        leftPadding: 12
+                        text: fullRoot.podmanLaunchInFlight
+                            ? i18n("Opening…")
+                            : i18n("Open Podman Desktop")
+                        enabled: !fullRoot.podmanLaunchInFlight
+                        opacity: enabled ? 1 : 0.38
+                        onClicked: fullRoot.podmanLaunchRequested()
+                        Kirigami.Theme.textColor: paletteTokens.buttonPrimaryText
+
+                        background: Rectangle {
+                            color: podmanLaunchButton.hovered ? paletteTokens.buttonPrimaryHover : paletteTokens.buttonPrimary
+                            radius: paletteTokens.controlRadius
+                            border.width: paletteTokens.appBorderWidth
+                            border.color: paletteTokens.buttonPrimary
+                        }
+
+                        PlasmaComponents3.ToolTip {
+                            text: i18n("Open Podman Desktop")
+                        }
+                    }
+
+                    // The resolved executable the launch will use, so a wrong setting is
+                    // visible before the click rather than only in the failure line.
+                    PlasmaComponents3.Label {
+                        Layout.fillWidth: true
+                        text: i18nc("@info", "Launching: %1", fullRoot.podmanDesktopPath)
+                        color: paletteTokens.muted
+                        font.family: paletteTokens.fontFamily
+                        font.pixelSize: paletteTokens.subtlePixelSize
+                    }
+
+                    // Where the path comes from: the widget's own options. A plain name is
+                    // looked up on PATH; a full path is the escape hatch for a machine
+                    // where it is installed elsewhere.
+                    PlasmaComponents3.Label {
+                        Layout.fillWidth: true
+                        text: i18n("Set the binary in the widget's options. A plain name is looked up on PATH; use a full path when it is installed elsewhere.")
+                        color: paletteTokens.muted
+                        wrapMode: Text.WordWrap
+                        font.family: paletteTokens.fontFamily
+                        font.pixelSize: paletteTokens.subtlePixelSize
+                    }
+
+                    // The dot carries the severity, exactly as in the other feedback rows:
+                    // no second severity-to-colour switch is allowed to exist.
+                    RowLayout {
+                        Layout.fillWidth: true
+                        visible: fullRoot.podmanLaunchFeedback !== ""
+                        spacing: 6
+
+                        SeverityDot {
+                            Layout.alignment: Qt.AlignVCenter
+                            severity: fullRoot.podmanLaunchFeedbackSeverity
+                        }
+
+                        PlasmaComponents3.Label {
+                            Layout.fillWidth: true
+                            text: fullRoot.podmanLaunchFeedback
+                            color: paletteTokens.text
+                            wrapMode: Text.WordWrap
+                            font.family: paletteTokens.fontFamily
+                            font.pixelSize: paletteTokens.subtlePixelSize
+                        }
+                    }
                 }
             }
         }
@@ -734,31 +1250,75 @@ Item {
                     spacing: 0
 
                     // Single-row header, as in the containers section: title and the
-                    // right-side arrow glyph on one line, no subtitle.
-                    RowLayout {
+                    // right-side toggle on one line, no subtitle. The toggle replaces
+                    // the old decorative arrow glyph and states the section's
+                    // open/closed state directly.
+                    //
+                    // The row is wrapped in a plain Item so tapping the header can
+                    // collapse the section body below it. As in the containers
+                    // section, the wrapper -- a direct child of this ColumnLayout --
+                    // carries the horizontal insets the RowLayout used to, and the
+                    // RowLayout fills the wrapper, keeping its vertical insets as
+                    // anchor margins. The header and separator never collapse.
+                    Item {
                         Layout.fillWidth: true
                         Layout.leftMargin: 16
                         Layout.rightMargin: 16
-                        Layout.topMargin: 12
-                        Layout.bottomMargin: 12
-                        spacing: 12
+                        implicitHeight: downloadHeaderRow.implicitHeight + 24
 
-                        PlasmaComponents3.Label {
-                            Layout.fillWidth: true
-                            text: i18n("Import content")
-                            color: paletteTokens.text
-                            elide: Text.ElideRight
-                            font.family: paletteTokens.fontFamily
-                            font.pixelSize: paletteTokens.sectionTitlePixelSize
-                            font.weight: 650
+                        // The whole header strip is the tap target, including the
+                        // 16px gutters and the vertical padding.
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: fullRoot.downloadSectionExpanded = !fullRoot.downloadSectionExpanded
                         }
 
-                        Text {
-                            Layout.alignment: Qt.AlignVCenter
-                            text: "↳"
-                            color: paletteTokens.blue
-                            font.family: paletteTokens.fontFamily
-                            font.pixelSize: paletteTokens.bodyPixelSize
+                        RowLayout {
+                            id: downloadHeaderRow
+                            anchors.fill: parent
+                            anchors.topMargin: 12
+                            anchors.bottomMargin: 12
+                            spacing: 12
+
+                            PlasmaComponents3.Label {
+                                Layout.fillWidth: true
+                                text: i18n("Import content")
+                                color: paletteTokens.text
+                                elide: Text.ElideRight
+                                font.family: paletteTokens.fontFamily
+                                font.pixelSize: paletteTokens.sectionTitlePixelSize
+                                font.weight: 650
+                            }
+
+                            // The open/close affordance, identical to the other two
+                            // sections' headers: the MINUS sign (U+2212) when the
+                            // body is open and a plus when it is collapsed, with a
+                            // larger low-opacity copy of the same glyph behind it as
+                            // a crude halo. Two plain Text items, no shader effect
+                            // and no extra import.
+                            Item {
+                                Layout.alignment: Qt.AlignVCenter
+                                implicitWidth: downloadToggleGlow.implicitWidth
+                                implicitHeight: downloadToggleGlow.implicitHeight
+
+                                Text {
+                                    id: downloadToggleGlow
+                                    anchors.centerIn: parent
+                                    text: fullRoot.downloadSectionExpanded ? "−" : "+"
+                                    color: paletteTokens.toggleIndicator
+                                    opacity: 0.3
+                                    font.family: paletteTokens.fontFamily
+                                    font.pixelSize: paletteTokens.toggleIndicatorPixelSize + 5
+                                }
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: downloadToggleGlow.text
+                                    color: paletteTokens.toggleIndicator
+                                    font.family: paletteTokens.fontFamily
+                                    font.pixelSize: paletteTokens.toggleIndicatorPixelSize
+                                }
+                            }
                         }
                     }
 
@@ -769,9 +1329,13 @@ Item {
                     }
                 }
 
+                // Collapsed by a tap on the header above. Nothing inside is
+                // deleted -- the whole input surface is only gated on this flag,
+                // so reopening restores it exactly as it was.
                 ColumnLayout {
                     Layout.fillWidth: true
                     Layout.margins: 16
+                    visible: fullRoot.downloadSectionExpanded
                     spacing: 8
 
                     PlasmaComponents3.Label {
@@ -815,6 +1379,10 @@ Item {
                             Layout.preferredHeight: 41
                             icon.name: "download"
                             icon.color: paletteTokens.text
+                            // Space between the left border and the content,
+                            // matching the 12px padding the text fields already
+                            // carry.
+                            leftPadding: 12
                             display: PlasmaComponents3.AbstractButton.TextBesideIcon
                             text: i18n("Import")
                             flat: false
@@ -920,33 +1488,89 @@ Item {
 
                 // Single-row header: title beside the timer tile, no subtitle line
                 // underneath (the follow-up that also removed the topbar's big title).
-                RowLayout {
+                //
+                // Wrapped in a plain Item, exactly like the other two sections, so a
+                // tap anywhere on the header collapses the whole countdown body --
+                // except while a shutdown is pending, when the body is deliberately
+                // un-collapsible (adr-0009's visible safeguards; see
+                // countdownBodyVisible below). This header has no horizontal insets
+                // of its own, so the wrapper carries none either. The timer tile is
+                // the section's identity and stays visible in both states.
+                Item {
                     Layout.fillWidth: true
-                    spacing: 12
+                    implicitHeight: countdownHeaderRow.implicitHeight
 
-                    PlasmaComponents3.Label {
-                        Layout.fillWidth: true
-                        text: i18n("Countdown to Extinction")
-                        color: paletteTokens.text
-                        elide: Text.ElideRight
-                        font.family: paletteTokens.fontFamily
-                        font.pixelSize: paletteTokens.sectionTitlePixelSize
-                        font.weight: 650
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: fullRoot.countdownSectionExpanded = !fullRoot.countdownSectionExpanded
                     }
 
-                    Rectangle {
-                        Layout.preferredWidth: 35
-                        Layout.preferredHeight: 35
-                        Layout.alignment: Qt.AlignVCenter
-                        radius: paletteTokens.controlRadius
-                        color: paletteTokens.iconTileSurface
+                    RowLayout {
+                        id: countdownHeaderRow
+                        anchors.fill: parent
+                        spacing: 12
 
-                        Text {
-                            anchors.centerIn: parent
-                            text: "◷"
-                            color: paletteTokens.iconTileTextAlt
+                        PlasmaComponents3.Label {
+                            Layout.fillWidth: true
+                            text: i18n("Countdown to Extinction")
+                            color: paletteTokens.text
+                            elide: Text.ElideRight
                             font.family: paletteTokens.fontFamily
-                            font.pixelSize: paletteTokens.titlePixelSize
+                            font.pixelSize: paletteTokens.sectionTitlePixelSize
+                            font.weight: 650
+                        }
+
+                        Rectangle {
+                            Layout.preferredWidth: 35
+                            Layout.preferredHeight: 35
+                            Layout.alignment: Qt.AlignVCenter
+                            radius: paletteTokens.controlRadius
+                            color: paletteTokens.iconTileSurface
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "◷"
+                                color: paletteTokens.iconTileTextAlt
+                                font.family: paletteTokens.fontFamily
+                                font.pixelSize: paletteTokens.titlePixelSize
+                            }
+                        }
+
+                        // The open/close affordance, laid out like the other two
+                        // sections' headers: the MINUS sign (U+2212) when the body
+                        // is showing and a plus when it is collapsed, with a larger
+                        // low-opacity copy of the same glyph behind it as a crude
+                        // halo. Two plain Text items, no shader effect and no extra
+                        // import.
+                        //
+                        // It reads countdownBodyVisible, NOT the raw section bool:
+                        // the glyph has to describe what the user can actually see.
+                        // While a shutdown is pending the body is un-collapsible, so
+                        // the affordance must show the open state -- a minus next to
+                        // hidden controls would be a lie, and could read as "collapse
+                        // the countdown away".
+                        Item {
+                            Layout.alignment: Qt.AlignVCenter
+                            implicitWidth: countdownToggleGlow.implicitWidth
+                            implicitHeight: countdownToggleGlow.implicitHeight
+
+                            Text {
+                                id: countdownToggleGlow
+                                anchors.centerIn: parent
+                                text: fullRoot.countdownBodyVisible ? "−" : "+"
+                                color: paletteTokens.toggleIndicator
+                                opacity: 0.3
+                                font.family: paletteTokens.fontFamily
+                                font.pixelSize: paletteTokens.toggleIndicatorPixelSize + 5
+                            }
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: countdownToggleGlow.text
+                                color: paletteTokens.toggleIndicator
+                                font.family: paletteTokens.fontFamily
+                                font.pixelSize: paletteTokens.toggleIndicatorPixelSize
+                            }
                         }
                     }
                 }
@@ -962,6 +1586,7 @@ Item {
                 RowLayout {
                     Layout.fillWidth: true
                     Layout.topMargin: 17
+                    visible: fullRoot.countdownBodyVisible
                     spacing: 10
 
                     PlasmaComponents3.Label {
@@ -1041,6 +1666,7 @@ Item {
                 RowLayout {
                     Layout.fillWidth: true
                     Layout.topMargin: 16
+                    visible: fullRoot.countdownBodyVisible
                     spacing: 9
 
                     PlasmaComponents3.Button {
@@ -1048,6 +1674,9 @@ Item {
                         Layout.fillWidth: true
                         icon.name: "media-playback-start"
                         icon.color: paletteTokens.buttonPrimaryText
+                        // Space between the left border and the content, matching
+                        // the 12px padding the text fields already carry.
+                        leftPadding: 12
                         text: fullRoot.shutdownPending
                             ? i18n("Shutting down…")
                             : i18n("Shut down")
@@ -1071,6 +1700,9 @@ Item {
                     PlasmaComponents3.Button {
                         id: shutdownCancelButton
                         icon.name: "media-playback-stop"
+                        // Space between the left border and the content, matching
+                        // the 12px padding the text fields already carry.
+                        leftPadding: 12
                         text: i18n("Cancel")
                         enabled: fullRoot.shutdownPending
                         opacity: enabled ? 1 : 0.38
@@ -1093,6 +1725,9 @@ Item {
                 PlasmaComponents3.Label {
                     Layout.fillWidth: true
                     Layout.topMargin: 8
+                    // Ungated by the collapse flag on purpose: this line only exists
+                    // while a shutdown is pending, and that armed state must never be
+                    // collapsed away (adr-0009's visible-countdown safeguard).
                     visible: fullRoot.shutdownPending
                     text: i18nc("@info", "Powering off in %1", DockerStatus.formatCountdown(fullRoot.shutdownRemainingSeconds))
                     color: paletteTokens.muted
@@ -1106,7 +1741,12 @@ Item {
                 PlasmaComponents3.Label {
                     Layout.fillWidth: true
                     Layout.topMargin: 8
-                    visible: !fullRoot.shutdownMinutesFieldValid
+                    // Two gates, and this row has to be hidden twice over: the field's
+                    // own value must be invalid, and the section must be visible. The
+                    // invalid test leads on purpose, because a static-text test pins
+                    // this exact expression -- rewording it into a different shape
+                    // would silently drop that pin instead of failing.
+                    visible: !fullRoot.shutdownMinutesFieldValid && fullRoot.countdownBodyVisible
                     text: i18n("Enter a whole number of minutes greater than 10.")
                     color: Kirigami.Theme.negativeTextColor
                     wrapMode: Text.WordWrap
@@ -1119,7 +1759,7 @@ Item {
                 RowLayout {
                     Layout.fillWidth: true
                     Layout.topMargin: 8
-                    visible: fullRoot.shutdownFeedback !== ""
+                    visible: fullRoot.countdownBodyVisible && fullRoot.shutdownFeedback !== ""
                     spacing: 6
 
                     SeverityDot {

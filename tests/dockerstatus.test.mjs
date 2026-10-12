@@ -63,6 +63,14 @@ const {
     withRunToken,
     daemonSeverity,
     containerSeverity,
+    COMPOSE_PROJECT_STANDALONE,
+    COMPOSE_ACTION_START,
+    COMPOSE_ACTION_STOP,
+    PODMAN_DESKTOP_DEFAULT,
+    groupContainersByComposeProject,
+    buildComposeProjectCommand,
+    resolvePodmanDesktopPath,
+    buildPodmanDesktopCommand,
     VIDEO_KIND_YOUTUBE,
     VIDEO_KIND_TWITTER,
     VIDEO_OUTPUT_TEMPLATE,
@@ -352,17 +360,25 @@ test("parseDaemonState degrades to unknown instead of claiming stopped", () => {
     assert.equal(parseDaemonState("unknown"), DAEMON_UNKNOWN);
 });
 
-test("parseContainers parses the real catan-lan stack output", () => {
+test("parseContainers parses the real catan-lan stack output with its compose project", () => {
     const raw =
-        "catan-lan-player-1|running\n" +
-        "catan-lan-admin-1|running\n" +
-        "catan-lan-api-1|running\n";
+        "catan-lan-player-1|running|catan-lan\n" +
+        "catan-lan-admin-1|running|catan-lan\n" +
+        "catan-lan-api-1|running|catan-lan\n";
 
     const containers = parseContainers(raw);
 
     assert.equal(containers.length, 3);
-    assert.deepEqual(plain(containers[0]), { name: "catan-lan-player-1", state: "running" });
-    assert.deepEqual(plain(containers[2]), { name: "catan-lan-api-1", state: "running" });
+    assert.deepEqual(plain(containers[0]), {
+        name: "catan-lan-player-1",
+        state: "running",
+        project: "catan-lan",
+    });
+    assert.deepEqual(plain(containers[2]), {
+        name: "catan-lan-api-1",
+        state: "running",
+        project: "catan-lan",
+    });
 });
 
 test("parseContainers returns an empty list for empty output", () => {
@@ -382,21 +398,67 @@ test("parseContainers skips malformed lines rather than half-building entries", 
     ].join("\n");
 
     assert.deepEqual(plain(parseContainers(raw)), [
-        { name: "good", state: "running" },
-        { name: "also-good", state: "exited" },
+        { name: "good", state: "running", project: "" },
+        { name: "also-good", state: "exited", project: "" },
     ]);
 });
 
 test("parseContainers tolerates CRLF and trailing newlines", () => {
-    const containers = parseContainers("a|running\r\nb|exited\r\n");
+    const containers = parseContainers("a|running|proj-a\r\nb|exited|proj-b\r\n");
     assert.equal(containers.length, 2);
-    assert.deepEqual(plain(containers[1]), { name: "b", state: "exited" });
+    assert.deepEqual(plain(containers[1]), { name: "b", state: "exited", project: "proj-b" });
 });
 
-test("parseContainers tolerates a name containing the separator is not split twice", () => {
-    // Only the FIRST separator is honoured, so a state containing '|' survives.
-    const containers = parseContainers("weird|running|extra");
-    assert.deepEqual(plain(containers), [{ name: "weird", state: "running|extra" }]);
+test("parseContainers splits at the first two separators and keeps the rest whole", () => {
+    // The name ends at the FIRST '|', the state at the SECOND, and the project is the
+    // entire remainder -- never split again -- so a project value carrying a '|' survives.
+    assert.deepEqual(plain(parseContainers("weird|running|extra")), [
+        { name: "weird", state: "running", project: "extra" },
+    ]);
+    assert.deepEqual(plain(parseContainers("svc|running|proj|extra")), [
+        { name: "svc", state: "running", project: "proj|extra" },
+    ]);
+});
+
+test("parseContainers parses the reference machine's three-field probe output", () => {
+    // Measured on the reference machine, docker 29.9.0: one compose stack named
+    // odysseus, four exited containers (adr-0014).
+    const raw =
+        "odysseus-odysseus-1|exited|odysseus\n" +
+        "odysseus-searxng-1|exited|odysseus\n" +
+        "odysseus-chromadb-1|exited|odysseus\n" +
+        "odysseus-ntfy-1|exited|odysseus\n";
+
+    const containers = parseContainers(raw);
+
+    assert.equal(containers.length, 4);
+    assert.deepEqual(plain(containers[0]), {
+        name: "odysseus-odysseus-1",
+        state: "exited",
+        project: "odysseus",
+    });
+    assert.deepEqual(plain(containers[3]), {
+        name: "odysseus-ntfy-1",
+        state: "exited",
+        project: "odysseus",
+    });
+});
+
+test("parseContainers still parses a two-field line into the standalone bucket", () => {
+    // A docker too old to answer the label emits only two fields. The line must still
+    // parse with an empty project -- degrading to one flat group rather than to nothing
+    // -- and a three-field line beside it keeps its project.
+    const containers = parseContainers([
+        "lonely|running",
+        "stacked|exited|proj",
+        "trailing|created|",
+    ].join("\n"));
+
+    assert.deepEqual(plain(containers), [
+        { name: "lonely", state: "running", project: "" },
+        { name: "stacked", state: "exited", project: "proj" },
+        { name: "trailing", state: "created", project: "" },
+    ]);
 });
 
 test("countByState and summarizeContainers produce the compact badge", () => {
@@ -463,6 +525,336 @@ test("containerSeverity normalises case and an unknown state", () => {
     assert.equal(containerSeverity("RUNNING"), SEVERITY_POSITIVE);
     assert.equal(containerSeverity(" removing "), SEVERITY_MUTED);
     assert.equal(containerSeverity(undefined), SEVERITY_MUTED);
+});
+
+/*
+ * ---------------------------------------------------------------------------
+ * Compose groups, per-project start/stop and the Podman Desktop launch
+ * ---------------------------------------------------------------------------
+ * The second sanctioned command-building boundary (adr-0014). It is narrow in the
+ * same shape as the download: the project name is a value INTERPOLATED into one
+ * shell-quoted argument, the verb is picked from a fixed pair of constants, and the
+ * standalone bucket or an unknown action yields "" so no caller can run a command
+ * built from an unvalidated choice. The Podman launch is the one place a configured
+ * value IS the command, so its command is the quoted path and nothing else.
+ */
+
+test("the compose and Podman constants are stable", () => {
+    assert.equal(COMPOSE_PROJECT_STANDALONE, "");
+    assert.equal(COMPOSE_ACTION_START, "start");
+    assert.equal(COMPOSE_ACTION_STOP, "stop");
+    assert.equal(PODMAN_DESKTOP_DEFAULT, "podman-desktop");
+});
+
+test("groupContainersByComposeProject keeps first-seen order and appends standalone last", () => {
+    const containers = parseContainers([
+        "a|running|beta",
+        "b|running|alpha",
+        "c|exited|beta",
+        "d|created|",
+        "e|running|gamma",
+    ].join("\n"));
+
+    const groups = plain(groupContainersByComposeProject(containers));
+
+    // beta is seen first even though alpha sorts earlier: the probe's own order is kept.
+    assert.deepEqual(
+        groups.map((group) => group.project),
+        ["beta", "alpha", "gamma", COMPOSE_PROJECT_STANDALONE],
+    );
+    assert.deepEqual(
+        groups[0].containers.map((container) => container.name),
+        ["a", "c"],
+    );
+    assert.deepEqual(
+        groups[3].containers.map((container) => container.name),
+        ["d"],
+    );
+});
+
+test("groupContainersByComposeProject omits the standalone bucket when no container is in it", () => {
+    const containers = [
+        { name: "a", state: "running", project: "p" },
+        { name: "b", state: "running", project: "q" },
+    ];
+
+    const groups = plain(groupContainersByComposeProject(containers));
+
+    assert.deepEqual(groups.map((group) => group.project), ["p", "q"]);
+    assert.ok(!groups.some((group) => group.project === COMPOSE_PROJECT_STANDALONE));
+});
+
+test("groupContainersByComposeProject puts a machine with no compose project in one group", () => {
+    const containers = [
+        { name: "a", state: "running", project: "" },
+        { name: "b", state: "exited", project: "" },
+    ];
+
+    const groups = plain(groupContainersByComposeProject(containers));
+
+    assert.deepEqual(groups, [{ project: COMPOSE_PROJECT_STANDALONE, containers }]);
+});
+
+test("groupContainersByComposeProject degrades to an empty list and never throws", () => {
+    assert.deepEqual(plain(groupContainersByComposeProject([])), []);
+    assert.deepEqual(plain(groupContainersByComposeProject(null)), []);
+    assert.deepEqual(plain(groupContainersByComposeProject(undefined)), []);
+});
+
+test("groupContainersByComposeProject returns fresh groups and never mutates its input", () => {
+    const containers = [
+        { name: "a", state: "running", project: "p" },
+        { name: "b", state: "running", project: "p" },
+    ];
+    const snapshot = JSON.stringify(containers);
+
+    const groups = groupContainersByComposeProject(containers);
+
+    assert.notEqual(groups, containers, "the group list is a new array");
+    assert.notEqual(groups[0].containers, containers, "the group's list is a new array");
+
+    const again = groupContainersByComposeProject(containers);
+    assert.notEqual(groups[0], again[0], "each call yields independent group objects");
+    assert.equal(JSON.stringify(containers), snapshot, "the input must not be mutated");
+});
+
+test("groupContainersByComposeProject treats a hostile project name as ordinary data", () => {
+    // A plain object keyed by the project name would treat "__proto__" as a prototype
+    // write and lose the group; the parallel-array grouping must not.
+    const containers = [
+        { name: "a", state: "running", project: "__proto__" },
+        { name: "b", state: "running", project: "constructor" },
+        { name: "c", state: "running", project: "__proto__" },
+    ];
+
+    const groups = plain(groupContainersByComposeProject(containers));
+
+    assert.deepEqual(groups.map((group) => group.project), ["__proto__", "constructor"]);
+    assert.deepEqual(
+        groups[0].containers.map((container) => container.name),
+        ["a", "c"],
+    );
+});
+
+test("buildComposeProjectCommand assembles the label-filtered start and stop commands", () => {
+    assert.equal(
+        buildComposeProjectCommand({ project: "odysseus", action: COMPOSE_ACTION_START }),
+        "docker start $(docker ps -aq --filter 'label=com.docker.compose.project=odysseus')",
+    );
+    assert.equal(
+        buildComposeProjectCommand({ project: "odysseus", action: COMPOSE_ACTION_STOP }),
+        "docker stop $(docker ps -aq --filter 'label=com.docker.compose.project=odysseus')",
+    );
+});
+
+test("buildComposeProjectCommand refuses the standalone bucket and an unknown action", () => {
+    // An empty string is the contract "there is no command", and main.qml refuses it.
+    assert.equal(buildComposeProjectCommand({ project: "", action: COMPOSE_ACTION_START }), "");
+    assert.equal(
+        buildComposeProjectCommand({
+            project: COMPOSE_PROJECT_STANDALONE,
+            action: COMPOSE_ACTION_STOP,
+        }),
+        "",
+    );
+    assert.equal(buildComposeProjectCommand({ project: "odysseus", action: "restart" }), "");
+    assert.equal(buildComposeProjectCommand({ project: "odysseus", action: undefined }), "");
+    assert.equal(buildComposeProjectCommand({ project: "odysseus" }), "");
+    assert.equal(buildComposeProjectCommand({}), "");
+    assert.equal(buildComposeProjectCommand(undefined), "");
+});
+
+test("buildComposeProjectCommand shell-quotes a project name that carries a quote", () => {
+    assert.equal(
+        buildComposeProjectCommand({ project: "ody'sseus", action: COMPOSE_ACTION_START }),
+        "docker start $(docker ps -aq --filter 'label=com.docker.compose.project=ody'\\''sseus')",
+    );
+});
+
+test("buildComposeProjectCommand appends a run token only when one is given", () => {
+    const bare = buildComposeProjectCommand({ project: "odysseus", action: COMPOSE_ACTION_START });
+
+    assert.ok(!bare.includes("# plasma-run"), bare);
+    assert.equal(
+        buildComposeProjectCommand({ project: "odysseus", action: COMPOSE_ACTION_START, token: 9 }),
+        bare + " # plasma-run-9",
+    );
+    assert.equal(
+        buildComposeProjectCommand({ project: "odysseus", action: COMPOSE_ACTION_START, token: null }),
+        bare,
+    );
+});
+
+test("resolvePodmanDesktopPath mirrors the yt-dlp binary rule", () => {
+    assert.equal(resolvePodmanDesktopPath("", "/home/x"), PODMAN_DESKTOP_DEFAULT);
+    assert.equal(resolvePodmanDesktopPath("   ", "/home/x"), PODMAN_DESKTOP_DEFAULT);
+    assert.equal(resolvePodmanDesktopPath(undefined, "/home/x"), PODMAN_DESKTOP_DEFAULT);
+    assert.equal(resolvePodmanDesktopPath(null, "/home/x"), PODMAN_DESKTOP_DEFAULT);
+    assert.equal(resolvePodmanDesktopPath("podman-desktop", "/home/x"), "podman-desktop");
+    assert.equal(
+        resolvePodmanDesktopPath("/usr/bin/podman-desktop", "/home/x"),
+        "/usr/bin/podman-desktop",
+    );
+    assert.equal(
+        resolvePodmanDesktopPath(" ~/.local/bin/podman-desktop ", "/home/x"),
+        "/home/x/.local/bin/podman-desktop",
+    );
+});
+
+test("resolvePodmanDesktopPath refuses anything shell-shaped", () => {
+    assert.equal(resolvePodmanDesktopPath("podman-desktop; rm -rf ~", "/home/x"), PODMAN_DESKTOP_DEFAULT);
+    assert.equal(resolvePodmanDesktopPath("podman-desktop $(id)", "/home/x"), PODMAN_DESKTOP_DEFAULT);
+    assert.equal(resolvePodmanDesktopPath("/tmp/my podman-desktop", "/home/x"), PODMAN_DESKTOP_DEFAULT);
+    assert.equal(
+        resolvePodmanDesktopPath("podman-desktop\n--exec whoami", "/home/x"),
+        PODMAN_DESKTOP_DEFAULT,
+    );
+});
+
+test("buildPodmanDesktopCommand is the quoted path and nothing else", () => {
+    assert.equal(buildPodmanDesktopCommand({ path: "podman-desktop", home: "/home/x" }), "'podman-desktop'");
+    assert.equal(
+        buildPodmanDesktopCommand({ path: "/usr/bin/podman-desktop", home: "/home/x" }),
+        "'/usr/bin/podman-desktop'",
+    );
+    assert.equal(
+        buildPodmanDesktopCommand({ path: "~/bin/podman-desktop", home: "/home/x" }),
+        "'/home/x/bin/podman-desktop'",
+    );
+    assert.equal(buildPodmanDesktopCommand({}), "'" + PODMAN_DESKTOP_DEFAULT + "'");
+    assert.equal(buildPodmanDesktopCommand(undefined), "'" + PODMAN_DESKTOP_DEFAULT + "'");
+});
+
+test("buildPodmanDesktopCommand ignores a shell-shaped path and appends a token only when given", () => {
+    assert.equal(
+        buildPodmanDesktopCommand({ path: "podman-desktop; rm -rf ~", home: "/home/x" }),
+        "'" + PODMAN_DESKTOP_DEFAULT + "'",
+    );
+
+    const bare = buildPodmanDesktopCommand({ path: "podman-desktop" });
+    assert.equal(bare, "'podman-desktop'");
+    assert.equal(
+        buildPodmanDesktopCommand({ path: "podman-desktop", token: 3 }),
+        bare + " # plasma-run-3",
+    );
+    assert.equal(buildPodmanDesktopCommand({ path: "podman-desktop", token: null }), bare);
+});
+
+/*
+ * The strongest available check for a command builder, the same shape as the yt-dlp and
+ * update-check proofs: run the REAL assembled command through /bin/sh with a stub on PATH
+ * that records its argv to a file -- so a command that invokes the stub twice, like
+ * `docker start $(docker ps ...)`, is readable per invocation -- then assert the arguments
+ * arrived exactly as intended. buildCommand receives the path of an injection marker inside
+ * the temp dir, so a quoting failure shows up as that file existing. Nothing is ever written
+ * outside the temp dir this helper creates.
+ */
+function runStubArgvTranscript(stubName, buildCommand) {
+    const stubDir = mkdtempSync(join(tmpdir(), "dockerstatus-stub-"));
+    const stub = join(stubDir, stubName);
+    const argsFile = join(stubDir, "argv.txt");
+    const marker = join(stubDir, "injected");
+    writeFileSync(
+        stub,
+        "#!/bin/sh\n"
+            + "printf 'CALL\\n' >> \"" + argsFile + "\"\n"
+            + "for a in \"$@\"; do printf '%s\\n' \"$a\" >> \"" + argsFile + "\"; done\n",
+        "utf8",
+    );
+    chmodSync(stub, 0o755);
+
+    try {
+        execFileSync("/bin/sh", ["-c", buildCommand(marker)], {
+            encoding: "utf8",
+            env: { ...process.env, PATH: `${stubDir}:${process.env.PATH}` },
+        });
+
+        const calls = [];
+        if (existsSync(argsFile)) {
+            for (const line of readFileSync(argsFile, "utf8").split("\n")) {
+                if (line === "CALL") {
+                    calls.push([]);
+                } else if (line !== "" && calls.length > 0) {
+                    calls[calls.length - 1].push(line);
+                }
+            }
+        }
+
+        return { calls, injected: existsSync(marker) };
+    } finally {
+        rmSync(stubDir, { recursive: true, force: true });
+    }
+}
+
+const callTo = (calls, program) => calls.find((argv) => argv[0] === program);
+
+test("a compose project name carrying shell syntax reaches docker as one inert argument", () => {
+    let markerPath = "";
+    const { calls, injected } = runStubArgvTranscript("docker", (marker) => {
+        markerPath = marker;
+        return buildComposeProjectCommand({
+            project: "odysseus; touch " + marker,
+            action: COMPOSE_ACTION_START,
+        });
+    });
+
+    assert.equal(injected, false, "the injected touch must never run");
+
+    const resolve = callTo(calls, "ps");
+    assert.ok(resolve, "the label filter must be resolved with `docker ps -aq --filter`");
+    assert.deepEqual(
+        resolve,
+        ["ps", "-aq", "--filter", "label=com.docker.compose.project=odysseus; touch " + markerPath],
+        "the filter must arrive as exactly one inert argument",
+    );
+    assert.ok(callTo(calls, "start"), "the outer start must still run");
+});
+
+test("a compose project name carrying a single quote stays one inert argument", () => {
+    let markerPath = "";
+    const { calls, injected } = runStubArgvTranscript("docker", (marker) => {
+        markerPath = marker;
+        return buildComposeProjectCommand({
+            project: "odysseus'; touch " + marker,
+            action: COMPOSE_ACTION_STOP,
+        });
+    });
+
+    assert.equal(injected, false, "the escaped quote must not break out of the argument");
+
+    const resolve = callTo(calls, "ps");
+    assert.ok(resolve);
+    assert.deepEqual(
+        resolve,
+        ["ps", "-aq", "--filter", "label=com.docker.compose.project=odysseus'; touch " + markerPath],
+    );
+    assert.ok(callTo(calls, "stop"), "the outer stop must still run");
+});
+
+test("the Podman command reaches the executable as a bare, argument-free path", () => {
+    const { calls, injected } = runStubArgvTranscript("podman-desktop", () =>
+        buildPodmanDesktopCommand({ path: "podman-desktop", home: "/home/x" }),
+    );
+
+    assert.equal(injected, false);
+    assert.deepEqual(calls, [[]], "the command is the quoted path and nothing else");
+});
+
+test("a shell-shaped Podman path degrades to the default and runs no injected command", () => {
+    const { calls, injected } = runStubArgvTranscript("podman-desktop", (marker) =>
+        buildPodmanDesktopCommand({ path: "podman-desktop; touch " + marker, home: "/home/x" }),
+    );
+
+    assert.equal(injected, false, "the injected touch must never run");
+    assert.deepEqual(calls, [[]], "the refused path falls back to the plain default, with no arguments");
+});
+
+test("a Podman run token stays a trailing comment, never an argument", () => {
+    const { calls } = runStubArgvTranscript("podman-desktop", () =>
+        buildPodmanDesktopCommand({ path: "podman-desktop", token: 5 }),
+    );
+
+    assert.deepEqual(calls, [[]], "the token must not become an argument");
 });
 
 /*
@@ -1927,6 +2319,731 @@ test("the inline field reaches its error path and is disabled while a countdown 
     assert.ok(
         fullQml.includes("enabled: !fullRoot.shutdownPending && !fullRoot.shutdownInFlight"),
         "the field must be disabled while a countdown is pending or in flight",
+    );
+});
+
+/*
+ * ---------------------------------------------------------------------------
+ * Collapsible sections: the four headers, their bodies and the +- affordance
+ * ---------------------------------------------------------------------------
+ * Tapping any of the four section headers collapses its body and the popup
+ * shrinks with it, because a hidden child contributes no height to the column.
+ * The state is LOCAL VIEW STATE and nothing else: it is not persisted, and it
+ * travels through no signal, so main.qml and Plasmoid.configuration stay unaware
+ * of it and the popup stays a pure consumer of configuration. The header, the
+ * separator and each section's identity glyph never collapse.
+ *
+ * Pinned as text because every one of these compiles and renders when it is
+ * silently dropped: a missing MouseArea turns the +/- into a decoration that
+ * answers to nothing, and a header RowLayout that keeps Layout margins while
+ * carrying anchors is exactly the undefined behaviour the file's own header
+ * warns about.
+ */
+
+const paletteQmlUrl = new URL(
+    "../package/io.github.daver-ui.dockerstatus/contents/ui/DockerStatusPalette.qml",
+    import.meta.url,
+);
+const paletteQml = readFileSync(paletteQmlUrl, "utf8");
+
+// Section state -> its header RowLayout's id, its body's visible gates. The
+// countdown's three conditional cues fold their own rule in, so their pinned
+// expressions appear with the flag first and the cue's own condition second --
+// except the invalid cue, which keeps the leading test a separate pin below.
+// The Podman section is a fourth top-level card with the same shape.
+const COLLAPSIBLE_SECTIONS = [
+    {
+        flag: "containerSectionExpanded",
+        row: "containersHeaderRow",
+        headerToggle: "fullRoot.containerSectionExpanded = !fullRoot.containerSectionExpanded",
+        gates: [
+            "visible: fullRoot.containerSectionExpanded && fullRoot.containers.length > 0",
+            "visible: fullRoot.containerSectionExpanded && fullRoot.containers.length === 0",
+        ],
+    },
+    {
+        flag: "downloadSectionExpanded",
+        row: "downloadHeaderRow",
+        headerToggle: "fullRoot.downloadSectionExpanded = !fullRoot.downloadSectionExpanded",
+        gates: [
+            "visible: fullRoot.downloadSectionExpanded",
+        ],
+    },
+    {
+        flag: "countdownSectionExpanded",
+        row: "countdownHeaderRow",
+        headerToggle: "fullRoot.countdownSectionExpanded = !fullRoot.countdownSectionExpanded",
+        // The countdown body gates on countdownBodyVisible, not the raw section
+        // bool: an armed shutdown is the one collapse that must be refused.
+        gates: [
+            "visible: fullRoot.countdownBodyVisible",
+            "visible: fullRoot.countdownBodyVisible && fullRoot.shutdownFeedback !== \"\"",
+            "visible: !fullRoot.shutdownMinutesFieldValid && fullRoot.countdownBodyVisible",
+            // The pending line is deliberately NOT gated by the collapse flag at
+            // all -- see the armed-countdown test below.
+            "visible: fullRoot.shutdownPending",
+        ],
+    },
+    {
+        flag: "podmanSectionExpanded",
+        row: "podmanHeaderRow",
+        headerToggle: "fullRoot.podmanSectionExpanded = !fullRoot.podmanSectionExpanded",
+        gates: [
+            "visible: fullRoot.podmanSectionExpanded",
+        ],
+    },
+];
+
+test("each collapsible section declares its own local view state, open by default", () => {
+    for (const section of COLLAPSIBLE_SECTIONS) {
+        assert.ok(
+            fullQml.includes(`property bool ${section.flag}: true`),
+            `the popup must declare ${section.flag}, defaulting to true so nothing `
+                + "regresses visually before a header is tapped",
+        );
+    }
+
+    // Local view state only: no signal is minted for it, and the one write each
+    // flag ever receives is its own header flipping itself -- nothing else, and in
+    // particular nothing in main.qml, may assign it.
+    for (const section of COLLAPSIBLE_SECTIONS) {
+        assert.ok(
+            !fullQml.includes(`signal ${section.flag}`),
+            `the collapse state is view state, not an event: no signal for ${section.flag}`,
+        );
+        const assignments = fullQml.split(`${section.flag} = `).length - 1;
+        assert.equal(
+            assignments,
+            1,
+            `${section.flag} may only be assigned by its own header's toggle`,
+        );
+    }
+    assert.ok(!fullQml.includes("Plasmoid.configuration"), "still a pure consumer");
+});
+
+test("tapping a section header toggles that section, and only that section", () => {
+    for (const section of COLLAPSIBLE_SECTIONS) {
+        // The header RowLayout is re-parented into a plain Item that carries only
+        // Layout.* insets -- a layout-managed item must not carry anchors -- and the
+        // MouseArea that does the toggling fills that Item.
+        assert.ok(fullQml.includes(section.headerToggle), `${section.flag} needs its toggle`);
+
+        const rowStart = fullQml.indexOf(`id: ${section.row}`);
+        assert.ok(rowStart > 0, `the ${section.flag} header must keep a RowLayout with id ${section.row}`);
+
+        const row = fullQml.slice(rowStart, fullQml.indexOf("spacing: 12", rowStart));
+        assert.ok(row.includes("anchors.fill: parent"), `${section.row} fills its wrapper Item`);
+        assert.ok(
+            !row.includes("Layout.leftMargin") && !row.includes("Layout.rightMargin")
+                && !row.includes("Layout.topMargin") && !row.includes("Layout.bottomMargin"),
+            `${section.row} must move its insets onto the wrapper Item's Layout margins`,
+        );
+    }
+
+    // Each flag drives a distinct header: one handler body per section.
+    const toggles = COLLAPSIBLE_SECTIONS.filter((section) => fullQml.includes(section.headerToggle));
+    assert.equal(toggles.length, 4, "all four headers must be tappable");
+});
+
+test("each collapsible section hides its body, never its header or separator", () => {
+    for (const section of COLLAPSIBLE_SECTIONS) {
+        for (const gate of section.gates) {
+            assert.ok(fullQml.includes(gate), `${section.flag} must gate: ${gate}`);
+        }
+    }
+
+    // The status card's equal-width action row is NOT collapsible and must never
+    // become one: both buttons stay visible whatever the section state is.
+    const actionRowStart = fullQml.indexOf("text: fullRoot.startInFlight");
+    assert.ok(actionRowStart > 0, "the status card must keep its action row");
+    assert.ok(
+        !/visible: fullRoot\.(?:container|download|countdown)SectionExpanded/.test(
+            fullQml.slice(actionRowStart, fullQml.indexOf("stopDaemonButton", actionRowStart) + 200),
+        ),
+        "the status card's action row must not be gated on any collapse flag",
+    );
+
+    // The separator Rectangles are untouched -- but only three of the four headers
+    // have one: the countdown header deliberately has none, which is why the
+    // affordance rather than a hairline closes it off.
+    for (const flag of ["containerSectionExpanded", "downloadSectionExpanded", "podmanSectionExpanded"]) {
+        const row = COLLAPSIBLE_SECTIONS.find((section) => section.flag === flag).row;
+        assert.ok(
+            new RegExp(`id: ${row}[\\s\\S]{0,4000}Rectangle \\{\\s*Layout.fillWidth: true\\s*Layout.preferredHeight: 1`)
+                .test(fullQml),
+            `${flag}'s header must keep its separator Rectangle`,
+        );
+    }
+
+    const countdownRowStart = fullQml.indexOf("id: countdownHeaderRow");
+    assert.ok(countdownRowStart > 0, "the countdown header must keep its RowLayout");
+    assert.ok(
+        !/Rectangle \{\s*Layout\.fillWidth: true\s*Layout\.preferredHeight: 1/
+            .test(fullQml.slice(countdownRowStart, countdownRowStart + 4000)),
+        "the countdown header deliberately has no separator at all",
+    );
+});
+
+/*
+ * Why this test exists. adr-0009 and the project's own Overview name "the visible
+ * countdown and the cancel button" among the safeguards that let the power-off run
+ * without a password prompt. Collapsing a section is therefore a rest-state
+ * declutter only: while a shutdown is pending, the countdown body -- the live
+ * "Powering off in M:SS" figure and the Cancel button included -- has to come back
+ * and stay visible. An armed destructive state must never be hideable, and a
+ * section affordance that can hide one turns the widget's own safety argument into
+ * a lie.
+ *
+ * Pinned as text because every one of these compiles and renders when it is
+ * dropped: gating the pending line on the collapse flag alone would hide the
+ * countdown exactly when it matters, and the visible failure is not a crash but a
+ * machine that powers off with nothing on screen counting down.
+ */
+test("an armed countdown cannot be collapsed away", () => {
+    // The one gate the whole section reads, and the derived flag that un-collapses
+    // it while a shutdown is pending.
+    assert.ok(
+        fullQml.includes(
+            "readonly property bool countdownBodyVisible: "
+                + "fullRoot.countdownSectionExpanded || fullRoot.shutdownPending",
+        ),
+        "the countdown body must be visible whenever the section is open OR a shutdown is pending",
+    );
+
+    // Every body item except the pending line reads that gate, so none of them can
+    // disappear while the deadline runs. The pending line is stricter still.
+    for (const gate of [
+        "visible: fullRoot.countdownBodyVisible",
+        "visible: fullRoot.countdownBodyVisible && fullRoot.shutdownFeedback !== \"\"",
+        "visible: !fullRoot.shutdownMinutesFieldValid && fullRoot.countdownBodyVisible",
+    ]) {
+        assert.ok(fullQml.includes(gate), `the countdown body must gate on ${gate}`);
+    }
+
+    // The live countdown line is gated on shutdownPending and nothing else: it only
+    // exists while a shutdown is armed, and that is exactly when it must never hide.
+    const pendingLine = fullQml
+        .split("PlasmaComponents3.Label {")
+        .find((block) => block.includes("DockerStatus.formatCountdown(fullRoot.shutdownRemainingSeconds)"));
+    assert.ok(pendingLine, "the pending line must render the live countdown");
+    assert.ok(
+        /visible: fullRoot\.shutdownPending\s*\n/.test(pendingLine),
+        "the pending line's visibility must be shutdownPending alone, ending the clause",
+    );
+    assert.ok(
+        !/visible:.*(countdownBodyVisible|countdownSectionExpanded)/.test(pendingLine),
+        "no collapse flag may hide the live countdown line",
+    );
+
+    // The header's tap still toggles the section bool, so a pending countdown is
+    // restored in full -- the user never sees a half-rendered armed state.
+    assert.ok(
+        fullQml.includes("onClicked: fullRoot.countdownSectionExpanded = !fullRoot.countdownSectionExpanded"),
+        "the header toggle must keep flipping the section bool",
+    );
+});
+
+/* The indicator is a functional affordance, so it is neither a severity accent nor
+ * neutral chrome: it gets its own neon yellow token and a pixel size one step
+ * above body text. No hardcoded colour hex is allowed at a call site. */
+test("the +/- indicator is a neon yellow token, bigger than body text, with a halo", () => {
+    assert.ok(
+        paletteQml.includes("// --- Section toggle affordance ---"),
+        "the palette must group the toggle tokens under their own heading",
+    );
+    assert.ok(
+        paletteQml.includes("readonly property color toggleIndicator: \"#FFE500\""),
+        "the toggle affordance needs its own saturated neon yellow",
+    );
+    assert.ok(
+        paletteQml.includes("readonly property int toggleIndicatorPixelSize: 22"),
+        "the toggle affordance is deliberately a bit bigger than body text",
+    );
+
+    const indicatorSize = 22;
+    const bodySize = /readonly property int bodyPixelSize: (\d+)/.exec(paletteQml);
+    assert.ok(bodySize, "the palette must keep its body text token");
+    assert.ok(
+        indicatorSize > Number(bodySize[1]),
+        "the indicator must read larger than body text",
+    );
+
+    // U+2212 MINUS SIGN when open, "+" when collapsed -- not an ASCII hyphen,
+    // whose stroke weight and width do not match the plus it stands beside. Five
+    // headers carry the pair now: the four section headers (Containers, Import
+    // content, Countdown to Extinction, Podman Desktop) plus the per-compose-group
+    // header inside the containers list. The exact count is pinned -- rather than a
+    // ">= 3" floor -- so a sixth header added later fails loudly here instead of
+    // silently expanding the affordance's surface.
+    const glyph = `? "\u2212" : "+"`;
+
+    // Each header is anchored by its own state expression, so a regression that
+    // rewired one header's glyph to the wrong flag still fails below.
+    assert.ok(
+        fullQml.includes(`fullRoot.containerSectionExpanded ${glyph}`),
+        "the Containers header must render the +/- glyph pair",
+    );
+    assert.ok(
+        fullQml.includes(`fullRoot.downloadSectionExpanded ${glyph}`),
+        "the Import content header must render the +/- glyph pair",
+    );
+    assert.ok(
+        fullQml.includes(`fullRoot.countdownBodyVisible ${glyph}`),
+        "the Countdown header must render the +/- glyph pair off effective visibility",
+    );
+    assert.ok(
+        fullQml.includes(`fullRoot.podmanSectionExpanded ${glyph}`),
+        "the Podman Desktop header must render the +/- glyph pair",
+    );
+    assert.ok(
+        fullQml.includes(`containerGroup.groupOpen ${glyph}`),
+        "the per-compose-group header must render the +/- glyph pair",
+    );
+
+    assert.equal(
+        fullQml.split(glyph).length - 1,
+        5,
+        "exactly five headers may carry the +/- glyph pair: the four sections and the group header",
+    );
+
+    // Every indicator reads the palette: no colour hex at any call site. Each of the
+    // five headers draws a crisp copy and a larger halo copy, so each token is read
+    // ten times. The exact counts are pinned so a sixth header cannot slip in.
+    assert.equal(
+        (fullQml.match(/paletteTokens\.toggleIndicator(?!PixelSize)/g) || []).length,
+        10,
+        "the crisp glyph and its halo must both read the palette colour token, across all five headers",
+    );
+    assert.equal(
+        (fullQml.match(/paletteTokens\.toggleIndicatorPixelSize/g) || []).length,
+        10,
+        "the crisp glyph and its halo must both read the pixel size token, across all five headers",
+    );
+
+    // The halo is a second, larger, low-opacity copy of the SAME glyph: plain
+    // Text, no shader effect and no extra import.
+    assert.equal(
+        fullQml.split("opacity: 0.3").length - 1,
+        5,
+        "each of the five headers' halos is a low-opacity copy of the same glyph",
+    );
+
+    // The decorative arrow glyph is gone: the affordance replaced it.
+    assert.ok(!fullQml.includes("\u21b3"), "the old arrow glyph must be replaced by the +/-");
+    assert.ok(
+        !fullQml.includes("paletteTokens.blue"),
+        "the arrow glyph's accent token must not survive it",
+    );
+});
+
+/*
+ * ---------------------------------------------------------------------------
+ * Compose grouping and per-group actions, pinned in FullRepresentation.qml
+ * ---------------------------------------------------------------------------
+ * The containers list is grouped by compose project in the core
+ * (DockerStatus.groupContainersByComposeProject) and the popup only renders what that
+ * function returns. The grouping, the per-group collapse state and the compose-only
+ * controls all compile and render when they are silently dropped -- a view that
+ * re-groups in QML would drift from the tested core, and a play/stop pair that lost
+ * its isComposeGroup gate would offer `docker start` on the standalone bucket. Pinned
+ * as text, in the established style.
+ */
+
+test("FullRepresentation.qml renders the grouped compose model and never re-groups in QML", () => {
+    assert.ok(
+        fullQml.includes("model: DockerStatus.groupContainersByComposeProject(fullRoot.containers)"),
+        "the containers list must render the core's grouping",
+    );
+
+    // The grouping is pure data prep in the core. A second model bound straight to
+    // fullRoot.containers would render the flat list again -- or a second, untested
+    // grouping -- so the raw list must never be a model.
+    assert.ok(
+        !fullQml.includes("model: fullRoot.containers"),
+        "no model may iterate fullRoot.containers directly",
+    );
+    assert.equal(
+        fullQml.split("model:").length - 1,
+        2,
+        "the section has exactly two models: the grouped list and the group's own rows Repeater",
+    );
+});
+
+test("FullRepresentation.qml gives each compose group its own local collapse state", () => {
+    assert.ok(
+        fullQml.includes("property bool groupOpen: true"),
+        "each group delegate declares its own open/closed state, defaulting open",
+    );
+    assert.ok(
+        fullQml.includes("onClicked: containerGroup.groupOpen = !containerGroup.groupOpen"),
+        "the group header's tap must flip its own state",
+    );
+    assert.equal(
+        fullQml.split("containerGroup.groupOpen = ").length - 1,
+        1,
+        "the group collapse state is assigned by its own header and nothing else",
+    );
+
+    // A collapsed SECTION must hide every group body, not just its own: the body reads
+    // the group flag AND the section flag.
+    assert.ok(
+        fullQml.includes("visible: containerGroup.groupOpen && fullRoot.containerSectionExpanded"),
+        "the group body must be gated on both its own flag and the section's",
+    );
+});
+
+test("the compose controls are offered only on a real compose group", () => {
+    assert.equal(
+        fullQml.split("visible: containerGroup.isComposeGroup").length - 1,
+        2,
+        "both the play and stop controls must be hidden on the standalone bucket",
+    );
+    assert.ok(
+        fullQml.includes(
+            "readonly property bool isComposeGroup: "
+                + "containerGroup.modelData.project !== DockerStatus.COMPOSE_PROJECT_STANDALONE",
+        ),
+        "isComposeGroup must compare against the exported constant, not a bare \"\"",
+    );
+    assert.ok(
+        !fullQml.includes('containerGroup.modelData.project !== ""'),
+        "the standalone test must not be written as a bare empty-string literal",
+    );
+
+    assert.ok(
+        fullQml.includes('i18n("Other containers")'),
+        "the standalone bucket must show a translated label, never the empty project name",
+    );
+});
+
+test("the compose controls carry both the in-flight gate and their no-op gate", () => {
+    // One action at a time: both controls go inert while anything is in flight. Start is
+    // additionally a no-op when every container already runs; stop is a no-op when none
+    // does. Pin the exact operands so a dropped gate cannot slip past.
+    assert.ok(
+        /enabled: !fullRoot\.composeActionInFlight\s*\n\s*&& containerGroup\.runningCount !== containerGroup\.modelData\.containers\.length/
+            .test(fullQml),
+        "start must be disabled while in flight and when the whole group already runs",
+    );
+    assert.ok(
+        /enabled: !fullRoot\.composeActionInFlight\s*\n\s*&& containerGroup\.runningCount !== 0/
+            .test(fullQml),
+        "stop must be disabled while in flight and when nothing in the group runs",
+    );
+});
+
+test("the compose controls emit the frozen signals with the model's project", () => {
+    assert.ok(
+        fullQml.includes("fullRoot.composeStartRequested(containerGroup.modelData.project)"),
+        "start must name the project from the group's own modelData",
+    );
+    assert.ok(
+        fullQml.includes("fullRoot.composeStopRequested(containerGroup.modelData.project)"),
+        "stop must name the project from the group's own modelData",
+    );
+});
+
+test("the group body reuses the original container-row markup", () => {
+    // The move into a grouped list must not have regressed the row itself: the hover
+    // tint, the hover-only MouseArea, the 32px glyph tile and the severity dot are all
+    // still there, and the row still reads its data through containerRow.modelData.
+    assert.ok(
+        fullQml.includes('color: rowHover.containsMouse ? paletteTokens.rowHoverTint : "transparent"'),
+        "the row keeps its hover tint",
+    );
+    assert.ok(
+        fullQml.includes("acceptedButtons: Qt.NoButton"),
+        "the row's hover area must accept no button, so it never swallows a click",
+    );
+    assert.ok(
+        fullQml.includes("containerRow.modelData.name") && fullQml.includes("containerRow.modelData.state"),
+        "the row must read its data through the delegate's modelData",
+    );
+    assert.ok(
+        fullQml.includes("DockerStatus.containerSeverity(containerRow.modelData.state)"),
+        "the row's severity must still come from the core, not a second mapping",
+    );
+
+    // The 32x32 glyph tile, as in the mockup, lives inside the group body.
+    const groupBody = fullQml.slice(
+        fullQml.indexOf("property bool groupOpen: true"),
+        fullQml.indexOf("// --- Podman Desktop section"),
+    );
+    assert.ok(
+        groupBody.includes("Layout.preferredWidth: 32") && groupBody.includes("Layout.preferredHeight: 32"),
+        "the row keeps its 32x32 glyph tile",
+    );
+});
+
+/*
+ * ---------------------------------------------------------------------------
+ * Podman Desktop launch, pinned in FullRepresentation.qml
+ * ---------------------------------------------------------------------------
+ * The launch is the one command whose first word is a configured value; the popup only
+ * renders the resolved path and emits a request, exactly like every other section. The
+ * section is deliberately NOT gated on the daemon or the container-list setting --
+ * Podman Desktop is most useful when the Docker daemon is down -- and the command is
+ * built in main.qml through the pure builder, never here. Pinned as text because each
+ * rule compiles and renders when it is dropped.
+ */
+
+test("FullRepresentation.qml adds the Podman card in the same shape, ungated", () => {
+    assert.ok(
+        fullQml.indexOf("// --- Podman Desktop section") > fullQml.indexOf("// --- Container section"),
+        "the Podman card must follow the containers section",
+    );
+
+    const podmanSection = fullQml.slice(
+        fullQml.indexOf("// --- Podman Desktop section"),
+        fullQml.indexOf("// --- Video download section"),
+    );
+    const podmanCode = stripQmlComments(podmanSection);
+
+    assert.ok(
+        podmanCode.includes("implicitHeight: podmanBody.implicitHeight"),
+        "the Podman section must be a card in the same shape as the others",
+    );
+
+    // NOT gated on the daemon state or the container-list setting: the whole point is to
+    // launch Podman Desktop when the Docker daemon is down.
+    assert.ok(!podmanCode.includes("daemonRunning"), "the Podman card must not be gated on the daemon state");
+    assert.ok(
+        !podmanCode.includes("containerListEnabled"),
+        "the Podman card must not be gated on the container-list setting",
+    );
+
+    // The card's own property block carries no `visible:`; the only visibility it owns is
+    // its body's collapse gate and the feedback row's emptiness gate.
+    const cardHeader = podmanCode.slice(0, podmanCode.indexOf("ColumnLayout {"));
+    assert.ok(!cardHeader.includes("visible:"), "the Podman card itself must carry no visible gate");
+    assert.equal(
+        podmanCode.split("visible: fullRoot.podmanSectionExpanded").length - 1,
+        1,
+        "the Podman body collapses on its own section flag",
+    );
+
+    // No colour hex at the new call sites, and no second severity-to-colour mapping.
+    assert.ok(
+        !/#[0-9A-Fa-f]{6}/.test(podmanCode),
+        "the Podman call sites must read the palette, never a colour hex",
+    );
+    assert.ok(
+        podmanCode.includes("severity: fullRoot.podmanLaunchFeedbackSeverity"),
+        "the Podman feedback must reuse SeverityDot, not a second mapping",
+    );
+});
+
+test("FullRepresentation.qml wires the Podman launch control to the resolved path", () => {
+    assert.ok(fullQml.includes("signal podmanLaunchRequested()"), "the launch needs its outbound signal");
+    assert.ok(fullQml.includes("onClicked: fullRoot.podmanLaunchRequested()"), "the button must emit that signal");
+    assert.ok(
+        fullQml.includes("enabled: !fullRoot.podmanLaunchInFlight"),
+        "the launch must be disabled while one is in flight",
+    );
+    assert.ok(
+        fullQml.includes('i18nc("@info", "Launching: %1", fullRoot.podmanDesktopPath)'),
+        "the resolved-path line must read the property main.qml resolves",
+    );
+    assert.ok(
+        fullQml.includes("severity: fullRoot.podmanLaunchFeedbackSeverity"),
+        "the feedback row must carry the severity main.qml computed",
+    );
+
+    // The popup stays a pure consumer: the resolved path arrives as a property, never
+    // from configuration here.
+    assert.ok(!fullQml.includes("Plasmoid.configuration"), "the popup must not read configuration");
+});
+
+/*
+ * ---------------------------------------------------------------------------
+ * Compose and Podman wiring in main.qml, pinned as text
+ * ---------------------------------------------------------------------------
+ * main.qml owns the two new unprivileged mutations: it forwards the project name to the
+ * pure builder, runs one one-shot per action, and surfaces the outcome. None of that is
+ * reachable from a Node test -- it needs a live data engine -- so the wiring is pinned
+ * as text, in the same style as the daemon action and the update check.
+ */
+
+test("main.qml carries the labelled compose probe exactly", () => {
+    assert.ok(
+        mainQml.includes(
+            "readonly property string containerListCommand: "
+                + `"docker ps -a --format '{{.Names}}|{{.State}}|{{.Label \\"com.docker.compose.project\\"}}'"`,
+        ),
+        "the probe must select the compose project label as its third field, in this exact shape",
+    );
+});
+
+test("main.qml declares the two new one-shot sources and their handlers", () => {
+    const blocks = mainQml.split("P5Support.DataSource {");
+    const compose = blocks.find((block) => block.includes("id: composeAction"));
+    const podman = blocks.find((block) => block.includes("id: podmanLaunch"));
+
+    assert.ok(compose, "main.qml must declare the composeAction source");
+    assert.ok(podman, "main.qml must declare the podmanLaunch source");
+
+    for (const [name, source] of [["composeAction", compose], ["podmanLaunch", podman]]) {
+        assert.ok(source.includes("interval: 0"), `${name} must be a one-shot`);
+        assert.ok(source.includes("connectedSources: []"), `${name} must start disconnected`);
+        assert.ok(source.includes('Number(data["exit code"])'), `${name} must read the exit code as a number`);
+        assert.ok(
+            source.includes('DockerStatus.normalizeOutput(data["stderr"])'),
+            `${name} must surface stderr verbatim on a failure`,
+        );
+    }
+
+    // Each handler clears its own in-flight flag and clears the feedback on success.
+    assert.ok(compose.includes("root.composeActionInFlight = false;"), compose);
+    assert.ok(compose.includes('root.composeActionFeedback = "";'), compose);
+    assert.ok(podman.includes("root.podmanLaunchInFlight = false;"), podman);
+    assert.ok(podman.includes('root.podmanLaunchFeedback = "";'), podman);
+});
+
+test("main.qml refuses the standalone bucket before it burns a run token", () => {
+    const fnStart = mainQml.indexOf("function runComposeProject(project, action)");
+    assert.ok(fnStart >= 0, "main.qml must define runComposeProject");
+    const fn = mainQml.slice(fnStart, mainQml.indexOf("function launchPodmanDesktop()", fnStart));
+
+    assert.ok(
+        fn.includes("project === null || project === undefined || project === DockerStatus.COMPOSE_PROJECT_STANDALONE"),
+        "the standalone bucket and a null/undefined project must be refused",
+    );
+
+    // A refused action must not burn a token: the guard has to run BEFORE nextRunToken().
+    const refusal = fn.indexOf("DockerStatus.COMPOSE_PROJECT_STANDALONE");
+    const token = fn.indexOf("root.nextRunToken()");
+    assert.ok(
+        refusal >= 0 && token >= 0 && refusal < token,
+        "the standalone/null refusal must precede nextRunToken()",
+    );
+});
+
+test("main.qml builds the two new commands only through the pure builders", () => {
+    assert.ok(
+        mainQml.includes("DockerStatus.buildComposeProjectCommand("),
+        "the compose command must come from the pure builder",
+    );
+    assert.ok(
+        mainQml.includes("DockerStatus.buildPodmanDesktopCommand("),
+        "the Podman command must come from the pure builder",
+    );
+
+    // The compose command is builder output, never assembled here. The probe's fixed
+    // `docker ps -a --format ...` is the one sanctioned docker literal in this file, so
+    // the ban is on the compose/launch fragments rather than on `docker ps` itself.
+    const code = stripQmlComments(mainQml);
+    assert.ok(!code.includes("docker start"), "no literal `docker start` may be assembled in QML");
+    assert.ok(!code.includes("docker stop"), "no literal `docker stop` may be assembled in QML");
+    assert.ok(!code.includes("docker ps -aq"), "the label-filter resolve must not be assembled in QML");
+    assert.ok(!code.includes("--filter"), "the filter flag must not be assembled in QML");
+    assert.ok(
+        !code.includes("label=com.docker.compose.project="),
+        "the label filter must not be assembled in QML",
+    );
+});
+
+test("main.qml resolves the Podman path but launches from the raw setting", () => {
+    assert.ok(
+        mainQml.includes(
+            "readonly property string podmanDesktopPath: "
+                + "DockerStatus.resolvePodmanDesktopPath(Plasmoid.configuration.podmanDesktopPath, root.homeDirectory)",
+        ),
+        "the displayed path must be the resolver's answer",
+    );
+
+    // The launch passes the RAW setting to the builder: the builder, not the resolved
+    // property, is what actually runs, so the value cannot drift from what it validates.
+    assert.ok(
+        mainQml.includes("path: Plasmoid.configuration.podmanDesktopPath,"),
+        "the launch must hand the builder the raw setting",
+    );
+    assert.ok(
+        !mainQml.includes("path: root.podmanDesktopPath"),
+        "the launch must not pass the resolved property to the builder",
+    );
+});
+
+test("main.qml forwards the compose and Podman state into the popup", () => {
+    const blockStart = mainQml.indexOf("fullRepresentation: FullRepresentation {");
+    assert.ok(blockStart >= 0, "main.qml must define the full representation");
+    const block = mainQml.slice(blockStart);
+
+    for (const forwarding of [
+        "composeActionInFlight: root.composeActionInFlight",
+        "composeActionProject: root.composeActionProject",
+        "composeActionKind: root.composeActionKind",
+        "composeActionFeedback: root.composeActionFeedback",
+        "composeActionFeedbackSeverity: root.composeActionFeedbackSeverity",
+        "podmanDesktopPath: root.podmanDesktopPath",
+        "podmanLaunchInFlight: root.podmanLaunchInFlight",
+        "podmanLaunchFeedback: root.podmanLaunchFeedback",
+        "podmanLaunchFeedbackSeverity: root.podmanLaunchFeedbackSeverity",
+    ]) {
+        assert.ok(block.includes(forwarding), `the popup must receive ${forwarding}`);
+    }
+
+    for (const handler of [
+        "onComposeStartRequested: (project) => root.startComposeProject(project)",
+        "onComposeStopRequested: (project) => root.stopComposeProject(project)",
+        "onPodmanLaunchRequested: root.launchPodmanDesktop()",
+    ]) {
+        assert.ok(block.includes(handler), `the popup must wire ${handler}`);
+    }
+});
+
+test("main.qml's source-count comment stays consistent with the new sources", () => {
+    const commentStart = mainQml.indexOf("// Update check: two sources");
+    assert.ok(commentStart >= 0, "the source-count comment must survive");
+    const comment = mainQml.slice(
+        commentStart,
+        mainQml.indexOf("P5Support.DataSource {", commentStart),
+    );
+
+    assert.ok(comment.includes("tenth and eleventh"), comment);
+    assert.ok(comment.includes("nine before them"), comment);
+    assert.ok(comment.includes("composeAction"), comment);
+    assert.ok(comment.includes("podmanLaunch"), comment);
+
+    // The comment is only honest if the file really declares eleven sources.
+    assert.equal(
+        mainQml.split("P5Support.DataSource {").length - 1,
+        11,
+        "main.qml must declare eleven data sources, as its own comment says",
+    );
+});
+
+/*
+ * ---------------------------------------------------------------------------
+ * The Podman path setting in the config surface, pinned as text
+ * ---------------------------------------------------------------------------
+ * The setting is the one configured value that becomes a command, so it is a plain
+ * String entry aliased to a plain writable TextField, exactly like the yt-dlp binary
+ * field. Pinned as text because a broken alias or a wrongly-typed duplicate entry
+ * compiles fine and only shows up as a setting that does not stick.
+ */
+
+test("main.xml declares the Podman Desktop path as a String defaulting to podman-desktop", () => {
+    const entry = kcfgEntry(mainXml, "podmanDesktopPath");
+    assert.ok(entry.attributes.includes('type="String"'), entry.attributes);
+    assert.ok(entry.body.includes("<default>podman-desktop</default>"), entry.body);
+
+    // Exactly one entry by that name: a second, differently-typed duplicate would shadow
+    // the one the config page aliases.
+    assert.equal(
+        mainXml.split('<entry name="podmanDesktopPath"').length - 1,
+        1,
+        "main.xml must declare exactly one podmanDesktopPath entry",
+    );
+});
+
+test("ConfigGeneral.qml aliases the Podman path to a plain writable TextField", () => {
+    assert.ok(
+        configGeneral.includes("property alias cfg_podmanDesktopPath: podmanDesktopPath.text"),
+        "Plasma reads the setting through the cfg_<entryName> alias",
+    );
+    assert.ok(
+        /QQC2\.TextField\s*\{\s*\n\s*id: podmanDesktopPath/.test(configGeneral),
+        "the alias target must be a plain QQC2.TextField with id podmanDesktopPath",
     );
 });
 

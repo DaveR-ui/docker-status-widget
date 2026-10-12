@@ -85,6 +85,15 @@ QtObject {
     // Neutral chrome washes that are not states: they never carry severity.
     readonly property color rowHoverTint: Qt.rgba(1, 1, 1, 0.025) // faint container-row hover wash
 
+    // --- Section toggle affordance -------------------------------------------
+    // The +/- that collapses and reopens a section. This is a functional
+    // affordance, not a severity and not neutral chrome, so it keeps its own
+    // saturated neon yellow rather than borrowing one of the severity accents
+    // above. Measured against the #1b2227 panel it stays well clear of the four
+    // severity hues and reads as "touch me" at a glance.
+    readonly property color toggleIndicator: "#FFE500"       // the neon +/- glyph
+    readonly property int toggleIndicatorPixelSize: 22      // a step above body text
+
     // --- Pre-composited gradients -------------------------------------------
     readonly property color statusCardTop: Qt.rgba(54 / 255, 75 / 255, 80 / 255, 0.32)
     readonly property color statusCardBottom: Qt.rgba(30 / 255, 38 / 255, 43 / 255, 0.60)

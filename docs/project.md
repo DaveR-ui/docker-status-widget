@@ -22,7 +22,10 @@ observer of two external commands — `systemctl is-active docker` and `docker p
 perform are `systemctl start docker.service`, passwordless through a deliberately narrow privilege
 grant; `systemctl stop docker.service`, which is deliberately not covered by that grant and so goes
 through polkit's interactive password prompt; and `systemctl poweroff`, which runs only when a
-widget-owned countdown expires and, unlike the stop, does not prompt.
+widget-owned countdown expires and, unlike the stop, does not prompt. Containers are grouped by their
+Docker Compose project, each group carrying its own play/stop controls, and a configurable Podman
+Desktop button launches a path that configuration supplies
+([[adr-0014-compose-grouping-and-podman-desktop-launch]]).
 
 Anti-goals, stated so nobody adds them by accident: no stop on a single click — stopping the daemon is
 destructive to every running container, so the stop button arms on the first click and runs on the
@@ -37,9 +40,16 @@ password, are the safeguard; no restart/disable/mask button; no stop entry in th
 a menu is also a one-click surface; no rootless or user-scoped daemon support; no `docker events` subscription (state
 is polled, not streamed); no network beyond the one update check — no service of its own, no telemetry,
 no POST, and no URL taken from configuration, because the manifest address is a fixed constant
-([[adr-0013-widget-update-check-and-release-site]]); no command string taken from configuration — the single sanctioned exception
-is the video-download row, where configuration supplies only validated values inside a command the
-widget builds ([[adr-0006-video-downloader-command-boundary]]); no privileged work in the installer
+([[adr-0013-widget-update-check-and-release-site]]); no command string taken from configuration — with
+**two** recorded exceptions instead of one: the video-download row, where configuration supplies only
+validated values inside a command the widget builds
+([[adr-0006-video-downloader-command-boundary]]), and the Podman Desktop launch, where the one
+configuration-supplied value is a validated executable path that is itself the quoted command
+([[adr-0014-compose-grouping-and-podman-desktop-launch]]); the per-group compose play/stop adds a new
+`docker` mutation built from a docker-reported project label, not from configuration, and both new
+mutations run unprivileged, so the polkit grant is not widened for them — hence no `docker compose`
+plugin dependency, no `docker exec`, no restart or remove action, no second Podman path, and no flag
+channel on either new command; no privileged work in the installer
 beyond the explicit `install-polkit` command.
 
 ## Technology Stack
@@ -123,12 +133,16 @@ docs/                                 this corpus — entry: readme.md, routing:
 
 ## Key Conventions
 
-- Executed commands are **fixed constants in `main.qml`**, with one deliberate exception: the
-  video-download command. It is built in `dockerstatus.js` from a validated URL and validated
-  configuration values, and every interpolated value is shell-quoted. Configuration never supplies a
-  command, only values inside one ([[adr-0006-video-downloader-command-boundary]]). The update-check
-  command is also built in `dockerstatus.js`, but entirely from fixed constants, so it is deliberately
-  not a second exception ([[adr-0013-widget-update-check-and-release-site]]). The run-token trick
+- Executed commands are **fixed constants in `main.qml`**, with **two** recorded command-building
+  boundaries: the video-download command, built in `dockerstatus.js` from a validated URL and validated
+  configuration values with every interpolated value shell-quoted
+  ([[adr-0006-video-downloader-command-boundary]]), and the compose project play/stop and Podman
+  Desktop launch, built in `dockerstatus.js` from a docker-reported project label and a validated
+  executable path respectively ([[adr-0014-compose-grouping-and-podman-desktop-launch]]). No other
+  configuration value is a command; everywhere else configuration supplies only values inside a command
+  the widget builds. The update-check command is also built in `dockerstatus.js`, but entirely from
+  fixed constants, so it is deliberately not a third boundary
+  ([[adr-0013-widget-update-check-and-release-site]]). The run-token trick
   appends a shell comment, which is safe only for strings this project builds itself.
 - Every one-shot assignment goes through `withRunToken()`: the `executable` engine treats
   `connectedSources` as a **set**, so an identical command string is not re-executed.
@@ -155,7 +169,15 @@ docs/                                 this corpus — entry: readme.md, routing:
   `systemctl is-active docker`.
 - **Severity** — one of `positive` / `neutral` / `negative` / `muted`; the single answer to "how bad
   is this state".
-- **Container** — `{ name, state }`, parsed from `docker ps -a --format '{{.Names}}|{{.State}}'`.
+- **Container** — `{ name, state, project }`, parsed from
+  `docker ps -a --format '{{.Names}}|{{.State}}|{{.Label "com.docker.compose.project"}}'`; a two-field
+  line still parses with an empty `project`.
+- **Compose group** — `{ project, containers }` from `groupContainersByComposeProject()`: containers
+  sharing a compose project label, in first-seen order, with the no-project bucket
+  (`COMPOSE_PROJECT_STANDALONE`, `""`) last and only when non-empty.
+- **Podman Desktop path** — the validated executable name or path behind the `podmanDesktopPath` kcfg
+  entry; resolved by `resolvePodmanDesktopPath()` (default `podman-desktop`), and the only
+  configuration value that is itself a command.
 - **Run token** — a unique trailing shell comment (`# plasma-run-N`) that makes a repeated command a
   distinct source for the `executable` engine.
 - **Video link** — the raw text pasted into the download row; accepted only as an `https` URL on the

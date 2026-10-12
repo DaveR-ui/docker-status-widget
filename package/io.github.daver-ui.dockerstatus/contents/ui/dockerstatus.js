@@ -24,6 +24,19 @@ var ACTION_STOP = "stop";
 
 var CONTAINER_RUNNING = "running";
 
+/*
+ * Identifiers for the compose helpers. COMPOSE_PROJECT_STANDALONE is deliberately the
+ * empty string: it is the bucket a container with no compose project label falls into,
+ * and it is a named constant so the QML and the tests compare against it rather than a
+ * bare "". COMPOSE_ACTION_START / _STOP are the only two actions
+ * buildComposeProjectCommand() accepts; an action that is neither yields "" (the
+ * "there is no command" contract). These live up here with the other enum-like values
+ * so every identity constant is declared in one place.
+ */
+var COMPOSE_PROJECT_STANDALONE = "";
+var COMPOSE_ACTION_START = "start";
+var COMPOSE_ACTION_STOP = "stop";
+
 /**
  * Normalises raw command output: null/undefined -> "", CRLF -> LF, trimmed.
  */
@@ -61,8 +74,16 @@ function parseDaemonState(rawOutput) {
 }
 
 /**
- * Parses `docker ps -a --format '{{.Names}}|{{.State}}'` output.
- * Malformed lines are skipped instead of producing half-built entries.
+ * Parses `docker ps -a --format '{{.Names}}|{{.State}}|{{.Label
+ * "com.docker.compose.project"}}'` output into `{name, state, project}`.
+ *
+ * Only the first two separators are meaningful: the name ends at the FIRST `|`, the
+ * state ends at the SECOND, and the project is the entire remainder -- never split
+ * again -- so a label value that itself carries a `|` survives intact. A two-field
+ * line (a docker that does not answer the label) still parses with an empty project,
+ * which is COMPOSE_PROJECT_STANDALONE: a docker that cannot report the label degrades
+ * to one flat group instead of to nothing. Malformed lines -- blank, no separator, or
+ * an empty name or state -- are skipped, never half-built.
  */
 function parseContainers(rawOutput) {
     var text = normalizeOutput(rawOutput);
@@ -79,18 +100,31 @@ function parseContainers(rawOutput) {
             continue;
         }
 
-        var separator = line.indexOf("|");
-        if (separator < 0) {
+        var first = line.indexOf("|");
+        if (first < 0) {
             continue;
         }
 
-        var name = line.substring(0, separator).trim();
-        var state = line.substring(separator + 1).trim();
+        var name = line.substring(0, first).trim();
+
+        // Split at the SECOND separator only; the project is everything after it and
+        // is deliberately never split again.
+        var second = line.indexOf("|", first + 1);
+        var state;
+        var project;
+        if (second < 0) {
+            state = line.substring(first + 1).trim();
+            project = COMPOSE_PROJECT_STANDALONE;
+        } else {
+            state = line.substring(first + 1, second).trim();
+            project = line.substring(second + 1).trim();
+        }
+
         if (name === "" || state === "") {
             continue;
         }
 
-        containers.push({ name: name, state: state });
+        containers.push({ name: name, state: state, project: project });
     }
 
     return containers;
@@ -171,6 +205,195 @@ function containerSeverity(state) {
     default:
         return SEVERITY_MUTED;
     }
+}
+
+/*
+ * Compose groups and per-project start/stop.
+ *
+ * This is the SECOND sanctioned command-building boundary, and it is a NEW kind of
+ * mutation: before adr-0014 the widget had never run a `docker start` or `docker
+ * stop`. It is narrow in the same shape as the video download -- the project name is
+ * a value INTERPOLATED into exactly one shell-quoted argument, never a command, and
+ * the verb is chosen from a fixed pair of constants, so no caller can turn an
+ * unvalidated choice into a command.
+ *
+ * Why `docker start|stop $(docker ps -aq --filter 'label=...=<project>')` and not
+ * `docker compose -p <project> start|stop`: the compose file is not available -- the
+ * widget cannot know the working directory the stack was started from -- so the
+ * label-filtered form needs no file, re-resolves membership at execution time, and
+ * is a no-op for containers already in the target state, which is exactly what a
+ * partially-running stack means. A stack that vanished between the last poll and the
+ * click makes docker exit non-zero with "requires at least 1 container argument",
+ * which the caller surfaces verbatim rather than swallowing.
+ *
+ * The project name reaches the shell ONLY through shellQuote(). Compose project names
+ * are [a-z0-9][a-z0-9_-]* in practice, but a container can carry any label, so quoting
+ * is the protection rather than the naming rule. buildComposeProjectCommand() returns
+ * "" for the standalone bucket and for an action that is neither start nor stop, and
+ * main.qml refuses an empty command before it reaches the engine: an empty string is
+ * the contract "there is no command".
+ */
+
+/**
+ * Groups parsed containers by their compose project label, preserving the probe's own
+ * order: groups come back in FIRST-SEEN order (not alphabetical -- re-sorting a list
+ * the user did not sort is a surprise), and the no-project bucket
+ * (COMPOSE_PROJECT_STANDALONE) is emitted LAST and only when it is not empty. A machine
+ * with no compose project therefore produces exactly one group, and a container with no
+ * project never disappears.
+ *
+ * Never mutates its input and never throws: []/null/undefined in, [] out. Each group is
+ * a fresh object holding a fresh array, so editing one call's answer cannot corrupt the
+ * next. Grouping runs over parallel arrays rather than an object keyed by the project
+ * name on purpose: a container can carry any label, and a plain object would treat a
+ * project literally named "__proto__" as a prototype write and lose that group.
+ */
+function groupContainersByComposeProject(containers) {
+    var groups = [];
+
+    if (!containers || containers.length === 0) {
+        return groups;
+    }
+
+    var standalone = [];
+
+    for (var i = 0; i < containers.length; i += 1) {
+        var container = containers[i];
+        var project = container === undefined || container === null
+            || container.project === undefined || container.project === null
+            ? COMPOSE_PROJECT_STANDALONE
+            : String(container.project);
+
+        if (project === COMPOSE_PROJECT_STANDALONE) {
+            standalone.push(container);
+            continue;
+        }
+
+        var index = -1;
+        for (var g = 0; g < groups.length; g += 1) {
+            if (groups[g].project === project) {
+                index = g;
+                break;
+            }
+        }
+
+        if (index < 0) {
+            groups.push({ project: project, containers: [container] });
+        } else {
+            groups[index].containers.push(container);
+        }
+    }
+
+    if (standalone.length > 0) {
+        groups.push({ project: COMPOSE_PROJECT_STANDALONE, containers: standalone });
+    }
+
+    return groups;
+}
+
+/**
+ * Builds the one-shot `docker start|stop $(docker ps -aq --filter 'label=...' )` command
+ * for one compose project, or "" when there is no command to build.
+ *
+ * The label filter is assembled as a single shell argument through shellQuote(), so a
+ * project name carrying shell syntax (a `;`, a quote, anything) stays inert. The action
+ * is validated against COMPOSE_ACTION_START / COMPOSE_ACTION_STOP before a verb exists;
+ * anything else -- an unknown action, a missing project, the standalone bucket -- returns
+ * "" and the QML refuses to run it. That is why the runner can never be handed a command
+ * built from an unvalidated choice.
+ *
+ * `token` makes the command a distinct source for the executable engine, exactly like the
+ * other builders; it is appended by withRunToken() and is safe only because every byte
+ * before it was built here.
+ */
+function buildComposeProjectCommand(options) {
+    var opts = options || {};
+    var verb;
+
+    if (opts.action === COMPOSE_ACTION_START) {
+        verb = "start";
+    } else if (opts.action === COMPOSE_ACTION_STOP) {
+        verb = "stop";
+    } else {
+        return "";
+    }
+
+    var project = normalizeOutput(opts.project);
+    if (project === COMPOSE_PROJECT_STANDALONE) {
+        return "";
+    }
+
+    var command = "docker " + verb
+        + " $(docker ps -aq --filter "
+        + shellQuote("label=com.docker.compose.project=" + project)
+        + ")";
+
+    if (opts.token === undefined || opts.token === null) {
+        return command;
+    }
+
+    return withRunToken(command, opts.token);
+}
+
+/*
+ * Podman Desktop launch.
+ *
+ * This is the boundary that contradicts adr-0006 most openly -- the configured path IS
+ * the command -- and it is deliberate and bounded in adr-0014: one setting, one validated
+ * shape, one default, and NO flag channel. The path is a plain executable name or a
+ * `~`-relative/absolute path matching PODMAN_DESKTOP_PATH_PATTERN, never free-form text;
+ * it goes through shellQuote() like every other value, and the assembled command is the
+ * quoted path plus the run token and NOTHING else -- no arguments, no URL, no flags -- so
+ * there is no channel through which configuration could inject one.
+ *
+ * The default is a PATH name on purpose (measured: `podman-desktop` is /usr/bin/podman-desktop
+ * on the reference machine): the widget works where the executable is installed normally,
+ * and the setting is the escape hatch for a machine where it is not. Clearing the setting
+ * re-arms the default; it does not hide the button.
+ */
+
+var PODMAN_DESKTOP_DEFAULT = "podman-desktop";
+
+/*
+ * The shape gate for the configured path, mirroring YTDLP_BINARY_PATTERN: a plain
+ * executable name or a `~`-relative/absolute path, and nothing else. Whitespace and
+ * every shell metacharacter are outside it, so a value that matches can never carry
+ * shell syntax even before shellQuote() wraps it.
+ */
+var PODMAN_DESKTOP_PATH_PATTERN = /^(~\/)?[A-Za-z0-9._\/+-]+$/;
+
+/**
+ * Resolves the configured Podman Desktop path, mirroring resolveYtDlpBinary() exactly:
+ * empty/null/undefined or a value that is not a plain name or path -- it carries a space,
+ * a quote or any other shell metacharacter -- falls back to PODMAN_DESKTOP_DEFAULT, and a
+ * leading "~/" is expanded against home. The setting is a validated value, never a command
+ * line; a field that could hold one is exactly what adr-0006 exists to prevent.
+ */
+function resolvePodmanDesktopPath(configured, home) {
+    var text = normalizeOutput(configured);
+
+    if (text === "" || !PODMAN_DESKTOP_PATH_PATTERN.test(text)) {
+        return PODMAN_DESKTOP_DEFAULT;
+    }
+
+    return expandTilde(text, home);
+}
+
+/**
+ * Builds the one-shot Podman Desktop launch: the shell-quoted resolved path, plus
+ * withRunToken() when a token is given, and nothing else. The command IS the quoted path,
+ * which is why there is no flag or argument channel to abuse. The token makes the
+ * assignment a distinct source for the executable engine.
+ */
+function buildPodmanDesktopCommand(options) {
+    var opts = options || {};
+    var command = shellQuote(resolvePodmanDesktopPath(opts.path, opts.home));
+
+    if (opts.token === undefined || opts.token === null) {
+        return command;
+    }
+
+    return withRunToken(command, opts.token);
 }
 
 /*

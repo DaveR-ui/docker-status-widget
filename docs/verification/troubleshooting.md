@@ -275,3 +275,49 @@ hand-maintained and is **not** guarded by `sync-manifest.mjs --check`, which che
 **Reference:** [../adrs/adr-0013-widget-update-check-and-release-site.md](../adrs/adr-0013-widget-update-check-and-release-site.md)
 — the reversal, the manifest contract and the silence contract; [status-slice.md](../status/status-slice.md)
 — `isUpdateAvailable` and `compareVersions`.
+
+## every container lands in one group and the play/stop buttons are missing
+
+**Context:** the popup shows a single container group, and no compose project carries play/stop controls.
+**Root cause:** the daemon answered no `com.docker.compose.project` label for any container, so
+`groupContainersByComposeProject()` folded every container into the standalone bucket
+(`COMPOSE_PROJECT_STANDALONE`, `""`) — which is emitted last and has no controls by design. That
+happens when the containers were not started by Compose (nothing carries the label), or when `docker ps`
+is older than the `.Label` template function and the label never resolves. The list degrades to one
+standalone group, never to an empty list.
+**Fix:** run `docker ps -a --format '{{.Names}}|{{.State}}|{{.Label "com.docker.compose.project"}}'` as
+the widget's user. If the third field is empty for a container you know belongs to a stack, the label is
+genuinely absent, not the grouping. Upgrade docker only if the template function itself is unsupported.
+**Reference:** [../adrs/adr-0014-compose-grouping-and-podman-desktop-launch.md](../adrs/adr-0014-compose-grouping-and-podman-desktop-launch.md)
+— the probe format and the grouping contract; [widget-slice.md](../widget/widget-slice.md) — the grouped
+container section.
+
+## the compose play/stop button says a container argument is required
+
+**Context:** clicking a project's play or stop control shows docker's own
+`requires at least 1 container argument` on the feedback line.
+**Root cause:** the per-group command is
+`docker start|stop $(docker ps -aq --filter 'label=com.docker.compose.project=<project>')`. The filter is
+re-evaluated at execution time, so a stack that disappeared between the last poll and the click expands to
+no arguments and docker exits non-zero with that message. It is surfaced verbatim on purpose, rather than
+swallowed.
+**Fix:** none is needed beyond the next poll — refresh and the group disappears from the list. If the
+group is still shown, confirm the project label is still on its containers with the `docker ps` probe in
+the entry above.
+**Reference:** [../adrs/adr-0014-compose-grouping-and-podman-desktop-launch.md](../adrs/adr-0014-compose-grouping-and-podman-desktop-launch.md)
+— the label form and the vanished-stack behaviour; [widget-slice.md](../widget/widget-slice.md) — the
+per-group controls.
+
+## the Podman Desktop button reports podman-desktop: not found
+
+**Context:** the popup's Podman Desktop button fails immediately, reporting `podman-desktop: not found`
+on its feedback line.
+**Root cause:** the default is the PATH name `podman-desktop`, resolved by `resolvePodmanDesktopPath()`.
+plasmashell's `PATH` is not the interactive shell's, so an executable outside it is not found — and the
+failure appears at click time, not at load time, because the path is only resolved and run on click.
+**Fix:** set "Podman Desktop path" in the widget's options to an absolute or `~/`-expanded path, for
+example `~/.local/bin/podman-desktop`, or make the executable reachable on the session `PATH` (check
+`systemctl --user show-environment`). Clearing the field re-arms the `podman-desktop` default.
+**Reference:** [status-slice.md](../status/status-slice.md) — `resolvePodmanDesktopPath`;
+[../adrs/adr-0014-compose-grouping-and-podman-desktop-launch.md](../adrs/adr-0014-compose-grouping-and-podman-desktop-launch.md)
+— the Podman Desktop path boundary.
