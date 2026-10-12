@@ -2,7 +2,7 @@ name: ci
 
 # The pre-merge gate. Three independent jobs, three exact status-check contexts:
 #
-#   test      node --test tests/      — the documented canonical command, run from
+#   test      node --test tests/*.mjs — the documented canonical command, run from
 #                                      the repo root (docs/project.md, Commands)
 #   qmllint   Qt6 qmllint over both QML roots, error-counted (see below)
 #   docs      node docs/validate.js   — the corpus checker, check mode only
@@ -28,18 +28,22 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
 
       # The documented canonical command, run from the repo root: docs/project.md
-      # records `node --test tests/` as the suite's invocation and states that the
-      # wrapper (install.sh test) is what calls it, so this is the un-wrapped form.
+      # records `node --test tests/*.mjs` as the suite's invocation and states that
+      # the wrapper (install.sh test) is what calls it, so this is the un-wrapped
+      # form. The glob (not a bare directory) is deliberate: Node 22's test runner
+      # runs a directory argument as an entry point and fails MODULE_NOT_FOUND;
+      # directory search only exists from Node 23. The glob is green on Node 18
+      # through 26.
       # No npm install, no build step — zero dependencies by design.
       - name: Run the unit suite
-        run: node --test tests/
+        run: node --test tests/*.mjs
 
       # The version endpoint is derived from metadata.json by the Pages workflow; this
       # step keeps the committed copy honest so a PR that bumps KPlugin.Version fails
@@ -53,7 +57,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Provides /usr/lib/qt6/bin/qmllint on ubuntu-24.04 (noble). The Qt6 linter
       # is the semantic one; the qmllint that ships on PATH from the Qt5 packages
@@ -148,9 +152,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
 

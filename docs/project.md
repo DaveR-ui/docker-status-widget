@@ -87,8 +87,8 @@ beyond the explicit `install-polkit` command.
 | `./install.sh uninstall` | Remove the plasmoid. Remove it from the panel first. |
 | `./install.sh install-polkit` | Install the polkit rule into `/etc/polkit-1/rules.d/`. Escalates with `sudo` internally. |
 | `./install.sh remove-polkit` | Remove the polkit rule. |
-| `./install.sh test` | Run the Node unit tests (`node --test tests/`). |
-| `node --test tests/` | Same tests without the wrapper. |
+| `./install.sh test` | Run the Node unit tests (`node --test tests/*.mjs`). |
+| `node --test tests/*.mjs` | Same tests without the wrapper. |
 | `qmllint package/io.github.daver-ui.dockerstatus/contents/ui/*.qml` | Lint every QML file. |
 | `node docs/validate.js` | Walk the documentation catalog. Read-only; exit 1 on errors. |
 | `node docs/validate.js --write` | Regenerate the two generated regions (write-if-diff), then validate. |

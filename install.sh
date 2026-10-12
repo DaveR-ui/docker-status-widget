@@ -97,7 +97,7 @@ cmd_remove_polkit() {
 }
 
 cmd_test() {
-    node --test "${SCRIPT_DIR}/tests/"
+    node --test "${SCRIPT_DIR}"/tests/*.mjs
 }
 
 cmd_status() {

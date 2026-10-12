@@ -41,7 +41,7 @@ enabling `docker.service` at boot (a system decision, not an install step); the 
 | `uninstall` | the exact mirror of `install` | the same store |
 | `install-polkit` | copies the rule as `root:root` mode `0644`, then restarts polkit best-effort | `/etc/polkit-1/rules.d/49-docker-status-widget.rules` |
 | `remove-polkit` | removes that file and restarts polkit best-effort | the same path |
-| `test` | `node --test tests/` | nothing |
+| `test` | `node --test tests/*.mjs` | nothing |
 | `status` | prints plasmoid, rule and docker-unit state | nothing |
 
 Mechanics worth knowing: `has_kpackagetool()` gates the whole KPackage path, and when `kpackagetool6`

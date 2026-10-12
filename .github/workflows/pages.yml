@@ -40,9 +40,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
 
@@ -52,7 +52,7 @@ jobs:
         run: node docs/validate.js
 
       - name: Run the unit suite
-        run: node --test tests/
+        run: node --test tests/*.mjs
 
       - name: Regenerate site/latest.json from metadata.json
         run: node .github/scripts/sync-manifest.mjs --write
