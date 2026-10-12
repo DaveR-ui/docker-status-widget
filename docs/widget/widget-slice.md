@@ -220,13 +220,14 @@ setting fails at click time with the binary's own message, not at load time. The
 launch button is the UI trigger again ([[adr-0017-podman-launch-button-and-topbar-removal]]); a wrong
 setting fails at click time with the binary's own message, not at load time.
 **Downstream:** the installer copies this package; the privilege slice decides whether the start
-button prompts; the verification slice can lint these files but can only *observe* this slice inside
+button prompts; the verification slice can lint these files and now render the representations
+headless for pixel review ([[render-preview]]), but the full wrapper is only observable inside
 a running Plasma session.
 
 ## Known gaps & accepted debt
 
 - `main.qml` as a `PlasmoidItem` is **not executable outside plasmashell**; the wrapper is validated
-  by `qmllint` and review only.
+  by `qmllint` and review only. The representations it hosts are previewable headless ([[render-preview]]).
 - No QML-level automated test exists, so layout and interaction changes are reviewed rather than
   tested. The stop confirmation — its arming, half-second dwell and five-second expiry — is UI state
   inside `FullRepresentation.qml` and is covered by review alone; the Node suite pins the action
@@ -237,8 +238,9 @@ a running Plasma session.
   subscription.
 - Only `docker.service` is supported; there is no rootless or user-scoped daemon, and adding one
   would change this slice's assumptions about which command answers.
-- The download row cannot be instantiated outside plasmashell either; only its command boundary is
-  unit tested, so its layout and enable/disable behaviour are reviewed until they run in a session.
+- The download row's layout is previewable headless through the render harness ([[render-preview]]),
+  but only its command boundary is unit tested, so its enable/disable behaviour is reviewed until it
+  runs in a session.
 - The update check's QML surface — the two sources, the silent handler and the muted line — is
   review-and-lint only, exactly like every other QML wrapper here. The Node suite pins its pure helpers and
   its wiring as static text, which proves the arrangement, not the running behaviour.
