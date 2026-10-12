@@ -1429,6 +1429,12 @@ test("the update-check constants are exactly as specified", () => {
     );
 });
 
+test("UPDATE_PAGE_URL is the fixed release-page constant", () => {
+    assert.equal(UPDATE_PAGE_URL, "https://dave-r-ui.github.io/docker-status-widget/");
+    assert.ok(/^https:\/\//.test(UPDATE_PAGE_URL), "the page is https, exactly like the manifest URL");
+    assert.notEqual(UPDATE_PAGE_URL, UPDATE_CHECK_URL, "the page root and the manifest are distinct constants");
+});
+
 test("buildUpdateCheckCommand assembles the documented fixed command", () => {
     assert.equal(
         buildUpdateCheckCommand(),
