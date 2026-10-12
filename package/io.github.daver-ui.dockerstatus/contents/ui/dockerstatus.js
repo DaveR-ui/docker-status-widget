@@ -842,6 +842,15 @@ function formatCountdown(seconds) {
  */
 
 var UPDATE_CHECK_URL = "https://dave-r-ui.github.io/docker-status-widget/latest.json";
+/*
+ * The release page the widget's "an update is available" indicator opens. Fixed
+ * for the same reason UPDATE_CHECK_URL is fixed: a misconfiguration must not be
+ * able to point the widget at another host, and the human-approved reversal of
+ * adr-0013's "not a link" clause (adr-0015) authorises exactly ONE click target
+ * -- this constant, the GitHub Pages site root, never a value from
+ * configuration and never assembled from parts.
+ */
+var UPDATE_PAGE_URL = "https://dave-r-ui.github.io/docker-status-widget/";
 var UPDATE_CHECK_MAX_TIME_SECONDS = 5;
 var UPDATE_CHECK_MARKER = "@dockerstatus-manifest@";
 var UPDATE_CHECK_CURL_BINARY = "curl";

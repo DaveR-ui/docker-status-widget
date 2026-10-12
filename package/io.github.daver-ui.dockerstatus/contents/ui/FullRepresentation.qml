@@ -87,25 +87,18 @@ Item {
     property string composeActionFeedback: ""
     property string composeActionFeedbackSeverity: "muted"
 
-    // Podman Desktop launch. podmanDesktopPath is the RESOLVED path: main.qml resolves
-    // the setting through DockerStatus.resolvePodmanDesktopPath(), whose default is the
-    // plain PATH name "podman-desktop". This file never reads the kcfg entry.
-    property string podmanDesktopPath: ""
-    property bool podmanLaunchInFlight: false
-    property string podmanLaunchFeedback: ""
-    property string podmanLaunchFeedbackSeverity: "muted"
-    // The fourth collapsible section. Like the other section flags, this is local view
-    // state: open by default, never persisted and never signalled.
-    property bool podmanSectionExpanded: true
-
-    // Local view state and nothing else: which of the three collapsible sections
+    // Local view state and nothing else: which of the two collapsible sections
     // have their body open. This is deliberately NOT persisted and NOT routed
     // through a signal -- main.qml still owns every shell and kcfg boundary, and
     // the popup stays a pure consumer of configuration. The one piece of state
-    // that belongs to the popup itself is whether its own sections are open. All
-    // three default to true, so nothing regresses visually until a header is
+    // that belongs to the popup itself is whether its own sections are open.
+    // Both default to true, so nothing regresses visually until a header is
     // tapped, and the header, separator and section identity never collapse.
-    property bool containerSectionExpanded: true
+    //
+    // The containers section has NO collapse state any more: its header row is
+    // gone entirely, so there is no header left to tap and no flag that could
+    // keep a body closed behind a list that is always shown. Only these two
+    // sections remain collapsible.
     property bool downloadSectionExpanded: true
     property bool countdownSectionExpanded: true
 
@@ -136,8 +129,6 @@ Item {
     // and reaches for no data source -- it hands the project back to main.qml.
     signal composeStartRequested(string project)
     signal composeStopRequested(string project)
-    // The Podman Desktop launch takes no argument: main.qml owns the resolved path.
-    signal podmanLaunchRequested()
 
     // The inline field validates through the same pure resolver main.qml uses to size the
     // deadline, so the field, the play gate and the persisted value cannot drift apart.
@@ -444,6 +435,27 @@ Item {
                         font.weight: Font.DemiBold
                     }
 
+                    // Shown ONLY while an update is actually available, so an offline machine, a
+                    // missing curl or an unparseable manifest still renders nothing -- the silence
+                    // contract of adr-0013 is unchanged. A click opens the release page: the widget's
+                    // ONE browser-opening call, authorised by adr-0015 and pinned to the fixed
+                    // DockerStatus.UPDATE_PAGE_URL constant, never to a value from configuration.
+                    PlasmaComponents3.ToolButton {
+                        Layout.alignment: Qt.AlignVCenter
+                        Layout.preferredWidth: 24
+                        Layout.preferredHeight: 24
+                        visible: fullRoot.updateAvailable
+                        icon.name: "emblem-important"
+                        icon.color: Kirigami.Theme.negativeTextColor
+                        display: PlasmaComponents3.AbstractButton.IconOnly
+                        flat: true
+                        onClicked: Qt.openUrlExternally(DockerStatus.UPDATE_PAGE_URL)
+
+                        PlasmaComponents3.ToolTip {
+                            text: i18n("A new version is available. Open the release page.")
+                        }
+                    }
+
                     Item {
                         Layout.fillWidth: true
                     }
@@ -620,99 +632,6 @@ Item {
                 anchors.fill: parent
                 spacing: 0
 
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 0
-
-                    // Single-row header: title and right-side meta on one line, no
-                    // subtitle. The elide guard keeps a long localized title from
-                    // reaching the meta label at the popup's minimum width.
-                    //
-                    // The row is wrapped in a plain Item so tapping the header can
-                    // collapse the section body below it. A layout-managed item must
-                    // not carry anchors -- the file header explains why -- so the
-                    // wrapper, a direct child of this ColumnLayout, takes the
-                    // horizontal insets the RowLayout used to carry as Layout
-                    // margins, and the RowLayout fills the wrapper and keeps its own
-                    // vertical insets as anchor margins. Only the body collapses:
-                    // the header and the separator stay visible either way.
-                    Item {
-                        Layout.fillWidth: true
-                        Layout.leftMargin: 16
-                        Layout.rightMargin: 16
-                        implicitHeight: containersHeaderRow.implicitHeight + 24
-
-                        // The whole header strip is the tap target, including the
-                        // 16px gutters and the vertical padding.
-                        MouseArea {
-                            anchors.fill: parent
-                            onClicked: fullRoot.containerSectionExpanded = !fullRoot.containerSectionExpanded
-                        }
-
-                        RowLayout {
-                            id: containersHeaderRow
-                            anchors.fill: parent
-                            anchors.topMargin: 12
-                            anchors.bottomMargin: 12
-                            spacing: 12
-
-                            PlasmaComponents3.Label {
-                                Layout.fillWidth: true
-                                text: i18n("Containers")
-                                color: paletteTokens.text
-                                elide: Text.ElideRight
-                                font.family: paletteTokens.fontFamily
-                                font.pixelSize: paletteTokens.sectionTitlePixelSize
-                                font.weight: 650
-                            }
-
-                            PlasmaComponents3.Label {
-                                Layout.alignment: Qt.AlignVCenter
-                                text: i18nc("@info", "%1 services", fullRoot.containers.length)
-                                color: paletteTokens.muted
-                                font.family: paletteTokens.fontFamily
-                                font.pixelSize: paletteTokens.subtlePixelSize
-                            }
-
-                            // The open/close affordance. Expanded shows the MINUS
-                            // sign (U+2212) and collapsed shows a plus, so the glyph
-                            // says which way the tap is about to go. Behind the
-                            // crisp copy sits a second, larger, low-opacity copy of
-                            // the SAME glyph as a crude halo: two plain Text items,
-                            // no shader effect and no extra import.
-                            Item {
-                                Layout.alignment: Qt.AlignVCenter
-                                implicitWidth: containersToggleGlow.implicitWidth
-                                implicitHeight: containersToggleGlow.implicitHeight
-
-                                Text {
-                                    id: containersToggleGlow
-                                    anchors.centerIn: parent
-                                    text: fullRoot.containerSectionExpanded ? "−" : "+"
-                                    color: paletteTokens.toggleIndicator
-                                    opacity: 0.3
-                                    font.family: paletteTokens.fontFamily
-                                    font.pixelSize: paletteTokens.toggleIndicatorPixelSize + 5
-                                }
-
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: containersToggleGlow.text
-                                    color: paletteTokens.toggleIndicator
-                                    font.family: paletteTokens.fontFamily
-                                    font.pixelSize: paletteTokens.toggleIndicatorPixelSize
-                                }
-                            }
-                        }
-                    }
-
-                    Rectangle {
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 1
-                        color: paletteTokens.line
-                    }
-                }
-
                 // The grouped list: one collapsible group per compose project, the
                 // standalone bucket last, exactly as DockerStatus.groupContainersByComposeProject()
                 // returns them. The grouping is pure data prep done in the core, so this
@@ -727,10 +646,10 @@ Item {
                     // plus its first rows instead of clipping mid-group.
                     Layout.preferredHeight: Math.min(contentHeight, Kirigami.Units.gridUnit * 13)
                     clip: true
-                    // The collapse gate comes first, and the empty-list rule below it
-                    // is untouched: an empty list still hides the view and shows the
-                    // empty state instead, but only while the section is open.
-                    visible: fullRoot.containerSectionExpanded && fullRoot.containers.length > 0
+                    // An empty list hides the view and shows the empty state below
+                    // instead. With the section header gone there is no collapse gate
+                    // left to read: the list is either there or the empty state is.
+                    visible: fullRoot.containers.length > 0
                     model: DockerStatus.groupContainersByComposeProject(fullRoot.containers)
 
                     delegate: Item {
@@ -777,19 +696,22 @@ Item {
                                     anchors.bottomMargin: 6
                                     spacing: 12
 
-                                    // The group's identity tile, drawn exactly like a
-                                    // container row's tile so a group reads as a grouping
-                                    // of those rows, not as a second kind of card.
+                                    // The group's identity tile: the widget's own
+                                    // bundled box glyph, on the same tile surface a
+                                    // container row uses, so a group reads as a
+                                    // grouping of those rows rather than as a second
+                                    // kind of card. Resolved from the package, never
+                                    // fetched from anywhere.
                                     Rectangle {
-                                        Layout.preferredWidth: 32
-                                        Layout.preferredHeight: 32
+                                        Layout.preferredWidth: 28
+                                        Layout.preferredHeight: 28
                                         Layout.alignment: Qt.AlignVCenter
                                         radius: paletteTokens.tileRadius
                                         color: paletteTokens.iconTileSurface
 
                                         Kirigami.Icon {
                                             anchors.centerIn: parent
-                                            source: fullRoot.containerIconFor(containerGroup.headerTitle)
+                                            source: Qt.resolvedUrl("../icons/dockerstatus.svg")
                                             color: paletteTokens.iconTileText
                                             implicitWidth: 16
                                             implicitHeight: 16
@@ -819,28 +741,22 @@ Item {
                                     // in flight and when every container is already running:
                                     // `docker start` on a fully-running stack is a no-op, so
                                     // the button says so by going inert instead of silently
-                                    // doing nothing.
+                                    // doing nothing. Flat and icon-only: a 28px muted glyph
+                                    // beside the group name, not a second mint slab.
                                     PlasmaComponents3.ToolButton {
                                         id: composeStartButton
-                                        Layout.preferredWidth: 38
-                                        Layout.preferredHeight: 38
+                                        Layout.preferredWidth: 28
+                                        Layout.preferredHeight: 28
                                         Layout.alignment: Qt.AlignVCenter
                                         visible: containerGroup.isComposeGroup
                                         icon.name: "media-playback-start"
-                                        icon.color: paletteTokens.buttonPrimaryText
+                                        icon.color: paletteTokens.iconButtonText
                                         display: PlasmaComponents3.AbstractButton.IconOnly
-                                        flat: false
+                                        flat: true
                                         enabled: !fullRoot.composeActionInFlight
                                             && containerGroup.runningCount !== containerGroup.modelData.containers.length
                                         opacity: enabled ? 1 : 0.38
                                         onClicked: fullRoot.composeStartRequested(containerGroup.modelData.project)
-
-                                        background: Rectangle {
-                                            radius: paletteTokens.iconButtonRadius
-                                            color: composeStartButton.hovered ? paletteTokens.buttonPrimaryHover : paletteTokens.buttonPrimary
-                                            border.width: paletteTokens.appBorderWidth
-                                            border.color: paletteTokens.buttonPrimary
-                                        }
 
                                         PlasmaComponents3.ToolTip {
                                             text: i18nc("@info", "Start %1", containerGroup.modelData.project)
@@ -852,26 +768,18 @@ Item {
                                     // no-op, so the button is disabled rather than live.
                                     PlasmaComponents3.ToolButton {
                                         id: composeStopButton
-                                        Layout.preferredWidth: 38
-                                        Layout.preferredHeight: 38
+                                        Layout.preferredWidth: 28
+                                        Layout.preferredHeight: 28
                                         Layout.alignment: Qt.AlignVCenter
                                         visible: containerGroup.isComposeGroup
                                         icon.name: "media-playback-stop"
-                                        icon.color: paletteTokens.buttonDangerText
+                                        icon.color: paletteTokens.iconButtonText
                                         display: PlasmaComponents3.AbstractButton.IconOnly
-                                        flat: false
+                                        flat: true
                                         enabled: !fullRoot.composeActionInFlight
                                             && containerGroup.runningCount !== 0
                                         opacity: enabled ? 1 : 0.38
                                         onClicked: fullRoot.composeStopRequested(containerGroup.modelData.project)
-                                        Kirigami.Theme.textColor: paletteTokens.buttonDangerText
-
-                                        background: Rectangle {
-                                            radius: paletteTokens.iconButtonRadius
-                                            color: composeStopButton.hovered ? paletteTokens.buttonSurfaceHover : paletteTokens.buttonDanger
-                                            border.width: paletteTokens.appBorderWidth
-                                            border.color: paletteTokens.buttonDangerBorder
-                                        }
 
                                         PlasmaComponents3.ToolTip {
                                             text: i18nc("@info", "Stop %1", containerGroup.modelData.project)
@@ -909,11 +817,11 @@ Item {
                             }
 
                             // The group body: the container rows, unchanged from the old
-                            // flat list. Gated on the group's own flag AND the section's,
-                            // so collapsing the whole section hides every group body too.
+                            // flat list. Gated on the group's own flag alone: the section
+                            // itself has no collapse state left to AND in here.
                             ColumnLayout {
                                 Layout.fillWidth: true
-                                visible: containerGroup.groupOpen && fullRoot.containerSectionExpanded
+                                visible: containerGroup.groupOpen
                                 spacing: 0
 
                                 Repeater {
@@ -1008,9 +916,9 @@ Item {
                 PlasmaComponents3.Label {
                     Layout.fillWidth: true
                     Layout.margins: 20
-                    // Collapsed together with the list above, so an open-empty state
-                    // never survives a collapsed section.
-                    visible: fullRoot.containerSectionExpanded && fullRoot.containers.length === 0
+                    // The counterpart of the list's own gate above: an empty list shows
+                    // the empty state instead, with no section flag to keep it shut.
+                    visible: fullRoot.containers.length === 0
                     text: fullRoot.daemonRunning
                         ? i18n("No containers found.")
                         : i18n("Start the daemon to list containers.")
@@ -1023,15 +931,14 @@ Item {
 
                 // Feedback for a per-project start/stop, in the same shape as the
                 // download row's feedback: a SeverityDot carries the severity and the
-                // label wraps the engine's own message. Collapsed with the section, so a
-                // stale message never survives a closed section.
+                // label wraps the engine's own message.
                 RowLayout {
                     Layout.fillWidth: true
                     Layout.leftMargin: 16
                     Layout.rightMargin: 16
                     Layout.topMargin: 8
                     Layout.bottomMargin: 16
-                    visible: fullRoot.containerSectionExpanded && fullRoot.composeActionFeedback !== ""
+                    visible: fullRoot.composeActionFeedback !== ""
                     spacing: 6
 
                     SeverityDot {
@@ -1046,180 +953,6 @@ Item {
                         wrapMode: Text.WordWrap
                         font.family: paletteTokens.fontFamily
                         font.pixelSize: paletteTokens.subtlePixelSize
-                    }
-                }
-            }
-        }
-
-        // --- Podman Desktop section ------------------------------------------
-        // The fourth collapsible section, in the same card shape and with the same +/-
-        // affordance as the other three. It is deliberately NOT gated on the daemon state
-        // or on containerListEnabled: Podman Desktop is useful precisely when the Docker
-        // daemon is not running. Like every other section, this is a pure consumer -- the
-        // launch signal goes out and main.qml owns the resolved path and the command.
-        Rectangle {
-            Layout.fillWidth: true
-            implicitHeight: podmanBody.implicitHeight
-            radius: paletteTokens.cardRadius
-            border.width: paletteTokens.appBorderWidth
-            border.color: paletteTokens.line
-            color: Qt.rgba(paletteTokens.panelSunken.r, paletteTokens.panelSunken.g, paletteTokens.panelSunken.b, 0.45)
-            clip: true
-
-            ColumnLayout {
-                id: podmanBody
-                anchors.fill: parent
-                spacing: 0
-
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 0
-
-                    // Single-row header, exactly like the containers and download
-                    // sections: the wrapper Item carries the horizontal insets and the
-                    // RowLayout fills it, keeping its vertical insets as anchor margins
-                    // (a layout-managed item must not carry anchors).
-                    Item {
-                        Layout.fillWidth: true
-                        Layout.leftMargin: 16
-                        Layout.rightMargin: 16
-                        implicitHeight: podmanHeaderRow.implicitHeight + 24
-
-                        MouseArea {
-                            anchors.fill: parent
-                            onClicked: fullRoot.podmanSectionExpanded = !fullRoot.podmanSectionExpanded
-                        }
-
-                        RowLayout {
-                            id: podmanHeaderRow
-                            anchors.fill: parent
-                            anchors.topMargin: 12
-                            anchors.bottomMargin: 12
-                            spacing: 12
-
-                            PlasmaComponents3.Label {
-                                Layout.fillWidth: true
-                                text: i18n("Podman Desktop")
-                                color: paletteTokens.text
-                                elide: Text.ElideRight
-                                font.family: paletteTokens.fontFamily
-                                font.pixelSize: paletteTokens.sectionTitlePixelSize
-                                font.weight: 650
-                            }
-
-                            // The open/close affordance, identical to the other three
-                            // sections' headers: MINUS (U+2212) when open, plus when
-                            // collapsed, with a larger low-opacity copy of the same glyph
-                            // behind it as a crude halo.
-                            Item {
-                                Layout.alignment: Qt.AlignVCenter
-                                implicitWidth: podmanToggleGlow.implicitWidth
-                                implicitHeight: podmanToggleGlow.implicitHeight
-
-                                Text {
-                                    id: podmanToggleGlow
-                                    anchors.centerIn: parent
-                                    text: fullRoot.podmanSectionExpanded ? "−" : "+"
-                                    color: paletteTokens.toggleIndicator
-                                    opacity: 0.3
-                                    font.family: paletteTokens.fontFamily
-                                    font.pixelSize: paletteTokens.toggleIndicatorPixelSize + 5
-                                }
-
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: podmanToggleGlow.text
-                                    color: paletteTokens.toggleIndicator
-                                    font.family: paletteTokens.fontFamily
-                                    font.pixelSize: paletteTokens.toggleIndicatorPixelSize
-                                }
-                            }
-                        }
-                    }
-
-                    Rectangle {
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 1
-                        color: paletteTokens.line
-                    }
-                }
-
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    Layout.margins: 16
-                    visible: fullRoot.podmanSectionExpanded
-                    spacing: 8
-
-                    PlasmaComponents3.Button {
-                        id: podmanLaunchButton
-                        Layout.fillWidth: true
-                        icon.name: "system-run"
-                        icon.color: paletteTokens.buttonPrimaryText
-                        // Space between the left border and the content, matching the 12px
-                        // padding the text fields already carry.
-                        leftPadding: 12
-                        text: fullRoot.podmanLaunchInFlight
-                            ? i18n("Opening…")
-                            : i18n("Open Podman Desktop")
-                        enabled: !fullRoot.podmanLaunchInFlight
-                        opacity: enabled ? 1 : 0.38
-                        onClicked: fullRoot.podmanLaunchRequested()
-                        Kirigami.Theme.textColor: paletteTokens.buttonPrimaryText
-
-                        background: Rectangle {
-                            color: podmanLaunchButton.hovered ? paletteTokens.buttonPrimaryHover : paletteTokens.buttonPrimary
-                            radius: paletteTokens.controlRadius
-                            border.width: paletteTokens.appBorderWidth
-                            border.color: paletteTokens.buttonPrimary
-                        }
-
-                        PlasmaComponents3.ToolTip {
-                            text: i18n("Open Podman Desktop")
-                        }
-                    }
-
-                    // The resolved executable the launch will use, so a wrong setting is
-                    // visible before the click rather than only in the failure line.
-                    PlasmaComponents3.Label {
-                        Layout.fillWidth: true
-                        text: i18nc("@info", "Launching: %1", fullRoot.podmanDesktopPath)
-                        color: paletteTokens.muted
-                        font.family: paletteTokens.fontFamily
-                        font.pixelSize: paletteTokens.subtlePixelSize
-                    }
-
-                    // Where the path comes from: the widget's own options. A plain name is
-                    // looked up on PATH; a full path is the escape hatch for a machine
-                    // where it is installed elsewhere.
-                    PlasmaComponents3.Label {
-                        Layout.fillWidth: true
-                        text: i18n("Set the binary in the widget's options. A plain name is looked up on PATH; use a full path when it is installed elsewhere.")
-                        color: paletteTokens.muted
-                        wrapMode: Text.WordWrap
-                        font.family: paletteTokens.fontFamily
-                        font.pixelSize: paletteTokens.subtlePixelSize
-                    }
-
-                    // The dot carries the severity, exactly as in the other feedback rows:
-                    // no second severity-to-colour switch is allowed to exist.
-                    RowLayout {
-                        Layout.fillWidth: true
-                        visible: fullRoot.podmanLaunchFeedback !== ""
-                        spacing: 6
-
-                        SeverityDot {
-                            Layout.alignment: Qt.AlignVCenter
-                            severity: fullRoot.podmanLaunchFeedbackSeverity
-                        }
-
-                        PlasmaComponents3.Label {
-                            Layout.fillWidth: true
-                            text: fullRoot.podmanLaunchFeedback
-                            color: paletteTokens.text
-                            wrapMode: Text.WordWrap
-                            font.family: paletteTokens.fontFamily
-                            font.pixelSize: paletteTokens.subtlePixelSize
-                        }
                     }
                 }
             }
@@ -1780,11 +1513,13 @@ Item {
         }
 
         // --- Update notice ---------------------------------------------------
-        // Shown ONLY when an update is actually available (visible: fullRoot.updateAvailable),
-        // so an offline machine, a missing curl or an unparseable manifest renders nothing at
-        // all -- this line is the feature's entire footprint. It reuses the tagline's muted,
-        // centred style and is deliberately NOT a button and NOT a SeverityDot: it is neither a
-        // health state nor a link, and the widget opens no browser.
+        // Shown ONLY when an update is actually available, on the same
+        // fullRoot.updateAvailable gate the indicator above reads, so an offline machine, a
+        // missing curl or an unparseable manifest renders nothing at all -- this line is the
+        // feature's entire footprint. It reuses the tagline's muted, centred style and is
+        // deliberately NOT a button and NOT a SeverityDot: it is neither a health state nor a
+        // link. The one click target this file owns is the indicator beside the daemon status
+        // above, and it is pinned to the fixed release-page constant.
         PlasmaComponents3.Label {
             Layout.fillWidth: true
             text: fullRoot.updateFeedback

@@ -57,13 +57,25 @@ re-litigated from the code alone does not need a record either — only the *why
   goal), with the command assembled entirely from constants so it mints no third command-building exception;
   `metadata.json` stays the single source of version truth through `sync-manifest.mjs`; CI gates on `test` +
   `qmllint` + `docs` while Playwright stays non-gating; and `site/` and `.github/` are documented in the
-  Repository Structure because the sixth-slice question is left to the human.
+  Repository Structure because the sixth-slice question is left to the human. Its "not a link" clause is
+  superseded by [[adr-0015-update-indicator-opens-the-release-page]]; the rest still stands.
 - [[adr-0014-compose-grouping-and-podman-desktop-launch]] — containers group by the
   `com.docker.compose.project` label (the no-project bucket is a group like any other), a per-project
   play/stop runs a label-filtered `docker start|stop` as a new container-level mutation, and the Podman
   Desktop path is one validated setting quoted into a fixed command; it is the container-level exception
   [[adr-0006-video-downloader-command-boundary]] reserved a record for, and the polkit grant stays at
-  `["start"]`.
+  `["start"]`. Its Podman Desktop UI-section clause is superseded by
+  [[adr-0016-containers-flat-rows-and-podman-section-removal]]; the compose boundary and the retained
+  backing logic still stand.
+- [[adr-0015-update-indicator-opens-the-release-page]] — an exclamation-mark indicator beside the daemon
+  status, shown only while an update exists, whose single click opens the widget's fixed Pages URL; it
+  supersedes only [[adr-0013-widget-update-check-and-release-site]]'s "not a link / opens no browser"
+  clause, and the silence contract, the fixed-URL rule and every other clause still stand.
+- [[adr-0016-containers-flat-rows-and-podman-section-removal]] — the Containers header row and its
+  `containerSectionExpanded` flag are deleted, group rows go flat with the bundled box glyph and small flat
+  play/stop controls, and the Podman Desktop section is removed while its builders, kcfg entry and tests are
+  retained; it supersedes [[adr-0014-compose-grouping-and-podman-desktop-launch]]'s UI-section clause, and the
+  compose boundary still stands.
 
 ## Elsewhere
 

@@ -51,6 +51,7 @@ const {
     SEVERITY_NEGATIVE,
     SEVERITY_MUTED,
     UPDATE_CHECK_URL,
+    UPDATE_PAGE_URL,
     UPDATE_CHECK_MAX_TIME_SECONDS,
     UPDATE_CHECK_MARKER,
     UPDATE_CHECK_CURL_BINARY,
@@ -2350,17 +2351,9 @@ const paletteQml = readFileSync(paletteQmlUrl, "utf8");
 // countdown's three conditional cues fold their own rule in, so their pinned
 // expressions appear with the flag first and the cue's own condition second --
 // except the invalid cue, which keeps the leading test a separate pin below.
-// The Podman section is a fourth top-level card with the same shape.
+// The containers section is NOT here: its header row is gone entirely
+// (adr-0016), so it owns no collapse state and no separator any more.
 const COLLAPSIBLE_SECTIONS = [
-    {
-        flag: "containerSectionExpanded",
-        row: "containersHeaderRow",
-        headerToggle: "fullRoot.containerSectionExpanded = !fullRoot.containerSectionExpanded",
-        gates: [
-            "visible: fullRoot.containerSectionExpanded && fullRoot.containers.length > 0",
-            "visible: fullRoot.containerSectionExpanded && fullRoot.containers.length === 0",
-        ],
-    },
     {
         flag: "downloadSectionExpanded",
         row: "downloadHeaderRow",
@@ -2384,14 +2377,6 @@ const COLLAPSIBLE_SECTIONS = [
             "visible: fullRoot.shutdownPending",
         ],
     },
-    {
-        flag: "podmanSectionExpanded",
-        row: "podmanHeaderRow",
-        headerToggle: "fullRoot.podmanSectionExpanded = !fullRoot.podmanSectionExpanded",
-        gates: [
-            "visible: fullRoot.podmanSectionExpanded",
-        ],
-    },
 ];
 
 test("each collapsible section declares its own local view state, open by default", () => {
@@ -2405,7 +2390,9 @@ test("each collapsible section declares its own local view state, open by defaul
 
     // Local view state only: no signal is minted for it, and the one write each
     // flag ever receives is its own header flipping itself -- nothing else, and in
-    // particular nothing in main.qml, may assign it.
+    // particular nothing in main.qml, may assign it. The comment above the array
+    // explains why the containers section is absent: with its header row gone
+    // (adr-0016) there is no collapse state left to own.
     for (const section of COLLAPSIBLE_SECTIONS) {
         assert.ok(
             !fullQml.includes(`signal ${section.flag}`),
@@ -2442,7 +2429,7 @@ test("tapping a section header toggles that section, and only that section", () 
 
     // Each flag drives a distinct header: one handler body per section.
     const toggles = COLLAPSIBLE_SECTIONS.filter((section) => fullQml.includes(section.headerToggle));
-    assert.equal(toggles.length, 4, "all four headers must be tappable");
+    assert.equal(toggles.length, 2, "both remaining headers must be tappable");
 });
 
 test("each collapsible section hides its body, never its header or separator", () => {
@@ -2463,10 +2450,10 @@ test("each collapsible section hides its body, never its header or separator", (
         "the status card's action row must not be gated on any collapse flag",
     );
 
-    // The separator Rectangles are untouched -- but only three of the four headers
-    // have one: the countdown header deliberately has none, which is why the
+    // The separator Rectangles are untouched -- but only one of the two remaining
+    // headers has one: the countdown header deliberately has none, which is why the
     // affordance rather than a hairline closes it off.
-    for (const flag of ["containerSectionExpanded", "downloadSectionExpanded", "podmanSectionExpanded"]) {
+    for (const flag of ["downloadSectionExpanded"]) {
         const row = COLLAPSIBLE_SECTIONS.find((section) => section.flag === flag).row;
         assert.ok(
             new RegExp(`id: ${row}[\\s\\S]{0,4000}Rectangle \\{\\s*Layout.fillWidth: true\\s*Layout.preferredHeight: 1`)
@@ -2569,20 +2556,16 @@ test("the +/- indicator is a neon yellow token, bigger than body text, with a ha
     );
 
     // U+2212 MINUS SIGN when open, "+" when collapsed -- not an ASCII hyphen,
-    // whose stroke weight and width do not match the plus it stands beside. Five
-    // headers carry the pair now: the four section headers (Containers, Import
-    // content, Countdown to Extinction, Podman Desktop) plus the per-compose-group
-    // header inside the containers list. The exact count is pinned -- rather than a
-    // ">= 3" floor -- so a sixth header added later fails loudly here instead of
+    // whose stroke weight and width do not match the plus it stands beside. Three
+    // headers carry the pair now: the two remaining section headers (Import
+    // content, Countdown to Extinction) plus the per-compose-group header inside
+    // the containers list. The exact count is pinned -- rather than a ">= 3"
+    // floor -- so a fourth header added later fails loudly here instead of
     // silently expanding the affordance's surface.
     const glyph = `? "\u2212" : "+"`;
 
     // Each header is anchored by its own state expression, so a regression that
     // rewired one header's glyph to the wrong flag still fails below.
-    assert.ok(
-        fullQml.includes(`fullRoot.containerSectionExpanded ${glyph}`),
-        "the Containers header must render the +/- glyph pair",
-    );
     assert.ok(
         fullQml.includes(`fullRoot.downloadSectionExpanded ${glyph}`),
         "the Import content header must render the +/- glyph pair",
@@ -2592,40 +2575,36 @@ test("the +/- indicator is a neon yellow token, bigger than body text, with a ha
         "the Countdown header must render the +/- glyph pair off effective visibility",
     );
     assert.ok(
-        fullQml.includes(`fullRoot.podmanSectionExpanded ${glyph}`),
-        "the Podman Desktop header must render the +/- glyph pair",
-    );
-    assert.ok(
         fullQml.includes(`containerGroup.groupOpen ${glyph}`),
         "the per-compose-group header must render the +/- glyph pair",
     );
 
     assert.equal(
         fullQml.split(glyph).length - 1,
-        5,
-        "exactly five headers may carry the +/- glyph pair: the four sections and the group header",
+        3,
+        "exactly three headers may carry the +/- glyph pair: the two sections and the group header",
     );
 
     // Every indicator reads the palette: no colour hex at any call site. Each of the
-    // five headers draws a crisp copy and a larger halo copy, so each token is read
-    // ten times. The exact counts are pinned so a sixth header cannot slip in.
+    // three headers draws a crisp copy and a larger halo copy, so each token is read
+    // six times. The exact counts are pinned so a fourth header cannot slip in.
     assert.equal(
         (fullQml.match(/paletteTokens\.toggleIndicator(?!PixelSize)/g) || []).length,
-        10,
-        "the crisp glyph and its halo must both read the palette colour token, across all five headers",
+        6,
+        "the crisp glyph and its halo must both read the palette colour token, across all three headers",
     );
     assert.equal(
         (fullQml.match(/paletteTokens\.toggleIndicatorPixelSize/g) || []).length,
-        10,
-        "the crisp glyph and its halo must both read the pixel size token, across all five headers",
+        6,
+        "the crisp glyph and its halo must both read the pixel size token, across all three headers",
     );
 
     // The halo is a second, larger, low-opacity copy of the SAME glyph: plain
     // Text, no shader effect and no extra import.
     assert.equal(
         fullQml.split("opacity: 0.3").length - 1,
-        5,
-        "each of the five headers' halos is a low-opacity copy of the same glyph",
+        3,
+        "each of the three headers' halos is a low-opacity copy of the same glyph",
     );
 
     // The decorative arrow glyph is gone: the affordance replaced it.
@@ -2684,11 +2663,16 @@ test("FullRepresentation.qml gives each compose group its own local collapse sta
         "the group collapse state is assigned by its own header and nothing else",
     );
 
-    // A collapsed SECTION must hide every group body, not just its own: the body reads
-    // the group flag AND the section flag.
+    // The group's OWN flag is the only collapse state the body reads: the section
+    // flag it used to be ANDed with is gone with the header row (adr-0016), so a
+    // collapsed section can no longer hide a group body.
     assert.ok(
-        fullQml.includes("visible: containerGroup.groupOpen && fullRoot.containerSectionExpanded"),
-        "the group body must be gated on both its own flag and the section's",
+        fullQml.includes("visible: containerGroup.groupOpen"),
+        "the group body must be gated on its own flag, with no section flag left to AND in",
+    );
+    assert.ok(
+        !fullQml.includes("visible: containerGroup.groupOpen && fullRoot.containerSectionExpanded"),
+        "the removed section flag must not survive in the group body's gate",
     );
 });
 
@@ -2767,7 +2751,7 @@ test("the group body reuses the original container-row markup", () => {
     // The 32x32 glyph tile, as in the mockup, lives inside the group body.
     const groupBody = fullQml.slice(
         fullQml.indexOf("property bool groupOpen: true"),
-        fullQml.indexOf("// --- Podman Desktop section"),
+        fullQml.indexOf("// --- Video download section"),
     );
     assert.ok(
         groupBody.includes("Layout.preferredWidth: 32") && groupBody.includes("Layout.preferredHeight: 32"),
@@ -2777,81 +2761,67 @@ test("the group body reuses the original container-row markup", () => {
 
 /*
  * ---------------------------------------------------------------------------
- * Podman Desktop launch, pinned in FullRepresentation.qml
+ * The flat containers section, pinned in FullRepresentation.qml
  * ---------------------------------------------------------------------------
- * The launch is the one command whose first word is a configured value; the popup only
- * renders the resolved path and emits a request, exactly like every other section. The
- * section is deliberately NOT gated on the daemon or the container-list setting --
- * Podman Desktop is most useful when the Docker daemon is down -- and the command is
- * built in main.qml through the pure builder, never here. Pinned as text because each
- * rule compiles and renders when it is dropped.
+ * The human operator asked for the containers list as a flat row list with a Docker
+ * glyph, small right-aligned action icons and no section header (adr-0016). Every
+ * piece of that compiles and renders when it is dropped -- a resurrected header is
+ * exactly the kind of silent re-addition the pins exist to catch -- so the absence
+ * is pinned as text alongside the two visible gates that replaced it.
  */
 
-test("FullRepresentation.qml adds the Podman card in the same shape, ungated", () => {
+test("the containers section is a flat list: no header, no section flag, a Docker glyph", () => {
+    assert.ok(!fullQml.includes('i18n("Containers")'), "the Containers title row is gone (adr-0016)");
+    assert.ok(!fullQml.includes("%1 services"), "the N services meta row went with the header");
+    assert.ok(!fullQml.includes("containerSectionExpanded"), "no section flag is left with no header to tap it");
+    assert.ok(!fullQml.includes("containersHeaderRow"), "the header RowLayout is gone");
+    assert.ok(fullQml.includes("visible: fullRoot.containers.length > 0"), "the list shows whenever there are containers");
+    assert.ok(fullQml.includes("visible: fullRoot.containers.length === 0"), "the empty state shows whenever there are none");
     assert.ok(
-        fullQml.indexOf("// --- Podman Desktop section") > fullQml.indexOf("// --- Container section"),
-        "the Podman card must follow the containers section",
+        fullQml.includes('source: Qt.resolvedUrl("../icons/dockerstatus.svg")'),
+        "the group tile draws the bundled Docker box glyph",
     );
-
-    const podmanSection = fullQml.slice(
-        fullQml.indexOf("// --- Podman Desktop section"),
-        fullQml.indexOf("// --- Video download section"),
-    );
-    const podmanCode = stripQmlComments(podmanSection);
-
-    assert.ok(
-        podmanCode.includes("implicitHeight: podmanBody.implicitHeight"),
-        "the Podman section must be a card in the same shape as the others",
-    );
-
-    // NOT gated on the daemon state or the container-list setting: the whole point is to
-    // launch Podman Desktop when the Docker daemon is down.
-    assert.ok(!podmanCode.includes("daemonRunning"), "the Podman card must not be gated on the daemon state");
-    assert.ok(
-        !podmanCode.includes("containerListEnabled"),
-        "the Podman card must not be gated on the container-list setting",
-    );
-
-    // The card's own property block carries no `visible:`; the only visibility it owns is
-    // its body's collapse gate and the feedback row's emptiness gate.
-    const cardHeader = podmanCode.slice(0, podmanCode.indexOf("ColumnLayout {"));
-    assert.ok(!cardHeader.includes("visible:"), "the Podman card itself must carry no visible gate");
     assert.equal(
-        podmanCode.split("visible: fullRoot.podmanSectionExpanded").length - 1,
+        fullQml.split('Qt.resolvedUrl("../icons/dockerstatus.svg")').length - 1,
         1,
-        "the Podman body collapses on its own section flag",
-    );
-
-    // No colour hex at the new call sites, and no second severity-to-colour mapping.
-    assert.ok(
-        !/#[0-9A-Fa-f]{6}/.test(podmanCode),
-        "the Podman call sites must read the palette, never a colour hex",
-    );
-    assert.ok(
-        podmanCode.includes("severity: fullRoot.podmanLaunchFeedbackSeverity"),
-        "the Podman feedback must reuse SeverityDot, not a second mapping",
+        "exactly one bundled-glyph call site, on the group tile",
     );
 });
 
-test("FullRepresentation.qml wires the Podman launch control to the resolved path", () => {
-    assert.ok(fullQml.includes("signal podmanLaunchRequested()"), "the launch needs its outbound signal");
-    assert.ok(fullQml.includes("onClicked: fullRoot.podmanLaunchRequested()"), "the button must emit that signal");
-    assert.ok(
-        fullQml.includes("enabled: !fullRoot.podmanLaunchInFlight"),
-        "the launch must be disabled while one is in flight",
+/*
+ * Why this test exists. The compose play/stop were 38x38 ToolButtons carrying
+ * overridden `background` Rectangles in the daemon action's mint and pink, which
+ * the human operator flagged as disproportionate and off-centre next to the group
+ * name (adr-0016). They are now 28x28 flat icon-only buttons with muted glyphs.
+ * Pinned as the REMOVAL of the old surface plus the new size, not as a size ceiling
+ * on everything: the refresh button and the download row keep their own dimensions.
+ */
+test("the compose controls are small flat icon buttons, not the 38px surfaces", () => {
+    const region = fullQml.slice(
+        fullQml.indexOf("// --- Container section"),
+        fullQml.indexOf("// --- Video download section"),
     );
-    assert.ok(
-        fullQml.includes('i18nc("@info", "Launching: %1", fullRoot.podmanDesktopPath)'),
-        "the resolved-path line must read the property main.qml resolves",
+    assert.equal(
+        region.split("Layout.preferredWidth: 28").length - 1,
+        3,
+        "the tile, the play and the stop are the three 28px items of the group header",
     );
-    assert.ok(
-        fullQml.includes("severity: fullRoot.podmanLaunchFeedbackSeverity"),
-        "the feedback row must carry the severity main.qml computed",
-    );
+    assert.ok(!region.includes("flat: false"), "no chunky button surface remains in the containers section");
+    assert.ok(!region.includes("paletteTokens.buttonPrimaryHover"), "the mint compose background is gone");
+    assert.ok(!region.includes("paletteTokens.buttonDanger"), "the pink compose background is gone");
+});
 
-    // The popup stays a pure consumer: the resolved path arrives as a property, never
-    // from configuration here.
-    assert.ok(!fullQml.includes("Plasmoid.configuration"), "the popup must not read configuration");
+/*
+ * The Podman Desktop section was removed at the human operator's request
+ * (adr-0016): the card, its launch signal and its properties are all gone. The
+ * backing logic is retained -- the pure builders, the podmanDesktopPath kcfg
+ * entry, the ConfigGeneral setting and their unit tests all still exist -- only
+ * the popup surface was removed. Pinned as text because a resurrected card is
+ * exactly the kind of silent re-addition these pins exist to catch.
+ */
+test("FullRepresentation.qml no longer renders the Podman Desktop section", () => {
+    assert.ok(!/\bpodman\b/i.test(fullQml), "no Podman reference may survive in the popup");
+    assert.ok(!fullQml.includes("signal podmanLaunchRequested()"), "the launch signal is gone with the card");
 });
 
 /*
@@ -2874,35 +2844,32 @@ test("main.qml carries the labelled compose probe exactly", () => {
     );
 });
 
-test("main.qml declares the two new one-shot sources and their handlers", () => {
+test("main.qml declares the compose one-shot source and its handler", () => {
     const blocks = mainQml.split("P5Support.DataSource {");
     const compose = blocks.find((block) => block.includes("id: composeAction"));
-    const podman = blocks.find((block) => block.includes("id: podmanLaunch"));
 
     assert.ok(compose, "main.qml must declare the composeAction source");
-    assert.ok(podman, "main.qml must declare the podmanLaunch source");
 
-    for (const [name, source] of [["composeAction", compose], ["podmanLaunch", podman]]) {
-        assert.ok(source.includes("interval: 0"), `${name} must be a one-shot`);
-        assert.ok(source.includes("connectedSources: []"), `${name} must start disconnected`);
-        assert.ok(source.includes('Number(data["exit code"])'), `${name} must read the exit code as a number`);
-        assert.ok(
-            source.includes('DockerStatus.normalizeOutput(data["stderr"])'),
-            `${name} must surface stderr verbatim on a failure`,
-        );
-    }
+    assert.ok(compose.includes("interval: 0"), "composeAction must be a one-shot");
+    assert.ok(compose.includes("connectedSources: []"), "composeAction must start disconnected");
+    assert.ok(compose.includes('Number(data["exit code"])'), "composeAction must read the exit code as a number");
+    assert.ok(
+        compose.includes('DockerStatus.normalizeOutput(data["stderr"])'),
+        "composeAction must surface stderr verbatim on a failure",
+    );
 
-    // Each handler clears its own in-flight flag and clears the feedback on success.
+    // The removed launch section took its one-shot source with it (adr-0016).
+    assert.ok(!blocks.some((block) => block.includes("id: podmanLaunch")), "the podmanLaunch source is gone with the UI section");
+
+    // The handler clears its own in-flight flag and clears the feedback on success.
     assert.ok(compose.includes("root.composeActionInFlight = false;"), compose);
     assert.ok(compose.includes('root.composeActionFeedback = "";'), compose);
-    assert.ok(podman.includes("root.podmanLaunchInFlight = false;"), podman);
-    assert.ok(podman.includes('root.podmanLaunchFeedback = "";'), podman);
 });
 
 test("main.qml refuses the standalone bucket before it burns a run token", () => {
     const fnStart = mainQml.indexOf("function runComposeProject(project, action)");
     assert.ok(fnStart >= 0, "main.qml must define runComposeProject");
-    const fn = mainQml.slice(fnStart, mainQml.indexOf("function launchPodmanDesktop()", fnStart));
+    const fn = mainQml.slice(fnStart, mainQml.indexOf("function downloadVideo(url)", fnStart));
 
     assert.ok(
         fn.includes("project === null || project === undefined || project === DockerStatus.COMPOSE_PROJECT_STANDALONE"),
@@ -2918,19 +2885,15 @@ test("main.qml refuses the standalone bucket before it burns a run token", () =>
     );
 });
 
-test("main.qml builds the two new commands only through the pure builders", () => {
+test("main.qml builds the compose command only through the pure builder", () => {
     assert.ok(
         mainQml.includes("DockerStatus.buildComposeProjectCommand("),
         "the compose command must come from the pure builder",
     );
-    assert.ok(
-        mainQml.includes("DockerStatus.buildPodmanDesktopCommand("),
-        "the Podman command must come from the pure builder",
-    );
 
     // The compose command is builder output, never assembled here. The probe's fixed
     // `docker ps -a --format ...` is the one sanctioned docker literal in this file, so
-    // the ban is on the compose/launch fragments rather than on `docker ps` itself.
+    // the ban is on the compose fragments rather than on `docker ps` itself.
     const code = stripQmlComments(mainQml);
     assert.ok(!code.includes("docker start"), "no literal `docker start` may be assembled in QML");
     assert.ok(!code.includes("docker stop"), "no literal `docker stop` may be assembled in QML");
@@ -2942,28 +2905,17 @@ test("main.qml builds the two new commands only through the pure builders", () =
     );
 });
 
-test("main.qml resolves the Podman path but launches from the raw setting", () => {
-    assert.ok(
-        mainQml.includes(
-            "readonly property string podmanDesktopPath: "
-                + "DockerStatus.resolvePodmanDesktopPath(Plasmoid.configuration.podmanDesktopPath, root.homeDirectory)",
-        ),
-        "the displayed path must be the resolver's answer",
-    );
-
-    // The launch passes the RAW setting to the builder: the builder, not the resolved
-    // property, is what actually runs, so the value cannot drift from what it validates.
-    assert.ok(
-        mainQml.includes("path: Plasmoid.configuration.podmanDesktopPath,"),
-        "the launch must hand the builder the raw setting",
-    );
-    assert.ok(
-        !mainQml.includes("path: root.podmanDesktopPath"),
-        "the launch must not pass the resolved property to the builder",
-    );
+test("main.qml carries no Podman wiring at all", () => {
+    // The removed section took its one-shot source, its launcher and its state
+    // with it (adr-0016); the pure builder and the kcfg entry stay, but main.qml
+    // has nothing left to wire them to.
+    assert.ok(!mainQml.includes("podmanLaunch"), "the podmanLaunch source is gone");
+    assert.ok(!mainQml.includes("launchPodmanDesktop"), "the launcher function is gone");
+    assert.ok(!mainQml.includes("podmanLaunchInFlight"), "the in-flight state is gone");
+    assert.ok(!mainQml.includes("podmanDesktopPath"), "the resolved-path property is gone with the display line");
 });
 
-test("main.qml forwards the compose and Podman state into the popup", () => {
+test("main.qml forwards the compose state into the popup", () => {
     const blockStart = mainQml.indexOf("fullRepresentation: FullRepresentation {");
     assert.ok(blockStart >= 0, "main.qml must define the full representation");
     const block = mainQml.slice(blockStart);
@@ -2974,10 +2926,6 @@ test("main.qml forwards the compose and Podman state into the popup", () => {
         "composeActionKind: root.composeActionKind",
         "composeActionFeedback: root.composeActionFeedback",
         "composeActionFeedbackSeverity: root.composeActionFeedbackSeverity",
-        "podmanDesktopPath: root.podmanDesktopPath",
-        "podmanLaunchInFlight: root.podmanLaunchInFlight",
-        "podmanLaunchFeedback: root.podmanLaunchFeedback",
-        "podmanLaunchFeedbackSeverity: root.podmanLaunchFeedbackSeverity",
     ]) {
         assert.ok(block.includes(forwarding), `the popup must receive ${forwarding}`);
     }
@@ -2985,10 +2933,13 @@ test("main.qml forwards the compose and Podman state into the popup", () => {
     for (const handler of [
         "onComposeStartRequested: (project) => root.startComposeProject(project)",
         "onComposeStopRequested: (project) => root.stopComposeProject(project)",
-        "onPodmanLaunchRequested: root.launchPodmanDesktop()",
     ]) {
         assert.ok(block.includes(handler), `the popup must wire ${handler}`);
     }
+
+    // The removed launch section took its display line and its signal with it.
+    assert.ok(!block.includes("onPodmanLaunchRequested"), "no Podman handler may be wired");
+    assert.ok(!block.includes("podman"), "the popup must receive no Podman state");
 });
 
 test("main.qml's source-count comment stays consistent with the new sources", () => {
@@ -2999,16 +2950,16 @@ test("main.qml's source-count comment stays consistent with the new sources", ()
         mainQml.indexOf("P5Support.DataSource {", commentStart),
     );
 
-    assert.ok(comment.includes("tenth and eleventh"), comment);
-    assert.ok(comment.includes("nine before them"), comment);
+    assert.ok(comment.includes("ninth and tenth"), comment);
+    assert.ok(comment.includes("eight before them"), comment);
     assert.ok(comment.includes("composeAction"), comment);
-    assert.ok(comment.includes("podmanLaunch"), comment);
+    assert.ok(!comment.includes("podmanLaunch"), "the removed launch source must not be counted any more");
 
-    // The comment is only honest if the file really declares eleven sources.
+    // The comment is only honest if the file really declares ten sources.
     assert.equal(
         mainQml.split("P5Support.DataSource {").length - 1,
-        11,
-        "main.qml must declare eleven data sources, as its own comment says",
+        10,
+        "main.qml must declare ten data sources, as its own comment says",
     );
 });
 
@@ -3192,8 +3143,9 @@ test("FullRepresentation.qml carries the visible-guarded update line and its sig
     assert.ok(fullQml.includes('property string updateFeedback: ""'));
     assert.ok(fullQml.includes("signal updateCheckRequested()"));
 
-    // It is a Label, not a button, and it opens no browser.
-    assert.ok(!fullQml.includes("openUrl"), "the widget opens no browser");
+    // It is a Label, not a button. adr-0015 reverses adr-0013's "not a link" clause
+    // for exactly ONE fixed target: the indicator beside the daemon status opens the
+    // constant, and the muted version line itself stays a non-clickable label.
     const updateLine = fullQml
         .split("PlasmaComponents3.Label {")
         .find((block) => block.includes("text: fullRoot.updateFeedback"));
@@ -3205,6 +3157,25 @@ test("FullRepresentation.qml carries the visible-guarded update line and its sig
         "the line must render nothing when no update is available",
     );
     assert.ok(!lineBody.includes("onClicked"), "the update line must not be a button");
+
+    assert.ok(
+        fullQml.includes("onClicked: Qt.openUrlExternally(DockerStatus.UPDATE_PAGE_URL)"),
+        "the indicator must open the fixed release-page constant",
+    );
+    assert.equal(
+        fullQml.split("Qt.openUrlExternally(").length - 1,
+        1,
+        "exactly one browser-opening call exists in the popup",
+    );
+    assert.ok(
+        !/Qt\.openUrlExternally\((?!DockerStatus\.UPDATE_PAGE_URL)/.test(fullQml),
+        "no URL other than the fixed constant may be opened",
+    );
+    assert.equal(
+        fullQml.split("visible: fullRoot.updateAvailable").length - 1,
+        2,
+        "the indicator and the muted line share the same silence gate",
+    );
 });
 
 test("main.xml declares the update-check interval as an Int defaulting to 6", () => {
