@@ -1,5 +1,5 @@
 ---
-last_updated: 2026-10-11
+last_updated: 2026-10-12
 status: active
 description: Agent-facing entry point for the Docker Status plasmoid — stack, slices, commands, conventions, vocabulary and symptom routing.
 tags: [project, entry-point, routing, slices]
@@ -23,9 +23,10 @@ perform are `systemctl start docker.service`, passwordless through a deliberatel
 grant; `systemctl stop docker.service`, which is deliberately not covered by that grant and so goes
 through polkit's interactive password prompt; and `systemctl poweroff`, which runs only when a
 widget-owned countdown expires and, unlike the stop, does not prompt. Containers are grouped by their
-Docker Compose project, each group carrying its own play/stop controls, and a configurable Podman
-Desktop button launches a path that configuration supplies
-([[adr-0014-compose-grouping-and-podman-desktop-launch]]).
+Docker Compose project, each group carrying its own play/stop controls; the Podman Desktop path
+setting and its command builder remain in the core and config
+([[adr-0014-compose-grouping-and-podman-desktop-launch]]), although the popup section that launched it
+was removed ([[adr-0016-containers-flat-rows-and-podman-section-removal]]).
 
 Anti-goals, stated so nobody adds them by accident: no stop on a single click — stopping the daemon is
 destructive to every running container, so the stop button arms on the first click and runs on the
@@ -110,7 +111,7 @@ package/io.github.daver-ui.dockerstatus/      the plasmoid KPackage — what Pla
     └── ui/
         ├── main.qml                  PlasmoidItem: fixed commands, polling, actions, download wiring, update check, state
         ├── CompactRepresentation.qml panel: icon + severity dot
-        ├── FullRepresentation.qml    popup/desktop: state, list, start/stop action row, feedback, download row, shutdown countdown, update line, tagline
+        ├── FullRepresentation.qml    popup/desktop: state, list, start/stop action row, feedback, download row, shutdown countdown, update indicator + line, tagline
         ├── SeverityDot.qml           the single severity -> palette colour mapping
         ├── DockerStatusPalette.qml   the mockup's fixed dark palette and type scale (neutral chrome tokens)
         ├── dockerstatus.js           pure logic, no QML types, unit tested
@@ -138,7 +139,9 @@ docs/                                 this corpus — entry: readme.md, routing:
   configuration values with every interpolated value shell-quoted
   ([[adr-0006-video-downloader-command-boundary]]), and the compose project play/stop and Podman
   Desktop launch, built in `dockerstatus.js` from a docker-reported project label and a validated
-  executable path respectively ([[adr-0014-compose-grouping-and-podman-desktop-launch]]). No other
+  executable path respectively ([[adr-0014-compose-grouping-and-podman-desktop-launch]]); the Podman
+  Desktop builder is retained but has no QML caller since the popup section that launched it was
+  removed ([[adr-0016-containers-flat-rows-and-podman-section-removal]]). No other
   configuration value is a command; everywhere else configuration supplies only values inside a command
   the widget builds. The update-check command is also built in `dockerstatus.js`, but entirely from
   fixed constants, so it is deliberately not a third boundary
@@ -177,7 +180,9 @@ docs/                                 this corpus — entry: readme.md, routing:
   (`COMPOSE_PROJECT_STANDALONE`, `""`) last and only when non-empty.
 - **Podman Desktop path** — the validated executable name or path behind the `podmanDesktopPath` kcfg
   entry; resolved by `resolvePodmanDesktopPath()` (default `podman-desktop`), and the only
-  configuration value that is itself a command.
+  configuration value that is itself a command. The setting and resolver are retained while the popup
+  surface that launched it was removed
+  ([[adr-0016-containers-flat-rows-and-podman-section-removal]]).
 - **Run token** — a unique trailing shell comment (`# plasma-run-N`) that makes a repeated command a
   distinct source for the `executable` engine.
 - **Video link** — the raw text pasted into the download row; accepted only as an `https` URL on the

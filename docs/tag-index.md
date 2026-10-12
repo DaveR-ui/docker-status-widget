@@ -4,18 +4,19 @@ Tag → document, for when a question arrives in vocabulary the tree does not ob
 by `node docs/validate.js --write`; regenerate rather than edit.
 
 <!-- BEGIN GENERATED: tags -->
-<!-- snapshot: 2026-10-11 -->
+<!-- snapshot: 2026-10-12 -->
 ## Generated tag index
 
-- **adr** — adr-0001-corpus-location-and-entry-point, adr-0002-lowercase-naming-convention, adr-0003-slice-taxonomy, adr-0004-scoped-polkit-grant, adr-0005-doc-classes-and-body-shape-exceptions, adr-0006-video-downloader-command-boundary, adr-0007-stop-button-confirmation-and-narrow-grant, adr-0008-configurable-cookies-browser-and-bottom-text, adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation, adr-0011-fixed-dark-palette-from-mockup, adr-0013-widget-update-check-and-release-site, adr-index, adr-template
+- **adr** — adr-0001-corpus-location-and-entry-point, adr-0002-lowercase-naming-convention, adr-0003-slice-taxonomy, adr-0004-scoped-polkit-grant, adr-0005-doc-classes-and-body-shape-exceptions, adr-0006-video-downloader-command-boundary, adr-0007-stop-button-confirmation-and-narrow-grant, adr-0008-configurable-cookies-browser-and-bottom-text, adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation, adr-0011-fixed-dark-palette-from-mockup, adr-0013-widget-update-check-and-release-site, adr-0014-compose-grouping-and-podman-desktop-launch, adr-0015-update-indicator-opens-the-release-page, adr-0016-containers-flat-rows-and-podman-section-removal, adr-index, adr-template
 - **bootstrap** — bootstrap-checklist
 - **brownfield** — adr-0003-slice-taxonomy, slice-generalities-template
 - **catalog** — interface-surface-template
 - **checklist** — bootstrap-checklist, new-note-checklist
 - **ci** — adr-0013-widget-update-check-and-release-site
 - **cli** — installer-index, installer-slice
-- **command-boundary** — adr-0006-video-downloader-command-boundary
+- **command-boundary** — adr-0006-video-downloader-command-boundary, adr-0014-compose-grouping-and-podman-desktop-launch
 - **components** — ui-inventory-template
+- **compose** — adr-0014-compose-grouping-and-podman-desktop-launch, adr-0016-containers-flat-rows-and-podman-section-removal
 - **config** — adr-0008-configurable-cookies-browser-and-bottom-text, adr-0010-inline-shutdown-minutes-in-the-representation
 - **contract** — adr-0005-doc-classes-and-body-shape-exceptions, document-template, interface-surface-template, new-note-checklist
 - **convention** — adr-0002-lowercase-naming-convention
@@ -39,8 +40,9 @@ by `node docs/validate.js --write`; regenerate rather than edit.
 - **logic** — status-index, status-slice
 - **naming** — adr-0002-lowercase-naming-convention
 - **navigation** — hub-template, readme
-- **network** — adr-0013-widget-update-check-and-release-site
+- **network** — adr-0013-widget-update-check-and-release-site, adr-0015-update-indicator-opens-the-release-page
 - **packaging** — installer-slice
+- **podman** — adr-0014-compose-grouping-and-podman-desktop-launch, adr-0016-containers-flat-rows-and-podman-section-removal
 - **polkit** — adr-0004-scoped-polkit-grant, adr-0007-stop-button-confirmation-and-narrow-grant, privilege-index, privilege-slice
 - **power-management** — adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation
 - **privilege** — adr-0004-scoped-polkit-grant, adr-0007-stop-button-confirmation-and-narrow-grant, privilege-index, privilege-slice
@@ -49,7 +51,7 @@ by `node docs/validate.js --write`; regenerate rather than edit.
 - **qml** — adr-0011-fixed-dark-palette-from-mockup, widget-index, widget-slice, widget-ui-surfaces
 - **routing** — adr-0003-slice-taxonomy, project
 - **schema** — adr-0005-doc-classes-and-body-shape-exceptions
-- **security** — adr-0004-scoped-polkit-grant, adr-0006-video-downloader-command-boundary, adr-0007-stop-button-confirmation-and-narrow-grant, adr-0009-widget-owned-shutdown-countdown, privilege-slice
+- **security** — adr-0004-scoped-polkit-grant, adr-0006-video-downloader-command-boundary, adr-0007-stop-button-confirmation-and-narrow-grant, adr-0009-widget-owned-shutdown-countdown, adr-0014-compose-grouping-and-podman-desktop-launch, privilege-slice
 - **shutdown** — adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation
 - **slice** — installer-slice, privilege-slice, slice-generalities-template, status-slice, verification-slice, widget-slice
 - **slices** — adr-0003-slice-taxonomy, project
@@ -63,8 +65,8 @@ by `node docs/validate.js --write`; regenerate rather than edit.
 - **theming** — adr-0011-fixed-dark-palette-from-mockup
 - **tooling** — adr-0002-lowercase-naming-convention
 - **troubleshooting** — troubleshooting, troubleshooting-template
-- **ui** — adr-0007-stop-button-confirmation-and-narrow-grant, adr-0008-configurable-cookies-browser-and-bottom-text, adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation, adr-0011-fixed-dark-palette-from-mockup, ui-inventory-template, widget-ui-surfaces
-- **update-check** — adr-0013-widget-update-check-and-release-site
+- **ui** — adr-0007-stop-button-confirmation-and-narrow-grant, adr-0008-configurable-cookies-browser-and-bottom-text, adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation, adr-0011-fixed-dark-palette-from-mockup, adr-0015-update-indicator-opens-the-release-page, adr-0016-containers-flat-rows-and-podman-section-removal, ui-inventory-template, widget-ui-surfaces
+- **update-check** — adr-0013-widget-update-check-and-release-site, adr-0015-update-indicator-opens-the-release-page
 - **validator** — adr-0002-lowercase-naming-convention
 - **verification** — troubleshooting, verification-index, verification-slice
 - **video-download** — adr-0006-video-downloader-command-boundary, adr-0008-configurable-cookies-browser-and-bottom-text

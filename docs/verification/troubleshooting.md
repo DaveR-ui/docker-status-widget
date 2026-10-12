@@ -308,16 +308,24 @@ the entry above.
 — the label form and the vanished-stack behaviour; [widget-slice.md](../widget/widget-slice.md) — the
 per-group controls.
 
-## the Podman Desktop button reports podman-desktop: not found
+## the Podman Desktop launch was removed (it reported podman-desktop: not found)
 
-**Context:** the popup's Podman Desktop button fails immediately, reporting `podman-desktop: not found`
-on its feedback line.
+**Context:** historically, the popup's Podman Desktop button failed immediately, reporting
+`podman-desktop: not found` on its feedback line.
 **Root cause:** the default is the PATH name `podman-desktop`, resolved by `resolvePodmanDesktopPath()`.
-plasmashell's `PATH` is not the interactive shell's, so an executable outside it is not found — and the
-failure appears at click time, not at load time, because the path is only resolved and run on click.
-**Fix:** set "Podman Desktop path" in the widget's options to an absolute or `~/`-expanded path, for
-example `~/.local/bin/podman-desktop`, or make the executable reachable on the session `PATH` (check
-`systemctl --user show-environment`). Clearing the field re-arms the `podman-desktop` default.
+plasmashell's `PATH` is not the interactive shell's, so an executable outside it was not found — and the
+failure appeared at click time, not at load time, because the path was only resolved and run on click.
+**Fix:** none is needed today. The Podman Desktop section — its card, launch button, feedback row and
+`podmanLaunchRequested()` signal — was removed from the popup
+([[adr-0016-containers-flat-rows-and-podman-section-removal]]), and the now-unreachable `main.qml` wiring
+went with it, so nothing can surface this failure unless a launch surface returns. The backing logic is
+retained by explicit human decision: `resolvePodmanDesktopPath()` and `buildPodmanDesktopCommand()`, the
+`podmanDesktopPath` kcfg entry, the `ConfigGeneral` setting and their tests all stand, and the resolver
+contract is unchanged. If a surface returns, set "Podman Desktop path" in the widget's options to an
+absolute or `~/`-expanded path, for example `~/.local/bin/podman-desktop`, or make the executable
+reachable on the session `PATH` (check `systemctl --user show-environment`); clearing the field re-arms
+the `podman-desktop` default.
 **Reference:** [status-slice.md](../status/status-slice.md) — `resolvePodmanDesktopPath`;
-[../adrs/adr-0014-compose-grouping-and-podman-desktop-launch.md](../adrs/adr-0014-compose-grouping-and-podman-desktop-launch.md)
+[../adrs/adr-0016-containers-flat-rows-and-podman-section-removal.md](../adrs/adr-0016-containers-flat-rows-and-podman-section-removal.md)
+— the removal; [../adrs/adr-0014-compose-grouping-and-podman-desktop-launch.md](../adrs/adr-0014-compose-grouping-and-podman-desktop-launch.md)
 — the Podman Desktop path boundary.

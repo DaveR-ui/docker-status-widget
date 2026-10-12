@@ -79,7 +79,7 @@ severity. The public surface, and what each function guarantees:
 | `resolveShutdownMinutes(raw)` | blank, `null` or `undefined` → 15 (the default, not an error); a run of digits whose integer is **strictly greater than 10** → that integer; anything that is not a plain run of digits, or a whole number ≤ 10, → `null`, which disables play |
 | `shutdownRemainingSeconds(deadlineMs, nowMs)` | whole seconds until the deadline, rounded up (`Math.ceil`) and floored at 0; unusable input → 0 |
 | `formatCountdown(seconds)` | `"M:SS"`, growing to `"H:MM:SS"` past an hour; `0`, negatives, non-finite values and garbage → `"0:00"` |
-| `UPDATE_CHECK_URL`, `UPDATE_CHECK_MAX_TIME_SECONDS`, `UPDATE_CHECK_MARKER`, `UPDATE_CHECK_CURL_BINARY`, `PACKAGE_ID`, `INSTALLED_METADATA_PATH`, `VERSION_PATTERN`, `WIDGET_VERSION_PATTERN` | the update-check constants: the fixed https manifest URL, the 5-second curl cap, the split marker, the `curl` binary, the package id, the shell-expanded installed `metadata.json` path, and the two version regexes |
+| `UPDATE_CHECK_URL`, `UPDATE_PAGE_URL`, `UPDATE_CHECK_MAX_TIME_SECONDS`, `UPDATE_CHECK_MARKER`, `UPDATE_CHECK_CURL_BINARY`, `PACKAGE_ID`, `INSTALLED_METADATA_PATH`, `VERSION_PATTERN`, `WIDGET_VERSION_PATTERN` | the update-check constants: the fixed https manifest URL, the fixed release-page root the update indicator opens, the 5-second curl cap, the split marker, the `curl` binary, the package id, the shell-expanded installed `metadata.json` path, and the two version regexes |
 | `isVersionString(text)` | true when `text` matches `VERSION_PATTERN`; the one shape gate shared by `parseWidgetVersion`, `parseLatestVersion` and `compareVersions` |
 | `buildUpdateCheckCommand(opts)` | the fixed update check — `cat <metadata.json> 2>/dev/null`, a `printf` of the marker, then `curl -fsSL --max-time 5 <fixed-url>` — assembled entirely from constants; appends `withRunToken()` when a token is given |
 | `splitUpdateCheckOutput(raw)` | splits the one-shot stdout at the line exactly `UPDATE_CHECK_MARKER` into `{installed, manifest}`; with no marker, `installed: ""` and `manifest` is the whole text; always returns both string keys, never throws |
@@ -109,7 +109,10 @@ so it adds no new command-building exception
 and `compareVersions` all refuse a malformed segment at once rather than half-parsing it in one place. The
 comparison is numeric and segment-wise on purpose (`"0.10"` is greater than `"0.9"`), and
 `isUpdateAvailable()` is conservative by construction: it is true only for a strictly-greater remote, so
-the widget structurally cannot show an update line that is wrong.
+the widget structurally cannot show an update line that is wrong. `UPDATE_PAGE_URL` is the second fixed
+constant in this area: the update indicator's click opens it through the widget's single
+`Qt.openUrlExternally` call, so the browser-opening surface is exactly one call to exactly one constant,
+never configuration ([[adr-0015-update-indicator-opens-the-release-page]]).
 
 The compose grouping and the Podman launch own a fourth boundary, and it is the second sanctioned
 command-building exception. The probe already carries the grouping identity: `parseContainers()` reads
@@ -123,7 +126,11 @@ bucket or an unvalidated action, while `buildPodmanDesktopCommand()` assembles t
 plus the run token and nothing else. Both mutations are unprivileged — the user's own docker socket and
 the user's own session — so the daemon's start/stop asymmetry is untouched; the boundary is recorded in
 [../adrs/adr-0014-compose-grouping-and-podman-desktop-launch.md](../adrs/adr-0014-compose-grouping-and-podman-desktop-launch.md)
-and the sources and surfaces that call it in the [widget slice](../widget/widget-slice.md).
+and the sources and surfaces that call it in the [widget slice](../widget/widget-slice.md). The popup
+surface that called the Podman builder was removed
+([[adr-0016-containers-flat-rows-and-podman-section-removal]]), which drops the data-source count to ten,
+but the builders, the resolver, the `podmanDesktopPath` kcfg entry and their tests stand: the boundary
+remains live in the pure core even though no QML surface currently calls it.
 
 ## Conventions of this slice
 

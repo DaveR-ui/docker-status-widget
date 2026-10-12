@@ -20,8 +20,9 @@ status: active
   **ConfigGeneral**, backed by the kcfg entries in `contents/config/main.xml`.
 - The user must paste a link and fetch a video → the **video download row** inside FullRepresentation
   (full representation only; never the compact representation or the tooltip).
-- An installed widget must learn a newer release exists → the **update line** inside FullRepresentation
-  (rendered only when one is available; not a button, not a link).
+- An installed widget must learn a newer release exists → the **update indicator and line** inside
+  FullRepresentation (the icon renders only when one is available; a click opens the fixed release page,
+  [[adr-0015-update-indicator-opens-the-release-page]]).
 - State must be readable on hover, without opening anything → the **tooltip subtext** on the root
   `PlasmoidItem`.
 - An action must be reachable without opening the popup → the **contextual actions** (right-click menu).
@@ -35,7 +36,7 @@ There is no other surface. A new one is a design decision, not an implementation
 | Severity is computed in `dockerstatus.js`; colour is chosen only in `SeverityDot.qml`. | No other file may map a state to a colour. |
 | Representations are pure consumers: properties in, signals out. | No `DataSource` access, and `Plasmoid.configuration` only for the compact icon name. |
 | Configuration never supplies a command, only validated values inside one. | The video-download row is the ONE place user input enters a command; the URL is validated against a host allow-list and every interpolated value is shell-quoted, so the run token stays safe. A second exception needs a new ADR ([[adr-0006-video-downloader-command-boundary]]). |
-| The update check is fixed and silent. | Its command is assembled entirely from constants — no configuration, no input — and every failure draws nothing. Its notice is one muted line, never a notification and never a link, because the widget opens no browser ([[adr-0013-widget-update-check-and-release-site]]). |
+| The update check is fixed and silent. | Its command is assembled entirely from constants — no configuration, no input — and every failure draws nothing. Its notice is a muted line plus one icon whose click opens the fixed Pages constant; never a notification, and the URL is never configurable ([[adr-0013-widget-update-check-and-release-site]], [[adr-0015-update-indicator-opens-the-release-page]]). |
 | `unknown` never looks healthy. | Muted (the palette's `muted` grey), never neutral (the palette's `orange` accent). |
 | Secondary text stays secondary. | The palette's `muted` colour for small labels and footer text; `opacity: 0.5` for the tagline, `0.38` for a disabled button, `1.0`/`0.5` for the panel icon. |
 | Everything user-visible is translated. | `i18n(...)` for plain strings, `i18nc("@info", ...)` when the argument needs context. |
@@ -87,10 +88,11 @@ delegating to `SeverityDot`. Hiding the dot when the state is unknown.
 
 #### Purpose
 The popup/desktop surface, restyled to the mockup's fixed dark palette: a topbar (logo tile, workspace
-eyebrow and refresh icon-button), a status card (daemon state, an ONLINE/OFFLINE pill, a running-container
-count and progress bar, the start/stop button row), the container list, the video-download row with its
-cookies-browser line, the "Countdown to Extinction" shutdown section, one muted update line shown only when
-a newer release is known, the configurable bottom text and a
+eyebrow and refresh icon-button), a status card (daemon state with the update indicator beside it, an
+ONLINE/OFFLINE pill, a running-container count and progress bar, the start/stop button row), the flat
+container list, the video-download row with its cookies-browser line, the "Countdown to Extinction"
+shutdown section, one muted update line and its indicator, shown only when a newer release is known, the
+configurable bottom text and a
 footer. It paints its own dark 20px-radius card, so Plasma's own background is switched off
 (`Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground` in `main.qml`;
 [[adr-0011-fixed-dark-palette-from-mockup]]).
@@ -100,21 +102,26 @@ footer. It paints its own dark 20px-radius card, so Plasma's own background is s
 
 #### Interface
 Takes `daemonState`, `containers`, `daemonRunning`, `containerListEnabled`, `actionInFlight`,
-`actionKind`, `actionFeedback`, `downloaderEnabled`, `taglineText`, `cookiesBrowser`, `downloadReady`,
+`actionKind`, `actionFeedback`, `composeActionInFlight`, `composeActionProject`, `composeActionKind`,
+`composeActionFeedback`, `composeActionFeedbackSeverity`, `downloaderEnabled`, `taglineText`, `cookiesBrowser`, `downloadReady`,
 `downloadInFlight`, `downloadFeedback`, `downloadFeedbackSeverity`, `shutdownReady`, `shutdownMinutes`,
 `shutdownMinutesText`, `shutdownPending`, `shutdownInFlight`, `shutdownRemainingSeconds`, `shutdownFeedback`,
 `shutdownFeedbackSeverity`, `updateAvailable` and `updateFeedback`; emits `startRequested()`,
 `stopRequested()`, `refreshRequested()`,
 `downloadRequested(url)`, `shutdownStartRequested()`, `shutdownStopRequested()`,
-`shutdownMinutesEdited(text)` and `updateCheckRequested()`.
+`shutdownMinutesEdited(text)`, `updateCheckRequested()`, `composeStartRequested(project)` and
+`composeStopRequested(project)`.
 
 #### Data Flow
 All state flows down as properties from `main.qml`; the signals flow back up and are handled by
 `root.startDaemon()`, `root.stopDaemon()`, `root.refreshDaemonState()`, `root.downloadVideo(url)`,
 `root.startShutdownCountdown()`, `root.stopShutdownCountdown()`, `root.setShutdownMinutes(text)` and
-`root.checkForUpdates()`. The update line reads only the forwarded `updateAvailable` / `updateFeedback`
-properties and builds nothing, exactly like every other consumer here. The
-container list model is the parsed array itself. `actionKind` (`DockerStatus.ACTION_START` / `ACTION_STOP`)
+`root.checkForUpdates()`. The update line and the indicator beside the daemon state read only the
+forwarded `updateAvailable` / `updateFeedback` properties and build nothing, exactly like every other
+consumer here; the indicator's click calls `Qt.openUrlExternally(DockerStatus.UPDATE_PAGE_URL)` directly,
+with no property and no signal. The
+container list model is `DockerStatus.groupContainersByComposeProject(fullRoot.containers)` — the core's
+grouping is the only model source — and each group keeps its open/closed state locally. `actionKind` (`DockerStatus.ACTION_START` / `ACTION_STOP`)
 says which action owns an in-flight reply, so the row can show the matching label while both actions share
 one `actionInFlight` flag. The view derives its own display values from those properties:
 `runningContainerRatio` (`DockerStatus.countByState(containers, "running")` over the container count,
@@ -145,7 +152,13 @@ passwordless when the polkit rule is installed; stop always prompts, because the
 widened for it ([[adr-0007-stop-button-confirmation-and-narrow-grant]]). A failure appears below the row
 as normalised `stderr` (CR stripped, trimmed), or as a generic message when `stderr` is empty.
 
-The container list is a `ListView` over the parsed array; each row shows a deterministic theme-icon tile
+The container list is a `ListView` over the grouped model; each group is one flat header row — the
+bundled `contents/icons/dockerstatus.svg` box glyph on a 28px tile (resolved with `Qt.resolvedUrl`, so
+there is no external asset and no network fetch), the project name (`Other containers` for the standalone
+bucket), the running/total counter, and, for compose-backed groups only, small flat 28x28 play/stop
+`ToolButton`s with muted glyphs and no chunky surface — with the per-group ± collapse affordance last.
+There is no section header above the list and no section collapse flag: a group's ± toggles only that
+group's local open/closed state. Every container row keeps its deterministic theme-icon tile
 (`containerIconFor(name)`, a cheap hash into a fixed list of generic theme names, so the same container
 always gets the same tile and a missing theme icon degrades to nothing), the container name, and a
 six-pixel severity dot beside the state. The download row appears only while the `showVideoDownloader`
@@ -181,10 +194,14 @@ feedback row reuses `SeverityDot` with `shutdownFeedbackSeverity`, exactly as th
 renders and emits only; the deadline, the ticker and the fixed power-off command all live in `main.qml`
 ([[adr-0009-widget-owned-shutdown-countdown]]).
 
-Above the tagline and below the shutdown section sits the update notice: a single muted, centred
-`PlasmaComponents3.Label`, visible only while `updateAvailable`, naming the newer version. It is
-deliberately not a button, not a `SeverityDot` and not a link — the widget opens no browser — and it is the
-feature's entire footprint: an offline machine, a missing `curl` or an unparseable manifest renders nothing
+The update notice has two parts, both on the same `updateAvailable` gate. Above the tagline and below the
+shutdown section sits a muted, centred `PlasmaComponents3.Label` naming the newer version; it stays
+deliberately non-clickable, neither a button, a `SeverityDot` nor a link. Beside the daemon state in the
+status card sits a small flat `emblem-important` `ToolButton`, and its click is the feature's one
+browser-opening call: it opens exactly `https://dave-r-ui.github.io/docker-status-widget/`
+(`DockerStatus.UPDATE_PAGE_URL`), a fixed constant that is never configuration and never a second URL
+([[adr-0015-update-indicator-opens-the-release-page]]). An offline machine, a missing `curl` or an
+unparseable manifest renders neither part — the silence contract is unchanged
 ([[adr-0013-widget-update-check-and-release-site]]). A "Check for updates" entry in the right-click menu
 re-runs the check on demand.
 
@@ -201,9 +218,14 @@ the kcfg entry ([[adr-0010-inline-shutdown-minutes-in-the-representation]]). Bui
 power-off command here, or naming `powerOffCommand`, instead of emitting a signal. An arming confirmation
 on play: unlike the stop, play starts the sequence and disables itself at once, and the countdown is the
 confirmation window. Assuming the power-off prompts for a password — that is a logind default, not this
-widget's gate ([[adr-0009-widget-owned-shutdown-countdown]]). Turning the update line into a button, a
-link or a notification, or surfacing a failed check as text: the notice shows only a real update and every
-failure draws nothing ([[adr-0013-widget-update-check-and-release-site]]).
+widget's gate ([[adr-0009-widget-owned-shutdown-countdown]]). Turning the update line into a button or a
+link, or surfacing a failed check as text: the line stays non-clickable, the notice shows only a real
+update and every
+failure draws nothing ([[adr-0013-widget-update-check-and-release-site]]). The indicator beside the daemon
+status is the one deliberate exception — a plain click target to the single fixed `UPDATE_PAGE_URL`
+constant — so opening a second URL, taking a URL from configuration, opening a page without a click,
+raising a notification instead of an icon, or showing the icon when no update exists are all anti-patterns
+([[adr-0015-update-indicator-opens-the-release-page]]).
 
 #### Verification
 `qmllint` (both binaries — see the verification-tooling note; the Qt6 semantic run is clean); a probe with a deliberately failing command confirmed the failure path renders — that
@@ -258,6 +280,11 @@ consumers that display it — the Add Widgets / Widget Explorer and the About pa
 detect the leading `/`, load the package and resolve the value against the package's `contents/`
 directory. It is not a `QIcon::fromTheme` name.
 
+The same file now also serves as the containers-area glyph: each compose group's flat header row resolves
+it with `Qt.resolvedUrl("../icons/dockerstatus.svg")`, so the grouping gets a literal Docker box without a
+second asset or a network fetch
+([[adr-0016-containers-flat-rows-and-podman-section-removal]]).
+
 The panel icon is separate: `CompactRepresentation.qml` renders
 `Plasmoid.configuration.iconName`, a theme icon name (default `folder-docker-symbolic`), so the
 panel still needs the configured name to exist in the active theme. A fully self-contained panel
@@ -300,9 +327,9 @@ Reusing `neutral` for unknown states, which would make a broken probe look merel
 ### ConfigGeneral
 
 #### Purpose
-The configuration page, restyled to the palette as six section cards (Docker, Container list, Video
-download, Shutdown countdown, Updates, Appearance): poll interval, panel icon name, whether containers are
-listed, the download settings, the shutdown minutes, the update-check interval and the bottom text. The page keeps Plasma's chrome — unlike
+The configuration page, restyled to the palette as seven section cards (Docker, Container list, Podman
+Desktop, Video download, Shutdown countdown, Updates, Appearance): poll interval, panel icon name, whether
+containers are listed, the Podman Desktop path, the download settings, the shutdown minutes, the update-check interval and the bottom text. The page keeps Plasma's chrome — unlike
 the popup it does not switch the background off — and paints the palette's optional dark page surface
 (`paintPageBackground`) behind the cards; `import ".."` lets the palette `QtObject` resolve from `ui/`
 ([[adr-0011-fixed-dark-palette-from-mockup]]).
@@ -312,11 +339,13 @@ the popup it does not switch the background off — and paints the palette's opt
 (the `source` in `contents/config/config.qml` is resolved relative to `contents/ui/`, not `contents/`).
 
 #### Interface
-Ten `cfg_*` aliases — `cfg_pollIntervalSeconds`, `cfg_iconName`, `cfg_showContainerList`,
+Eleven `cfg_*` aliases — `cfg_pollIntervalSeconds`, `cfg_iconName`, `cfg_showContainerList`,
 `cfg_showVideoDownloader`, `cfg_downloadDirectory`, `cfg_jsRuntime`, `cfg_ytDlpBinary`,
-`cfg_taglineText`, `cfg_shutdownCountdownMinutes` and `cfg_updateCheckIntervalHours` — each bound to a
+`cfg_podmanDesktopPath`, `cfg_taglineText`, `cfg_shutdownCountdownMinutes` and `cfg_updateCheckIntervalHours` — each bound to a
 plain writable property of a
-widget, plus a plain string `cfg_cookiesBrowser`. The bottom text is a setting like the rest: display-only
+widget, plus a plain string `cfg_cookiesBrowser`. The Podman Desktop path field outlived the popup launch
+section it once fed (removed per [[adr-0016-containers-flat-rows-and-podman-section-removal]]); the setting
+is retained by explicit human decision. The bottom text is a setting like the rest: display-only
 copy that leaves the panel representation untouched, and the browser is validated by
 `resolveCookiesBrowser()` before it reaches the command.
 
@@ -424,7 +453,7 @@ in [[adr-0011-fixed-dark-palette-from-mockup]]. The severity accents are consume
 | `paletteTokens.red` (`#ff737d`) | failed daemon, crash-looping container |
 | `paletteTokens.muted` (`#b3c1c8`) | unknown state (muted), footer text, secondary labels |
 | `paletteTokens.line` | hairline borders and the list separator |
-| `Kirigami.Theme.negativeTextColor` | functional error text only: a failed action, an armed stop, an invalid inline value (not a severity accent) |
+| `Kirigami.Theme.negativeTextColor` | functional error text and the update-available attention icon (not a severity accent): a failed action, an armed stop, an invalid inline value, and the `emblem-important` indicator beside the daemon status |
 
 ### Spacing and sizing
 

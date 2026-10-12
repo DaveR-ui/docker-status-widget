@@ -222,7 +222,7 @@ Kirigami.FormLayout {
 
             QQC2.Label {
                 Layout.fillWidth: true
-                text: i18n("The executable the popup's launch button runs.")
+                text: i18n("The executable the resolved path points at.")
                 color: paletteTokens.muted
                 wrapMode: Text.WordWrap
                 font.family: paletteTokens.fontFamily

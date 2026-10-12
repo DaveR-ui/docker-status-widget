@@ -697,8 +697,9 @@ Item {
                                     spacing: 12
 
                                     // The group's identity tile: the widget's own
-                                    // bundled box glyph, on the same tile surface a
-                                    // container row uses, so a group reads as a
+                                    // bundled box glyph on the same tile style a
+                                    // container row uses -- 28px here, matching the
+                                    // row's flat controls -- so a group reads as a
                                     // grouping of those rows rather than as a second
                                     // kind of card. Resolved from the package, never
                                     // fetched from anywhere.
@@ -787,9 +788,9 @@ Item {
                                     }
 
                                     // The open/close affordance, pixel-identical to the
-                                    // three section headers and deliberately LAST in the
-                                    // row, so a group collapse reads the same as a section
-                                    // collapse.
+                                    // two remaining section headers and deliberately LAST
+                                    // in the row, so a group collapse reads the same as a
+                                    // section collapse.
                                     Item {
                                         Layout.alignment: Qt.AlignVCenter
                                         implicitWidth: groupToggleGlow.implicitWidth
