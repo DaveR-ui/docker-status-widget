@@ -92,10 +92,13 @@ beyond the explicit `install-polkit` command.
 | `qmllint package/io.github.daver-ui.dockerstatus/contents/ui/*.qml` | Lint every QML file. |
 | `node docs/validate.js` | Walk the documentation catalog. Read-only; exit 1 on errors. |
 | `node docs/validate.js --write` | Regenerate the two generated regions (write-if-diff), then validate. |
+| `python3 tools/render_preview.py` | Dev aid: render the shipped full representation headlessly and write PNGs to `/tmp/dockerstatus-render/`. Needs Qt6 QML modules + PyQt6; never part of the tested path or the shipped artifact. |
 
 Working-directory quirks: `install.sh` resolves every path from its own directory and
-`docs/validate.js` from the directory containing itself, so both work from any cwd. QML files are
-not runnable from a shell — see Common Lookups. The release site has no local serve command: it is
+`docs/validate.js` from the directory containing itself, so both work from any cwd. The plasmoid's QML
+files are not runnable from a shell as the widget — `main.qml` is plasmashell-only; the full
+representation *is* previewable headlessly through `tools/` ([[render-preview]], see Common
+Lookups). The release site has no local serve command: it is
 published only by CI (`.github/workflows/pages.yml`), and the non-gating Playwright config is what
 serves `site/` on localhost during its own run.
 
@@ -124,6 +127,9 @@ install.sh                            lifecycle CLI
 ├── workflows/pages.yml               push to master: validate, test, rebuild latest.json, publish dist/
 ├── workflows/playwright.yml          non-gating site e2e (continue-on-error)
 └── scripts/sync-manifest.mjs         derives site/latest.json from metadata.json (--write / --check)
+tools/                                  dev/verification aids — nothing here ships in the plasmoid
+├── render_preview.qml                 preview harness: loads the shipped FullRepresentation.qml by URL
+└── render_preview.py                  driver: injects preview state, grabs PNGs (headless-representation probe)
 site/                                 the GitHub Pages release site (the widget's update endpoint)
 ├── index.html                        static page; its version text is hand-maintained
 ├── styles.css                        the site's stylesheet
@@ -217,6 +223,8 @@ docs/                                 this corpus — entry: readme.md, routing:
 - [verification/verification-slice.md](verification/verification-slice.md) — how the project is
   proven, layer by layer.
 - [verification/troubleshooting.md](verification/troubleshooting.md) — symptom-keyed write-ups.
+- [verification/render-preview.md](verification/render-preview.md) — seeing the widget rendered: the
+  `tools/` harness, the three capture tiers and their prerequisites.
 - [adrs/adr-index.md](adrs/adr-index.md) — decision records, append-only.
 - [templates/document-template.md](templates/document-template.md) — the note contract, copyable.
 - [checklists/new-note-checklist.md](checklists/new-note-checklist.md) — walk one note before merging.

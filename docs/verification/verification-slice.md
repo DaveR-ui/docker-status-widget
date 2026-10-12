@@ -74,7 +74,7 @@ The evidence layers, and which of them can be re-run:
 | End-to-end download | the exact assembled command for an X link exited 0 and wrote a 10,365,309-byte mp4, with yt-dlp reporting cookies extracted from Firefox; a YouTube `--simulate` run reported `--no-playlist`, node solving JS challenges and format 401+251; without `--js-runtimes` the same URL failed with "The page needs to be reloaded", and without cookies with "Sign in to confirm you're not a bot" | no — probe |
 | All QML files | two binaries measured. The `qmllint` on `PATH` is Qt5 (`qt5-declarative 5.15.19`): exit 0 and no output, and a deliberate `property int x: "boom"` probe also exited 0 — syntax-only. The matching `/usr/lib/qt6/bin/qmllint` (`qt6-declarative 6.11.2`, the tool for a Plasma 6 target) reports semantics: on `contents/ui/*.qml` exit 0 with **0 errors, 75 warnings all `[unqualified]`, 43 infos of which 2 are `[unused-imports]`**; on `contents/ui/config/*.qml` exit 0 with **0 errors, 22 warnings all `[unqualified]`, 6 infos of which 1 is `[unused-imports]`** — and no `[missing-property]`, `[incompatible-type]`, `[unresolved-type]` or `[import]` diagnostic. Exit code is not the evidence: Qt6 exits 0 unless `--max-warnings` is set, so the diagnostic stream is. These counts predate the update-check addition (two data sources, one action, one config section) and should be re-measured | yes, re-run to confirm |
 | Shutdown countdown (QML) | the play/stop timing, the inline field's interaction, the wall-clock deadline and the effective passwordless power-off live in QML that cannot be instantiated outside plasmashell; only the resolver, the formatting helpers and the field's wiring (pinned as static text) are covered by the suite | impossible here — review only |
-| `main.qml` as a `PlasmoidItem` | **not executable outside plasmashell** | impossible here |
+| `main.qml` as a `PlasmoidItem` | **not executable outside plasmashell** — the attached-properties factory fails with `PlasmaQuick::PlasmoidAttached`; the representations are previewable headless ([[render-preview]]) | wrapper: impossible outside a session; representation: yes (manual probe) |
 
 The last column is the point of the table: even with a CI merge gate, a reader must be able to tell
 which claims rest on a reproducible test and which rest on a measurement someone took once. Probe
@@ -131,7 +131,8 @@ claim this corpus makes about the widget rests on these layers.
   update check —
   is lint-and-review only. The download's *command boundary* and the countdown's *resolver* are well
   tested; their *rows*, the inline field's interaction and the play/stop timing are not — the field's
-  wiring is pinned as static text, which proves the arrangement, not the behaviour.
+  wiring is pinned as static text, which proves the arrangement, not the behaviour. The *pixels* of the
+  representations are now reviewable without a session ([[render-preview]]); that is still a probe, not a test.
 - The effective passwordless power-off has no runtime test: whether logind authorises
   `org.freedesktop.login1.power-off` is a property of the machine's policy (measured with `pkcheck`, exit
   0 in a local active session), not of anything this suite runs. A policy change on another machine would
@@ -141,5 +142,7 @@ claim this corpus makes about the widget rests on these layers.
 - Container states outside the mapped set are untested against live `docker ps` output.
 - The end-to-end download probes are dated environment measurements (yt-dlp 2026.08.19, node, a local
   Firefox profile), not scripted reproductions, and the success path is not covered by CI.
-- Nothing in this slice can observe the widget inside plasmashell; see the
-  `PlasmaQuick::PlasmoidAttached` entry in [troubleshooting.md](troubleshooting.md).
+- The representations can be previewed outside plasmashell — headless for the full
+  representation, live for the rest ([[render-preview]]); this machine has a live
+  Plasma 6 session, a CI runner does not. What still cannot be instantiated outside
+  a running plasmashell is the `main.qml` wrapper and the panel integ

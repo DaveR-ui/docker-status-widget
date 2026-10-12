@@ -27,7 +27,7 @@ by `node docs/validate.js --write`; regenerate rather than edit.
 - **doc-classes** — adr-0005-doc-classes-and-body-shape-exceptions
 - **documentation** — adr-0001-corpus-location-and-entry-point, readme
 - **entry-point** — adr-0001-corpus-location-and-entry-point, project, project-md-template, readme
-- **evidence** — verification-index, verification-slice
+- **evidence** — render-preview, verification-index, verification-slice
 - **failures** — troubleshooting
 - **generality** — installer-slice, privilege-slice, status-slice, verification-slice, widget-slice
 - **github-pages** — adr-0013-widget-update-check-and-release-site
@@ -45,10 +45,13 @@ by `node docs/validate.js --write`; regenerate rather than edit.
 - **podman** — adr-0014-compose-grouping-and-podman-desktop-launch, adr-0016-containers-flat-rows-and-podman-section-removal, adr-0017-podman-launch-button-and-topbar-removal
 - **polkit** — adr-0004-scoped-polkit-grant, adr-0007-stop-button-confirmation-and-narrow-grant, privilege-index, privilege-slice
 - **power-management** — adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation
+- **preview** — render-preview
 - **privilege** — adr-0004-scoped-polkit-grant, adr-0007-stop-button-confirmation-and-narrow-grant, privilege-index, privilege-slice
+- **probe** — render-preview
 - **project** — project
 - **project-md** — project-md-template
-- **qml** — adr-0011-fixed-dark-palette-from-mockup, widget-index, widget-slice, widget-ui-surfaces
+- **qml** — adr-0011-fixed-dark-palette-from-mockup, render-preview, widget-index, widget-slice, widget-ui-surfaces
+- **render** — render-preview
 - **routing** — adr-0003-slice-taxonomy, project
 - **schema** — adr-0005-doc-classes-and-body-shape-exceptions
 - **security** — adr-0004-scoped-polkit-grant, adr-0006-video-downloader-command-boundary, adr-0007-stop-button-confirmation-and-narrow-grant, adr-0009-widget-owned-shutdown-countdown, adr-0014-compose-grouping-and-podman-desktop-launch, privilege-slice

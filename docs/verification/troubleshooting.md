@@ -109,7 +109,8 @@ name matches the package id exactly.
 supported way to instantiate the wrapper from a bare QML runtime; this is a documented limitation of the
 project, not a bug waiting to be fixed.
 **Fix:** test the inner pipeline through the pure module with the Node harness, validate QML files with
-`qmllint`, and observe the wrapper only inside a real session. The message appears verbatim when an
+`qmllint`, preview the representations' render without a session through the harness in `tools/`
+([[render-preview]]), and observe the wrapper only inside a real session. The message appears verbatim when an
 attach-based object is created outside Plasma.
 **Reference:** [verification-slice.md](verification-slice.md) — the evidence layers and their limits.
 

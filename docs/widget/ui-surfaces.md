@@ -84,7 +84,7 @@ Adding text or a status message here — a panel item must stay icon-sized. Comp
 delegating to `SeverityDot`. Hiding the dot when the state is unknown.
 
 #### Verification
-`qmllint` (both binaries — see the verification-tooling note; the Qt6 semantic run is clean); visual review inside a running Plasma session (there is no QML behavioural test).
+`qmllint` (both binaries — see the verification-tooling note; the Qt6 semantic run is clean); visual review — in a running Plasma session or through the render-preview harness, [[render-preview]] (there is no QML behavioural test).
 
 ### FullRepresentation
 
@@ -283,9 +283,7 @@ boundary out of the tested layer. Rendering a second colour for the feedback. Pu
 compact representation: a panel item stays icon-sized.
 
 #### Verification
-`qmllint` (both binaries — see the verification-tooling note; the Qt6 semantic run is clean); the command boundary behind it is unit tested against a real shell. The row
-itself cannot be instantiated outside plasmashell, so its interaction is reviewed until it runs in a real
-session.
+`qmllint` (both binaries — see the verification-tooling note; the Qt6 semantic run is clean); the command boundary behind it is unit tested against a real shell. The row's layout and interaction are reviewed — in a session or as a render through the harness, [[render-preview]].
 
 ### Bundled app icon
 

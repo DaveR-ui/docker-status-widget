@@ -10,8 +10,8 @@ hand.
 
 ### Overview
 
-- Markdown files: 44
-- Context docs: 2 | Notes: 8 | Hubs: 6 | ADRs: 16 | Templates: 8 | Checklists: 2
+- Markdown files: 45
+- Context docs: 2 | Notes: 9 | Hubs: 6 | ADRs: 16 | Templates: 8 | Checklists: 2
 
 ### Tree
 
@@ -59,6 +59,7 @@ hand.
   - troubleshooting-template.md — template, id: `troubleshooting-template`
   - ui-inventory-template.md — template, id: `ui-inventory-template`
 - verification/
+  - render-preview.md — note, id: `render-preview`
   - troubleshooting.md — note, id: `troubleshooting`
   - verification-index.md — hub, id: `verification-index`
   - verification-slice.md — note, id: `verification-slice`

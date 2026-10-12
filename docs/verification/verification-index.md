@@ -22,6 +22,7 @@ command that runs the harness is [../installer/installer-slice.md](../installer/
 
 - [[verification-slice]] — the map of this slice: the evidence layers and their limits.
 - [[troubleshooting]] — quick-ref sheet keyed by exact symptom strings, routed from `project.md`.
+- [[render-preview]] — how to see the widget rendered: the `tools/` harness, the three capture tiers and their prerequisites.
 
 ## Elsewhere
 
