@@ -19,6 +19,10 @@ import ".."
  * override). Every colour below is read from that palette; the page no longer
  * follows the system colour scheme on purpose.
  *
+ * The page renders six section cards: Docker, Container list, Podman Desktop,
+ * Miscelánea (the video-download and shutdown-countdown settings, merged into one
+ * card by adr-0019-miscelanea-section-merge), Updates and Appearance.
+ *
  * The severity -> colour mapping still lives in SeverityDot.qml and nowhere
  * else. Nothing on this page is a severity today, but if a colour here ever
  * means severity it must be routed through that helper -- introducing a second
@@ -255,26 +259,29 @@ Kirigami.FormLayout {
         }
     }
 
-    // --- Video download ------------------------------------------------------
+    // --- Miscelánea ----------------------------------------------------------
+    // Video download and Shutdown countdown used to be two cards; they are merged
+    // here so the two groups share one set of card chrome, with their controls and
+    // their order unchanged. See adr-0019-miscelanea-section-merge.
     Rectangle {
         Kirigami.FormData.isSection: true
         Layout.fillWidth: true
-        implicitWidth: Math.max(videoBody.implicitWidth, Kirigami.Units.gridUnit * 16)
+        implicitWidth: Math.max(miscBody.implicitWidth, Kirigami.Units.gridUnit * 16)
             + Kirigami.Units.largeSpacing * 4
-        implicitHeight: videoBody.implicitHeight + Kirigami.Units.largeSpacing * 4
+        implicitHeight: miscBody.implicitHeight + Kirigami.Units.largeSpacing * 4
         radius: paletteTokens.cardRadius
         color: Qt.rgba(paletteTokens.panelSunken.r, paletteTokens.panelSunken.g, paletteTokens.panelSunken.b, 0.45)
         border.width: paletteTokens.appBorderWidth
         border.color: paletteTokens.line
 
         ColumnLayout {
-            id: videoBody
+            id: miscBody
             anchors.fill: parent
             anchors.margins: Kirigami.Units.largeSpacing * 2
             spacing: Kirigami.Units.smallSpacing
 
             QQC2.Label {
-                text: i18n("Video download")
+                text: i18n("Miscelánea")
                 color: paletteTokens.text
                 font.family: paletteTokens.fontFamily
                 font.pixelSize: paletteTokens.sectionTitlePixelSize
@@ -282,7 +289,7 @@ Kirigami.FormLayout {
 
             QQC2.Label {
                 Layout.fillWidth: true
-                text: i18n("Where and how yt-dlp fetches a pasted link.")
+                text: i18n("Where yt-dlp fetches a pasted link, and how long the shutdown countdown runs.")
                 color: paletteTokens.muted
                 wrapMode: Text.WordWrap
                 font.family: paletteTokens.fontFamily
@@ -418,48 +425,10 @@ Kirigami.FormLayout {
                     QQC2.ToolTip.text: i18n("Passed to yt-dlp as --cookies-from-browser. Leave empty to download without cookies.")
                     QQC2.ToolTip.visible: hovered
                 }
-            }
-        }
-    }
 
-    // --- Shutdown countdown --------------------------------------------------
-    Rectangle {
-        Kirigami.FormData.isSection: true
-        Layout.fillWidth: true
-        implicitWidth: Math.max(countdownBody.implicitWidth, Kirigami.Units.gridUnit * 16)
-            + Kirigami.Units.largeSpacing * 4
-        implicitHeight: countdownBody.implicitHeight + Kirigami.Units.largeSpacing * 4
-        radius: paletteTokens.cardRadius
-        color: Qt.rgba(paletteTokens.panelSunken.r, paletteTokens.panelSunken.g, paletteTokens.panelSunken.b, 0.45)
-        border.width: paletteTokens.appBorderWidth
-        border.color: paletteTokens.line
-
-        ColumnLayout {
-            id: countdownBody
-            anchors.fill: parent
-            anchors.margins: Kirigami.Units.largeSpacing * 2
-            spacing: Kirigami.Units.smallSpacing
-
-            QQC2.Label {
-                text: i18n("Shutdown countdown")
-                color: paletteTokens.text
-                font.family: paletteTokens.fontFamily
-                font.pixelSize: paletteTokens.sectionTitlePixelSize
-            }
-
-            QQC2.Label {
-                Layout.fillWidth: true
-                text: i18n("How long after you press Shut down the machine powers off.")
-                color: paletteTokens.muted
-                wrapMode: Text.WordWrap
-                font.family: paletteTokens.fontFamily
-                font.pixelSize: paletteTokens.subtlePixelSize
-            }
-
-            Kirigami.FormLayout {
-                Layout.fillWidth: true
-                Layout.topMargin: Kirigami.Units.smallSpacing
-
+                // The shutdown duration lives on this same card so both former cards
+                // share one chrome (adr-0019-miscelanea-section-merge), but it stays
+                // its own control with its own Kirigami.FormData.label.
                 QQC2.TextField {
                     id: shutdownCountdownMinutes
                     Kirigami.FormData.label: i18n("Shutdown countdown (minutes):")

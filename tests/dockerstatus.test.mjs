@@ -2331,14 +2331,14 @@ test("the inline field reaches its error path and is disabled while a countdown 
 
 /*
  * ---------------------------------------------------------------------------
- * Collapsible sections: the four headers, their bodies and the +- affordance
+ * Collapsible sections: the one merged header, its body and the +- affordance
  * ---------------------------------------------------------------------------
- * Tapping any of the four section headers collapses its body and the popup
- * shrinks with it, because a hidden child contributes no height to the column.
- * The state is LOCAL VIEW STATE and nothing else: it is not persisted, and it
- * travels through no signal, so main.qml and Plasmoid.configuration stay unaware
- * of it and the popup stays a pure consumer of configuration. The header, the
- * separator and each section's identity glyph never collapse.
+ * Tapping the one section header collapses its body and the popup shrinks with
+ * it, because a hidden child contributes no height to the column. The state is
+ * LOCAL VIEW STATE and nothing else: it is not persisted, and it travels
+ * through no signal, so main.qml and Plasmoid.configuration stay unaware of it
+ * and the popup stays a pure consumer of configuration. The header, the
+ * separator and each sub-block's identity glyph never collapse.
  *
  * Pinned as text because every one of these compiles and renders when it is
  * silently dropped: a missing MouseArea turns the +/- into a decoration that
@@ -2354,30 +2354,24 @@ const paletteQmlUrl = new URL(
 const paletteQml = readFileSync(paletteQmlUrl, "utf8");
 
 // Section state -> its header RowLayout's id, its body's visible gates. The
-// countdown's three conditional cues fold their own rule in, so their pinned
-// expressions appear with the flag first and the cue's own condition second --
-// except the invalid cue, which keeps the leading test a separate pin below.
-// The containers section is NOT here: its header row is gone entirely
-// (adr-0016), so it owns no collapse state and no separator any more.
+// download and countdown blocks no longer own a flag each: adr-0019 merged them
+// into ONE "Miscelánea" section, so a single collapsible flag and a single header
+// RowLayout now cover both. The countdown's three conditional cues fold their own
+// rule in, so their pinned expressions appear with the flag first and the cue's
+// own condition second -- except the invalid cue, which keeps the leading test a
+// separate pin below. The containers section is NOT here: its header row is gone
+// entirely (adr-0016), so it owns no collapse state and no separator any more.
 const COLLAPSIBLE_SECTIONS = [
     {
-        flag: "downloadSectionExpanded",
-        row: "downloadHeaderRow",
-        headerToggle: "fullRoot.downloadSectionExpanded = !fullRoot.downloadSectionExpanded",
+        flag: "miscSectionExpanded",
+        row: "miscHeaderRow",
+        headerToggle: "fullRoot.miscSectionExpanded = !fullRoot.miscSectionExpanded",
+        // The merged body gates on miscBodyVisible, not the raw section bool: an
+        // armed shutdown is the one collapse that must be refused.
         gates: [
-            "visible: fullRoot.downloadSectionExpanded",
-        ],
-    },
-    {
-        flag: "countdownSectionExpanded",
-        row: "countdownHeaderRow",
-        headerToggle: "fullRoot.countdownSectionExpanded = !fullRoot.countdownSectionExpanded",
-        // The countdown body gates on countdownBodyVisible, not the raw section
-        // bool: an armed shutdown is the one collapse that must be refused.
-        gates: [
-            "visible: fullRoot.countdownBodyVisible",
-            "visible: fullRoot.countdownBodyVisible && fullRoot.shutdownFeedback !== \"\"",
-            "visible: !fullRoot.shutdownMinutesFieldValid && fullRoot.countdownBodyVisible",
+            "visible: fullRoot.miscBodyVisible",
+            "visible: fullRoot.miscBodyVisible && fullRoot.shutdownFeedback !== \"\"",
+            "visible: !fullRoot.shutdownMinutesFieldValid && fullRoot.miscBodyVisible",
             // The pending line is deliberately NOT gated by the collapse flag at
             // all -- see the armed-countdown test below.
             "visible: fullRoot.shutdownPending",
@@ -2411,6 +2405,24 @@ test("each collapsible section declares its own local view state, open by defaul
             `${section.flag} may only be assigned by its own header's toggle`,
         );
     }
+
+    // The merged section carries its own accented Spanish title, and it is the
+    // single flag both former blocks now share.
+    assert.ok(
+        fullQml.includes("property bool miscSectionExpanded: true"),
+        "the merged section must declare its one local view-state flag, open by default",
+    );
+    assert.ok(
+        fullQml.includes('i18n("Miscelánea")'),
+        "the merged section header must carry its accented Spanish title",
+    );
+
+    // No orphaned state may survive the merge: the two per-block flags and the old
+    // countdown gate are gone for good, so nothing can read a flag no header flips.
+    assert.ok(!fullQml.includes("downloadSectionExpanded"), "no per-block download flag may survive the merge");
+    assert.ok(!fullQml.includes("countdownSectionExpanded"), "no per-block countdown flag may survive the merge");
+    assert.ok(!fullQml.includes("countdownBodyVisible"), "the old countdown gate must be replaced by the merged one");
+
     assert.ok(!fullQml.includes("Plasmoid.configuration"), "still a pure consumer");
 });
 
@@ -2433,9 +2445,9 @@ test("tapping a section header toggles that section, and only that section", () 
         );
     }
 
-    // Each flag drives a distinct header: one handler body per section.
+    // The one merged header drives the one flag: one handler body for the section.
     const toggles = COLLAPSIBLE_SECTIONS.filter((section) => fullQml.includes(section.headerToggle));
-    assert.equal(toggles.length, 2, "both remaining headers must be tappable");
+    assert.equal(toggles.length, 1, "the merged Miscelánea header must be tappable");
 });
 
 test("each collapsible section hides its body, never its header or separator", () => {
@@ -2450,16 +2462,15 @@ test("each collapsible section hides its body, never its header or separator", (
     const actionRowStart = fullQml.indexOf("text: fullRoot.startInFlight");
     assert.ok(actionRowStart > 0, "the status card must keep its action row");
     assert.ok(
-        !/visible: fullRoot\.(?:container|download|countdown)SectionExpanded/.test(
+        !/visible: fullRoot\.(?:container|download|countdown|misc)SectionExpanded/.test(
             fullQml.slice(actionRowStart, fullQml.indexOf("stopDaemonButton", actionRowStart) + 200),
         ),
         "the status card's action row must not be gated on any collapse flag",
     );
 
-    // The separator Rectangles are untouched -- but only one of the two remaining
-    // headers has one: the countdown header deliberately has none, which is why the
-    // affordance rather than a hairline closes it off.
-    for (const flag of ["downloadSectionExpanded"]) {
+    // The merged header keeps its separator Rectangle: it closes the one header off
+    // from the merged body and it never collapses.
+    for (const flag of ["miscSectionExpanded"]) {
         const row = COLLAPSIBLE_SECTIONS.find((section) => section.flag === flag).row;
         assert.ok(
             new RegExp(`id: ${row}[\\s\\S]{0,4000}Rectangle \\{\\s*Layout.fillWidth: true\\s*Layout.preferredHeight: 1`)
@@ -2468,12 +2479,21 @@ test("each collapsible section hides its body, never its header or separator", (
         );
     }
 
-    const countdownRowStart = fullQml.indexOf("id: countdownHeaderRow");
-    assert.ok(countdownRowStart > 0, "the countdown header must keep its RowLayout");
+    // The countdown has no header row of its own any more: it is an inner title
+    // INSIDE the merged body column, below the merged header, so it must not open a
+    // second card or carry a second separator. Anchor on the merged header and prove
+    // the inner countdown title lives below the merged body's own visible gate.
+    const miscHeaderStart = fullQml.indexOf("id: miscHeaderRow");
+    assert.ok(miscHeaderStart > 0, "the merged header must keep its RowLayout");
+    const mergedBody = fullQml.slice(miscHeaderStart);
     assert.ok(
-        !/Rectangle \{\s*Layout\.fillWidth: true\s*Layout\.preferredHeight: 1/
-            .test(fullQml.slice(countdownRowStart, countdownRowStart + 4000)),
-        "the countdown header deliberately has no separator at all",
+        mergedBody.indexOf('i18n("Countdown to Extinction")')
+            > mergedBody.indexOf("visible: fullRoot.miscBodyVisible"),
+        "the inner countdown title must live inside the merged body column, below its visible gate",
+    );
+    assert.ok(
+        !fullQml.includes("id: countdownHeaderRow"),
+        "the countdown must not keep a header RowLayout of its own in the merged section",
     );
 });
 
@@ -2481,9 +2501,9 @@ test("each collapsible section hides its body, never its header or separator", (
  * Why this test exists. adr-0009 and the project's own Overview name "the visible
  * countdown and the cancel button" among the safeguards that let the power-off run
  * without a password prompt. Collapsing a section is therefore a rest-state
- * declutter only: while a shutdown is pending, the countdown body -- the live
- * "Powering off in M:SS" figure and the Cancel button included -- has to come back
- * and stay visible. An armed destructive state must never be hideable, and a
+ * declutter only: while a shutdown is pending, the merged "Miscelánea" body -- the
+ * live "Powering off in M:SS" figure and the Cancel button included -- has to come
+ * back and stay visible. An armed destructive state must never be hideable, and a
  * section affordance that can hide one turns the widget's own safety argument into
  * a lie.
  *
@@ -2493,24 +2513,24 @@ test("each collapsible section hides its body, never its header or separator", (
  * machine that powers off with nothing on screen counting down.
  */
 test("an armed countdown cannot be collapsed away", () => {
-    // The one gate the whole section reads, and the derived flag that un-collapses
-    // it while a shutdown is pending.
+    // The one gate the whole merged section reads, and the derived flag that
+    // un-collapses it while a shutdown is pending.
     assert.ok(
         fullQml.includes(
-            "readonly property bool countdownBodyVisible: "
-                + "fullRoot.countdownSectionExpanded || fullRoot.shutdownPending",
+            "readonly property bool miscBodyVisible: "
+                + "fullRoot.miscSectionExpanded || fullRoot.shutdownPending",
         ),
-        "the countdown body must be visible whenever the section is open OR a shutdown is pending",
+        "the merged body must be visible whenever the section is open OR a shutdown is pending",
     );
 
     // Every body item except the pending line reads that gate, so none of them can
     // disappear while the deadline runs. The pending line is stricter still.
     for (const gate of [
-        "visible: fullRoot.countdownBodyVisible",
-        "visible: fullRoot.countdownBodyVisible && fullRoot.shutdownFeedback !== \"\"",
-        "visible: !fullRoot.shutdownMinutesFieldValid && fullRoot.countdownBodyVisible",
+        "visible: fullRoot.miscBodyVisible",
+        "visible: fullRoot.miscBodyVisible && fullRoot.shutdownFeedback !== \"\"",
+        "visible: !fullRoot.shutdownMinutesFieldValid && fullRoot.miscBodyVisible",
     ]) {
-        assert.ok(fullQml.includes(gate), `the countdown body must gate on ${gate}`);
+        assert.ok(fullQml.includes(gate), `the merged body must gate on ${gate}`);
     }
 
     // The live countdown line is gated on shutdownPending and nothing else: it only
@@ -2524,14 +2544,14 @@ test("an armed countdown cannot be collapsed away", () => {
         "the pending line's visibility must be shutdownPending alone, ending the clause",
     );
     assert.ok(
-        !/visible:.*(countdownBodyVisible|countdownSectionExpanded)/.test(pendingLine),
+        !/visible:.*(miscBodyVisible|miscSectionExpanded)/.test(pendingLine),
         "no collapse flag may hide the live countdown line",
     );
 
     // The header's tap still toggles the section bool, so a pending countdown is
     // restored in full -- the user never sees a half-rendered armed state.
     assert.ok(
-        fullQml.includes("onClicked: fullRoot.countdownSectionExpanded = !fullRoot.countdownSectionExpanded"),
+        fullQml.includes("onClicked: fullRoot.miscSectionExpanded = !fullRoot.miscSectionExpanded"),
         "the header toggle must keep flipping the section bool",
     );
 });
@@ -2562,23 +2582,18 @@ test("the +/- indicator is a neon yellow token, bigger than body text, with a ha
     );
 
     // U+2212 MINUS SIGN when open, "+" when collapsed -- not an ASCII hyphen,
-    // whose stroke weight and width do not match the plus it stands beside. Three
-    // headers carry the pair now: the two remaining section headers (Import
-    // content, Countdown to Extinction) plus the per-compose-group header inside
-    // the containers list. The exact count is pinned -- rather than a ">= 3"
-    // floor -- so a fourth header added later fails loudly here instead of
-    // silently expanding the affordance's surface.
+    // whose stroke weight and width do not match the plus it stands beside. Two
+    // headers carry the pair now: the merged "Miscelánea" section header plus the
+    // per-compose-group header inside the containers list. The exact count is
+    // pinned -- rather than a ">= 2" floor -- so a third header added later fails
+    // loudly here instead of silently expanding the affordance's surface.
     const glyph = `? "\u2212" : "+"`;
 
     // Each header is anchored by its own state expression, so a regression that
     // rewired one header's glyph to the wrong flag still fails below.
     assert.ok(
-        fullQml.includes(`fullRoot.downloadSectionExpanded ${glyph}`),
-        "the Import content header must render the +/- glyph pair",
-    );
-    assert.ok(
-        fullQml.includes(`fullRoot.countdownBodyVisible ${glyph}`),
-        "the Countdown header must render the +/- glyph pair off effective visibility",
+        fullQml.includes(`fullRoot.miscBodyVisible ${glyph}`),
+        "the merged Miscelánea header must render the +/- glyph pair off effective visibility",
     );
     assert.ok(
         fullQml.includes(`containerGroup.groupOpen ${glyph}`),
@@ -2587,30 +2602,30 @@ test("the +/- indicator is a neon yellow token, bigger than body text, with a ha
 
     assert.equal(
         fullQml.split(glyph).length - 1,
-        3,
-        "exactly three headers may carry the +/- glyph pair: the two sections and the group header",
+        2,
+        "exactly two headers may carry the +/- glyph pair: the merged section and the group header",
     );
 
     // Every indicator reads the palette: no colour hex at any call site. Each of the
-    // three headers draws a crisp copy and a larger halo copy, so each token is read
-    // six times. The exact counts are pinned so a fourth header cannot slip in.
+    // two headers draws a crisp copy and a larger halo copy, so each token is read
+    // four times. The exact counts are pinned so a third header cannot slip in.
     assert.equal(
         (fullQml.match(/paletteTokens\.toggleIndicator(?!PixelSize)/g) || []).length,
-        6,
-        "the crisp glyph and its halo must both read the palette colour token, across all three headers",
+        4,
+        "the crisp glyph and its halo must both read the palette colour token, across both headers",
     );
     assert.equal(
         (fullQml.match(/paletteTokens\.toggleIndicatorPixelSize/g) || []).length,
-        6,
-        "the crisp glyph and its halo must both read the pixel size token, across all three headers",
+        4,
+        "the crisp glyph and its halo must both read the pixel size token, across both headers",
     );
 
     // The halo is a second, larger, low-opacity copy of the SAME glyph: plain
     // Text, no shader effect and no extra import.
     assert.equal(
         fullQml.split("opacity: 0.3").length - 1,
-        3,
-        "each of the three headers' halos is a low-opacity copy of the same glyph",
+        2,
+        "each of the two headers' halos is a low-opacity copy of the same glyph",
     );
 
     // The decorative arrow glyph is gone: the affordance replaced it.
@@ -2757,7 +2772,7 @@ test("the group body reuses the original container-row markup", () => {
     // The 32x32 glyph tile, as in the mockup, lives inside the group body.
     const groupBody = fullQml.slice(
         fullQml.indexOf("property bool groupOpen: true"),
-        fullQml.indexOf("// --- Video download section"),
+        fullQml.indexOf("// --- Miscelanea section"),
     );
     assert.ok(
         groupBody.includes("Layout.preferredWidth: 32") && groupBody.includes("Layout.preferredHeight: 32"),
@@ -2805,7 +2820,7 @@ test("the containers section is a flat list: no header, no section flag, a Docke
 test("the compose controls are small flat icon buttons, not the 38px surfaces", () => {
     const region = fullQml.slice(
         fullQml.indexOf("// --- Container section"),
-        fullQml.indexOf("// --- Video download section"),
+        fullQml.indexOf("// --- Miscelanea section"),
     );
     assert.equal(
         region.split("Layout.preferredWidth: 28").length - 1,

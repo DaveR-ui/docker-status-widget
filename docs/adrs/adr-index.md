@@ -4,7 +4,7 @@ category: adrs
 tags: [hub, index, adr, decisions]
 aliases: [ADR Index, Decision Records]
 related: [adr-0001-corpus-location-and-entry-point]
-version: 1.1
+version: 1.2
 status: active
 ---
 
@@ -92,6 +92,13 @@ re-litigated from the code alone does not need a record either — only the *why
   fixed), the validator and the two generated artifacts move to the repository root, and the
   methodology's name in every live citation becomes `documentation-onrails`. The append-only
   records above keep their historical text; this one carries the deltas.
+- [[adr-0019-miscelanea-section-merge]] — the popup's video-download block and its "Countdown to
+  Extinction" block merge into one collapsible "Miscelánea" section under a single toggle, each block
+  keeping its own inner title, with one local flag (`miscSectionExpanded`) and one derived gate
+  (`miscBodyVisible`, `miscSectionExpanded || shutdownPending`) replacing the two per-block flags and
+  the old `countdownBodyVisible`; the config page merges its two cards into one. It supersedes
+  nothing: adr-0009's un-collapsible armed countdown and every safeguard are preserved, and adr-0016
+  and adr-0017 are untouched.
 
 ## Elsewhere
 

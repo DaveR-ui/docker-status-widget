@@ -9,7 +9,7 @@ edit. The generated-file contract lives upstream:
 <!-- snapshot: 2026-10-12 -->
 ## Generated tag index
 
-- **adr** — adr-0001-corpus-location-and-entry-point, adr-0002-lowercase-naming-convention, adr-0003-slice-taxonomy, adr-0004-scoped-polkit-grant, adr-0005-doc-classes-and-body-shape-exceptions, adr-0006-video-downloader-command-boundary, adr-0007-stop-button-confirmation-and-narrow-grant, adr-0008-configurable-cookies-browser-and-bottom-text, adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation, adr-0011-fixed-dark-palette-from-mockup, adr-0013-widget-update-check-and-release-site, adr-0014-compose-grouping-and-podman-desktop-launch, adr-0015-update-indicator-opens-the-release-page, adr-0016-containers-flat-rows-and-podman-section-removal, adr-0017-podman-launch-button-and-topbar-removal, adr-0018-onrails-v1-4-retrofit, adr-index, adr-template
+- **adr** — adr-0001-corpus-location-and-entry-point, adr-0002-lowercase-naming-convention, adr-0003-slice-taxonomy, adr-0004-scoped-polkit-grant, adr-0005-doc-classes-and-body-shape-exceptions, adr-0006-video-downloader-command-boundary, adr-0007-stop-button-confirmation-and-narrow-grant, adr-0008-configurable-cookies-browser-and-bottom-text, adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation, adr-0011-fixed-dark-palette-from-mockup, adr-0013-widget-update-check-and-release-site, adr-0014-compose-grouping-and-podman-desktop-launch, adr-0015-update-indicator-opens-the-release-page, adr-0016-containers-flat-rows-and-podman-section-removal, adr-0017-podman-launch-button-and-topbar-removal, adr-0018-onrails-v1-4-retrofit, adr-0019-miscelanea-section-merge, adr-index, adr-template
 - **bootstrap** — bootstrap-protocol
 - **brownfield** — adr-0003-slice-taxonomy, slice-generalities-template
 - **catalog** — interface-surface-template
@@ -60,6 +60,7 @@ edit. The generated-file contract lives upstream:
 - **retrofit** — adr-0018-onrails-v1-4-retrofit
 - **routing** — adr-0003-slice-taxonomy, project
 - **schema** — adr-0005-doc-classes-and-body-shape-exceptions
+- **sections** — adr-0019-miscelanea-section-merge
 - **security** — adr-0004-scoped-polkit-grant, adr-0006-video-downloader-command-boundary, adr-0007-stop-button-confirmation-and-narrow-grant, adr-0009-widget-owned-shutdown-countdown, adr-0014-compose-grouping-and-podman-desktop-launch, privilege-slice
 - **shutdown** — adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation
 - **slice** — installer-slice, privilege-slice, slice-generalities-template, status-slice, verification-slice, widget-slice
@@ -74,7 +75,7 @@ edit. The generated-file contract lives upstream:
 - **theming** — adr-0011-fixed-dark-palette-from-mockup
 - **tooling** — adr-0002-lowercase-naming-convention, tools-readme
 - **troubleshooting** — troubleshooting, troubleshooting-template
-- **ui** — adr-0007-stop-button-confirmation-and-narrow-grant, adr-0008-configurable-cookies-browser-and-bottom-text, adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation, adr-0011-fixed-dark-palette-from-mockup, adr-0015-update-indicator-opens-the-release-page, adr-0016-containers-flat-rows-and-podman-section-removal, adr-0017-podman-launch-button-and-topbar-removal, ui-inventory-template, widget-ui-surfaces
+- **ui** — adr-0007-stop-button-confirmation-and-narrow-grant, adr-0008-configurable-cookies-browser-and-bottom-text, adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation, adr-0011-fixed-dark-palette-from-mockup, adr-0015-update-indicator-opens-the-release-page, adr-0016-containers-flat-rows-and-podman-section-removal, adr-0017-podman-launch-button-and-topbar-removal, adr-0019-miscelanea-section-merge, ui-inventory-template, widget-ui-surfaces
 - **update-check** — adr-0013-widget-update-check-and-release-site, adr-0015-update-indicator-opens-the-release-page
 - **validator** — adr-0002-lowercase-naming-convention
 - **verification** — tools-readme, troubleshooting, verification-index, verification-slice

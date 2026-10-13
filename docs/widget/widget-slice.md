@@ -4,7 +4,7 @@ category: widget
 tags: [slice, generality, widget, qml]
 aliases: [Widget slice, QML surfaces slice]
 related: [widget-index, status-slice, ui-surfaces]
-version: 1.0
+version: 1.1
 status: active
 ---
 
@@ -88,7 +88,8 @@ The container list is richer than before, and the popup renders it as a flat lis
 probe line carries the compose project, and the list crosses into `FullRepresentation.qml` already
 grouped: the popup draws one flat header row per project — the bundled Docker box glyph on a 28px tile,
 the project name, the running/total counter and, for compose-backed groups only, small flat 28x28
-play/stop `ToolButton`s with muted glyphs — with the same +/- affordance the other sections use, and
+play/stop `ToolButton`s with muted glyphs — with the same +/- affordance the merged Miscelánea section
+header uses, and
 the standalone group keeps its header but carries no controls. There is no section header above the
 list and no section-level collapse flag: each group carries its own open/closed state last, so
 per-group collapse is the surviving affordance
@@ -96,6 +97,21 @@ per-group collapse is the surviving affordance
 command in the representation: it emits a signal naming the project and the action, and `main.qml`
 assembles the command with `DockerStatus.buildComposeProjectCommand()` and runs it on the `composeAction`
 one-shot. The popup stays a pure consumer — everything crosses a property in and a signal out.
+
+The popup's one remaining section-level collapsible card is the merged "Miscelánea" section
+([[adr-0019-miscelanea-section-merge]]): one header (the "Miscelánea" title and the ± glyph) over one body
+holding both the video-download sub-block (gated on the `showVideoDownloader` setting, as the old card
+was) and the "Countdown to Extinction" sub-block (its inner title and its 35x35 timer tile moved inside the
+body), each keeping its own inner title. One flag replaces the two the blocks used to carry:
+`miscSectionExpanded` (local view state, default true, never persisted and never signalled) collapses both
+together, and the derived `miscBodyVisible` (`miscSectionExpanded || shutdownPending`) gates the body — the
+same adr-0009 semantics as the old `countdownBodyVisible`, so an armed countdown comes back whatever the
+section bool says and can never be collapsed away. The renamed state stays entirely inside
+`FullRepresentation.qml`: like `downloadSectionExpanded` and `countdownSectionExpanded` before it, it never
+crosses into `main.qml`, and the popup remains a pure consumer. The config page merges its two cards the
+same way: one "Miscelánea" card (after Podman Desktop, before Updates) whose single nested
+`Kirigami.FormLayout` holds the seven download and shutdown controls in their original order, with no kcfg
+entry, `cfg_*` alias, control id or tooltip changed; the page now renders six section cards.
 
 The Podman Desktop launch ADR-0014 added as the popup's fourth collapsible card, and ADR-0016 removed, is back
 as a square 28x28 `ToolButton` beside the daemon-status label in the status card: `FullRepresentation.qml`

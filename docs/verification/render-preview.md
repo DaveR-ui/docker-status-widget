@@ -4,7 +4,7 @@ category: verification
 tags: [probe, preview, qml, render, evidence]
 aliases: [Render Preview, Widget Render Harness, Visual Preview]
 related: [verification-slice, troubleshooting, widget-slice]
-version: 1.0
+version: 1.1
 status: active
 ---
 
@@ -95,10 +95,14 @@ not as a release gate: nothing here blocks a merge.
 
 Measured on this machine (Plasma 6.7.5, Qt 6.12.0, plasmashell live under
 `kwin_wayland`, widget installed at version 0.5.0): tier 1 produced
-`render_active.png` (daemon online, grouped containers, download row, countdown),
-`render_inactive_armed.png` (OFFLINE, armed stop, denied feedback, live
-countdown) and `render_unknown_update.png` (muted unknown state, busy
-"Starting…", update indicator and its line). Tier 2 grabbed the real installed
+`render_active.png` (daemon online, grouped containers, and both sub-blocks inside
+the merged Miscelánea section — download and countdown),
+`render_inactive_armed.png` (OFFLINE, armed stop, denied feedback, and an armed
+countdown reading "Shutting down…" with Cancel enabled and "Powering off in
+12:34") and `render_unknown_update.png` (muted unknown state, busy
+"Starting…", update indicator and its line, and the downloader-off state
+`previewDownloaderEnabled=False`, where Miscelánea holds ONLY the countdown and
+renders no dangling hairline; [[adr-0019-miscelanea-section-merge]]). Tier 2 grabbed the real installed
 desktop widget from behind a covering browser window.
 `plasmoidviewer -a io.github.daver-ui.dockerstatus -f planar` opens the packaged
 applet in a simulated desktop containment (the full representation, live state

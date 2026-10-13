@@ -13,8 +13,8 @@ generator. The generated-file contract lives upstream:
 
 ### Overview
 
-- Markdown files: 47
-- Context docs: 2 | Notes: 10 | Hubs: 6 | adrs: 17 | templates: 8 | protocols: 2
+- Markdown files: 48
+- Context docs: 2 | Notes: 10 | Hubs: 6 | adrs: 18 | templates: 8 | protocols: 2
 
 ### Tree
 
@@ -40,6 +40,7 @@ generator. The generated-file contract lives upstream:
   - adr-0016-containers-flat-rows-and-podman-section-removal.md — adr, id: `adr-0016-containers-flat-rows-and-podman-section-removal`
   - adr-0017-podman-launch-button-and-topbar-removal.md — adr, id: `adr-0017-podman-launch-button-and-topbar-removal`
   - adr-0018-onrails-v1-4-retrofit.md — adr, id: `adr-0018-onrails-v1-4-retrofit`
+  - adr-0019-miscelanea-section-merge.md — adr, id: `adr-0019-miscelanea-section-merge`
   - adr-index.md — hub, id: `adr-index`
 - docs/installer/
   - installer-index.md — hub, id: `installer-index`

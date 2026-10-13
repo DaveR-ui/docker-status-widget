@@ -4,7 +4,7 @@ category: widget
 tags: [ui, inventory, widget, surfaces, qml]
 aliases: [UI Surfaces, Widget UI Inventory]
 related: [widget-index, widget-slice, troubleshooting]
-version: 1.0
+version: 1.1
 status: active
 ---
 
@@ -18,8 +18,9 @@ status: active
 - A state must become a colour → **SeverityDot**. Never compute a colour at a call site.
 - The user must change poll interval, panel icon, container-list visibility or the download settings →
   **ConfigGeneral**, backed by the kcfg entries in `contents/config/main.xml`.
-- The user must paste a link and fetch a video → the **video download row** inside FullRepresentation
-  (full representation only; never the compact representation or the tooltip).
+- The user must paste a link and fetch a video → the **video download row** (the download sub-block
+  inside FullRepresentation's merged Miscelánea section; full representation only; never the compact
+  representation or the tooltip).
 - An installed widget must learn a newer release exists → the **update indicator and line** inside
   FullRepresentation (the icon renders only when one is available; a click opens the fixed release page,
   [[adr-0015-update-indicator-opens-the-release-page]]).
@@ -44,13 +45,15 @@ There is no other surface. A new one is a design decision, not an implementation
 Verification tooling: two `qmllint` binaries exist on this machine and they are not interchangeable. The
 one on `PATH` is Qt5 (`qt5-declarative 5.15.19`) and reports syntax only. The matching
 `/usr/lib/qt6/bin/qmllint` (`qt6-declarative 6.12.0`) is the semantic tool for a Plasma 6 target. Measured
-on the five `contents/ui/*.qml` files it reports 0 errors, 139 warnings (every one `[unqualified]`) and 89
-infos, of which 2 are `[unused-imports]`; on `contents/ui/config/*.qml` it reports 0 errors, 40 warnings
+on the five `contents/ui/*.qml` files it reports 0 errors, 140 warnings (every one `[unqualified]`) and 89
+infos, of which 2 are `[unused-imports]`; on `contents/ui/config/*.qml` it reports 0 errors, 38 warnings
 (all `[unqualified]`) and 5 infos, none of them `[unused-imports]`. Across the six files that is 0
-errors, 179 warnings and 94 infos (2 `[unused-imports]`), and none of `[missing-property]`,
-`[incompatible-type]`, `[unresolved-type]` or `[import]` (measured after adr-0017 relocated the refresh and
-Podman launch buttons into the status card and removed the topbar; the earlier 97/53 and 32/5 counts
-predate that change). Every
+errors, 178 warnings and 94 infos (2 `[unused-imports]`), and none of `[missing-property]`,
+`[incompatible-type]`, `[unresolved-type]` or `[import]`. The total sits one warning below adr-0017's 179:
+adr-0019 merged the popup's two collapsible sections into one Miscelánea card (the merged header adds one
+`[unqualified]` site in `contents/ui/`) and merged the config page's two cards into one (the single nested
+`Kirigami.FormLayout` removes two on `contents/ui/config/`). The earlier 97/53 and 32/5 counts
+predate adr-0017. Every
 "Verification" line below means both binaries were run; "the Qt6 semantic run is clean" records that
 measured result, and the exit code is not the evidence (Qt6 exits 0 unless `--max-warnings` is set).
 
@@ -93,8 +96,9 @@ The popup/desktop surface, restyled to the mockup's fixed dark palette: a status
 label with the relocated busy indicator, the square refresh and Podman Desktop launch buttons and the
 update indicator beside it, an ONLINE/OFFLINE pill, a running-container count and progress bar, the
 start/stop button row), the flat
-container list, the video-download row with its cookies-browser line, the "Countdown to Extinction"
-shutdown section, one muted update line and its indicator, shown only when a newer release is known, the
+container list, one merged collapsible "Miscelánea" section holding both the video-download row with its
+cookies-browser line and the "Countdown to Extinction" shutdown controls (each under its own inner
+title), one muted update line and its indicator, shown only when a newer release is known, the
 configurable bottom text and a
 footer. It paints its own dark 20px-radius card, so Plasma's own background is switched off
 (`Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground` in `main.qml`;
@@ -177,9 +181,10 @@ There is no section header above the list and no section collapse flag: a group'
 group's local open/closed state. Every container row keeps its deterministic theme-icon tile
 (`containerIconFor(name)`, a cheap hash into a fixed list of generic theme names, so the same container
 always gets the same tile and a missing theme icon degrades to nothing), the container name, and a
-six-pixel severity dot beside the state. The download row appears only while the `showVideoDownloader`
-setting is on; its button is disabled while a download is in flight, while the paste is empty, or until
-the one-shot `homeSource` has reported `$HOME`. The browser is configured on the same page and resolved
+six-pixel severity dot beside the state. Inside the Miscelánea section the download sub-block appears
+only while the `showVideoDownloader` setting is on; its button is disabled while a download is in
+flight, while the paste is empty, or until the one-shot `homeSource` has reported `$HOME`. The browser is
+configured on the same page and resolved
 through `DockerStatus.resolveCookiesBrowser()`, the same function `main.qml` feeds into the command, so
 the muted `Cookies from: <browser>` line under the row can never claim a browser the download is not
 using; an opted-out setting reads `Cookies: not used`. The configured bottom text (default
@@ -188,8 +193,20 @@ is empty; it is configured copy, not a status message. A footer closes the card:
 static "Docker Status · Local panel" label, and the daemon state beside a five-pixel dot that reuses the
 header dot's `severityColor`.
 
-The "Countdown to Extinction" section sits above the tagline: a separator, a bold title, a "Minutes until
-power-off:" label with an inline `TextField` (`shutdownMinutesField`), a wide play button ("Shut down" /
+The merged "Miscelánea" section sits above the tagline ([[adr-0019-miscelanea-section-merge]]): one card
+with a single tappable header — a bold `i18n("Miscelánea")` title and the same ± glyph pair the group
+headers use — a 1px separator, and one body holding the download sub-block above the countdown sub-block,
+each under its own inner title. The single header toggles one flag, `miscSectionExpanded` (local view
+state, default true, never persisted and never signalled); the ± glyph reads the derived `miscBodyVisible`
+(`miscSectionExpanded || shutdownPending`), not the raw bool, so the affordance cannot lie while a
+countdown is armed. The download sub-block keeps its own `visible: fullRoot.downloaderEnabled` gate, so
+its inner title "Import content", the YouTube/X URL label, the
+`videoUrlField` + `downloadButton` + BusyIndicator row, the cookies line, the unsupported-paste line, the
+SeverityDot feedback row and a trailing 1px hairline all disappear together when the setting is off (the
+hairline is the sub-block's last child, so it never leaves a dangling rule). The countdown sub-block opens
+with its inner title "Countdown to Extinction" and the 35x35 "◷" timer tile, moved inside the body beside
+that title; below them sit the unchanged minutes row — a "Minutes until
+power-off:" label with an inline `TextField` (`shutdownMinutesField`) — a wide play button ("Shut down" /
 "Shutting down…") and a narrow "Cancel" button, both with tooltips. The inline field is a second editing
 surface for `shutdownCountdownMinutes`: it seeds once from the raw stored string (`shutdownMinutesText`),
 mirrors inbound changes only while it is unfocused (never a `text:` binding), and emits the raw text as
@@ -205,13 +222,17 @@ writes the kcfg entry ([[adr-0010-inline-shutdown-minutes-in-the-representation]
 instant the sequence is armed (`shutdownPlayEnabled` requires ready, a valid field, not pending and not in
 flight), so one activation cannot arm twice; `Cancel` is enabled only while a shutdown is pending, and it
 cancels locally without any privilege. While pending, a muted line reads `Powering off in M:SS` from
-`DockerStatus.formatCountdown(shutdownRemainingSeconds)` and counts down once a second. The section's
-feedback row reuses `SeverityDot` with `shutdownFeedbackSeverity`, exactly as the header does. The section
-renders and emits only; the deadline, the ticker and the fixed power-off command all live in `main.qml`
-([[adr-0009-widget-owned-shutdown-countdown]]).
+`DockerStatus.formatCountdown(shutdownRemainingSeconds)` and counts down once a second. The sub-block's
+feedback row reuses `SeverityDot` with `shutdownFeedbackSeverity`, exactly as the header does, and both it
+and the invalid-value cue repeat `visible: fullRoot.miscBodyVisible`; the live pending line is gated only
+on `fullRoot.shutdownPending`, so an armed countdown can never be collapsed away
+([[adr-0009-widget-owned-shutdown-countdown]]). The merged section renders and emits only; the deadline,
+the ticker and the fixed power-off command all live in `main.qml`, and the collapse state stays inside the
+representation — never persisted and never reaching `main.qml`
+([[adr-0019-miscelanea-section-merge]]).
 
 The update notice has two parts, both on the same `updateAvailable` gate. Above the tagline and below the
-shutdown section sits a muted, centred `PlasmaComponents3.Label` naming the newer version; it stays
+Miscelánea section sits a muted, centred `PlasmaComponents3.Label` naming the newer version; it stays
 deliberately non-clickable, neither a button, a `SeverityDot` nor a link. Beside the daemon state in the
 status card sits a small flat `emblem-important` `ToolButton`, and its click is the feature's one
 browser-opening call: it opens exactly `https://dave-r-ui.github.io/docker-status-widget/`
@@ -245,7 +266,10 @@ raising a notification instead of an icon, or showing the icon when no update ex
 
 #### Verification
 `qmllint` (both binaries — see the verification-tooling note; the Qt6 semantic run is clean); a probe with a deliberately failing command confirmed the failure path renders — that
-probe is **not** recorded in the repository, so treat the failure path as reviewed, not tested.
+probe is **not** recorded in the repository, so treat the failure path as reviewed, not tested. The
+merged Miscelánea section was exercised through the headless render harness ([[render-preview]]) in three
+states — every block open, an armed countdown, and the downloader-off state — via
+`QT_QPA_PLATFORM=offscreen python3 tools/render_preview.py`.
 
 ### Video download row
 
@@ -254,8 +278,9 @@ The one place this widget accepts input: paste a YouTube or X link, press the bu
 the video into the configured folder.
 
 #### Path
-`package/io.github.daver-ui.dockerstatus/contents/ui/FullRepresentation.qml` — the "Video download" section. It
-is a row, not a separate component file, and it exists only inside the full representation.
+`package/io.github.daver-ui.dockerstatus/contents/ui/FullRepresentation.qml` — the download sub-block
+inside the merged "Miscelánea" section ([[adr-0019-miscelanea-section-merge]]). It is a row, not a
+separate component file, and it exists only inside the full representation.
 
 #### Interface
 Reads `downloaderEnabled`, `downloadReady`, `downloadInFlight`, `downloadFeedback` and
@@ -269,7 +294,8 @@ exists; the row only reports the paste and renders the result. `downloadReady` i
 reuses `SeverityDot` for its feedback, so no second severity-to-colour mapping exists.
 
 #### Usage Pattern
-Shown only while the `showVideoDownloader` setting is on. The button is disabled while a download is in
+Shown only while the `showVideoDownloader` setting is on, as a sub-block inside the Miscelánea section
+([[adr-0019-miscelanea-section-merge]]). The button is disabled while a download is in
 flight, while the field is empty, or before `$HOME` is known. An unsupported paste is still accepted by
 the button — a click then reports why it was refused instead of the button looking dead — and an inline
 label warns "Only YouTube and X (Twitter) links are supported." while the paste is unsupported. The
@@ -341,9 +367,13 @@ Reusing `neutral` for unknown states, which would make a broken probe look merel
 ### ConfigGeneral
 
 #### Purpose
-The configuration page, restyled to the palette as seven section cards (Docker, Container list, Podman
-Desktop, Video download, Shutdown countdown, Updates, Appearance): poll interval, panel icon name, whether
-containers are listed, the Podman Desktop path, the download settings, the shutdown minutes, the update-check interval and the bottom text. The page keeps Plasma's chrome — unlike
+The configuration page, restyled to the palette as six section cards (Docker, Container list, Podman
+Desktop, Miscelánea, Updates, Appearance): poll interval, panel icon name, whether
+containers are listed, the Podman Desktop path, the download settings and the shutdown minutes (both in
+the merged Miscelánea card), the update-check interval and the bottom text. The Miscelánea card's one
+nested `Kirigami.FormLayout` carries the seven download and shutdown controls in their original order,
+with no kcfg entry, `cfg_*` alias, control id or tooltip changed
+([[adr-0019-miscelanea-section-merge]]). The page keeps Plasma's chrome — unlike
 the popup it does not switch the background off — and paints the palette's optional dark page surface
 (`paintPageBackground`) behind the cards; `import ".."` lets the palette `QtObject` resolve from `ui/`
 ([[adr-0011-fixed-dark-palette-from-mockup]]).

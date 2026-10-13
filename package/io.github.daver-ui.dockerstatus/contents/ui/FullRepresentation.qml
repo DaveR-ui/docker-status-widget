@@ -95,29 +95,33 @@ Item {
     property string podmanLaunchFeedback: ""
     property string podmanLaunchFeedbackSeverity: "muted"
 
-    // Local view state and nothing else: which of the two collapsible sections
-    // have their body open. This is deliberately NOT persisted and NOT routed
-    // through a signal -- main.qml still owns every shell and kcfg boundary, and
-    // the popup stays a pure consumer of configuration. The one piece of state
-    // that belongs to the popup itself is whether its own sections are open.
-    // Both default to true, so nothing regresses visually until a header is
-    // tapped, and the header, separator and section identity never collapse.
+    // Local view state and nothing else: whether the ONE collapsible section --
+    // the merged "Miscelánea" card that now holds both the video-download row and
+    // the shutdown countdown -- has its body open. This is deliberately NOT
+    // persisted and NOT routed through a signal: main.qml still owns every shell
+    // and kcfg boundary, and the popup stays a pure consumer of configuration. The
+    // single piece of state that belongs to the popup itself is whether that one
+    // section is open. It defaults to true, so nothing regresses visually until the
+    // header is tapped, and the header, separator and each sub-block's inner title
+    // never collapse.
     //
     // The containers section has NO collapse state any more: its header row is
     // gone entirely, so there is no header left to tap and no flag that could
-    // keep a body closed behind a list that is always shown. Only these two
-    // sections remain collapsible.
-    property bool downloadSectionExpanded: true
-    property bool countdownSectionExpanded: true
+    // keep a body closed behind a list that is always shown. The download and
+    // countdown blocks used to carry one flag each; adr-0019 merged them into this
+    // single section, so they share this one flag and collapse together.
+    //
+    // Assigned EXACTLY ONCE: the merged header's MouseArea is the only writer.
+    property bool miscSectionExpanded: true
 
-    // The countdown is the one section with an ARMED state, and adr-0009 names "the
+    // The countdown is the one part with an ARMED state, and adr-0009 names "the
     // visible countdown and the cancel button" among the safeguards that let the
     // power-off run without a password prompt. So collapse is a rest-state declutter
-    // only: while a shutdown is pending the body comes back whatever the section
-    // bool says, and an armed destructive state can never be collapsed away. The
-    // header's own toggle still flips the section bool, so a pending countdown is
-    // restored in full and stays that way until the user cancels it.
-    readonly property bool countdownBodyVisible: fullRoot.countdownSectionExpanded || fullRoot.shutdownPending
+    // only: while a shutdown is pending the merged body comes back whatever the
+    // section bool says, and an armed destructive state can never be collapsed away.
+    // The header's own toggle still flips the section bool, so a pending countdown
+    // is restored in full and stays that way until the user cancels it.
+    readonly property bool miscBodyVisible: fullRoot.miscSectionExpanded || fullRoot.shutdownPending
 
     // Update check. main.qml owns the whole check; this representation only renders the one
     // line it produces and can ask for a manual re-check. No severity here: the line reuses
@@ -797,9 +801,9 @@ Item {
                                     }
 
                                     // The open/close affordance, pixel-identical to the
-                                    // two remaining section headers and deliberately LAST
-                                    // in the row, so a group collapse reads the same as a
-                                    // section collapse.
+                                    // merged Miscelánea section header and deliberately
+                                    // LAST in the row, so a group collapse reads the same
+                                    // as a section collapse.
                                     Item {
                                         Layout.alignment: Qt.AlignVCenter
                                         implicitWidth: groupToggleGlow.implicitWidth
@@ -968,15 +972,24 @@ Item {
             }
         }
 
-        // --- Video download section ------------------------------------------
-        // The one place this widget accepts input. The URL is validated twice: here, to
-        // arm the button and to show a hint; and again inside buildVideoDownloadCommand(),
-        // which refuses it and shell-quotes it before it becomes a command. An unsupported
-        // paste is reported, never silently ignored.
+        // --- Miscelanea section -----------------------------------------------
+        // One merged, collapsible card (adr-0019-miscelanea-section-merge) that holds
+        // BOTH blocks the popup used to render as two separate collapsible sections: the
+        // video-download row and the "Countdown to Extinction" shutdown controls. The
+        // single header below collapses or expands both together. Each block keeps its
+        // own inner title, so the two remain legible inside the one card, and the
+        // countdown's 35x35 timer tile moves inside the body with its title as the
+        // countdown's identity.
+        //
+        // The download sub-block keeps its own visible gate (the downloaderEnabled
+        // setting), so the whole sub-block, its inner title and its trailing hairline
+        // disappear together when the setting is off. The countdown is unconditional, so
+        // the merged card itself carries NO visible gate: only the one detail below reads
+        // the collapse flag, and even that is overridden while a shutdown is pending (see
+        // miscBodyVisible above).
         Rectangle {
             Layout.fillWidth: true
-            implicitHeight: downloadBody.implicitHeight
-            visible: fullRoot.downloaderEnabled
+            implicitHeight: miscBody.implicitHeight
             radius: paletteTokens.cardRadius
             border.width: paletteTokens.appBorderWidth
             border.color: paletteTokens.line
@@ -984,278 +997,44 @@ Item {
             clip: true
 
             ColumnLayout {
-                id: downloadBody
+                id: miscBody
                 anchors.fill: parent
                 spacing: 0
 
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 0
-
-                    // Single-row header, as in the containers section: title and the
-                    // right-side toggle on one line, no subtitle. The toggle replaces
-                    // the old decorative arrow glyph and states the section's
-                    // open/closed state directly.
-                    //
-                    // The row is wrapped in a plain Item so tapping the header can
-                    // collapse the section body below it. As in the containers
-                    // section, the wrapper -- a direct child of this ColumnLayout --
-                    // carries the horizontal insets the RowLayout used to, and the
-                    // RowLayout fills the wrapper, keeping its vertical insets as
-                    // anchor margins. The header and separator never collapse.
-                    Item {
-                        Layout.fillWidth: true
-                        Layout.leftMargin: 16
-                        Layout.rightMargin: 16
-                        implicitHeight: downloadHeaderRow.implicitHeight + 24
-
-                        // The whole header strip is the tap target, including the
-                        // 16px gutters and the vertical padding.
-                        MouseArea {
-                            anchors.fill: parent
-                            onClicked: fullRoot.downloadSectionExpanded = !fullRoot.downloadSectionExpanded
-                        }
-
-                        RowLayout {
-                            id: downloadHeaderRow
-                            anchors.fill: parent
-                            anchors.topMargin: 12
-                            anchors.bottomMargin: 12
-                            spacing: 12
-
-                            PlasmaComponents3.Label {
-                                Layout.fillWidth: true
-                                text: i18n("Import content")
-                                color: paletteTokens.text
-                                elide: Text.ElideRight
-                                font.family: paletteTokens.fontFamily
-                                font.pixelSize: paletteTokens.sectionTitlePixelSize
-                                font.weight: 650
-                            }
-
-                            // The open/close affordance, identical to the other two
-                            // sections' headers: the MINUS sign (U+2212) when the
-                            // body is open and a plus when it is collapsed, with a
-                            // larger low-opacity copy of the same glyph behind it as
-                            // a crude halo. Two plain Text items, no shader effect
-                            // and no extra import.
-                            Item {
-                                Layout.alignment: Qt.AlignVCenter
-                                implicitWidth: downloadToggleGlow.implicitWidth
-                                implicitHeight: downloadToggleGlow.implicitHeight
-
-                                Text {
-                                    id: downloadToggleGlow
-                                    anchors.centerIn: parent
-                                    text: fullRoot.downloadSectionExpanded ? "−" : "+"
-                                    color: paletteTokens.toggleIndicator
-                                    opacity: 0.3
-                                    font.family: paletteTokens.fontFamily
-                                    font.pixelSize: paletteTokens.toggleIndicatorPixelSize + 5
-                                }
-
-                                Text {
-                                    anchors.centerIn: parent
-                                    text: downloadToggleGlow.text
-                                    color: paletteTokens.toggleIndicator
-                                    font.family: paletteTokens.fontFamily
-                                    font.pixelSize: paletteTokens.toggleIndicatorPixelSize
-                                }
-                            }
-                        }
-                    }
-
-                    Rectangle {
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 1
-                        color: paletteTokens.line
-                    }
-                }
-
-                // Collapsed by a tap on the header above. Nothing inside is
-                // deleted -- the whole input surface is only gated on this flag,
-                // so reopening restores it exactly as it was.
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    Layout.margins: 16
-                    visible: fullRoot.downloadSectionExpanded
-                    spacing: 8
-
-                    PlasmaComponents3.Label {
-                        text: i18n("YouTube or X URL")
-                        color: paletteTokens.labelText
-                        font.family: paletteTokens.fontFamily
-                        font.pixelSize: paletteTokens.labelPixelSize
-                        font.weight: 650
-                    }
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: 8
-
-                        PlasmaComponents3.TextField {
-                            id: videoUrlField
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 41
-                            placeholderText: i18n("Paste a YouTube or X link")
-                            color: paletteTokens.text
-                            placeholderTextColor: paletteTokens.placeholder
-                            leftPadding: 12
-                            rightPadding: 12
-                            enabled: !fullRoot.downloadInFlight
-                            onAccepted: {
-                                if (downloadButton.enabled) {
-                                    fullRoot.downloadRequested(videoUrlField.text);
-                                }
-                            }
-
-                            background: Rectangle {
-                                color: paletteTokens.fieldSurface
-                                border.width: paletteTokens.appBorderWidth
-                                border.color: videoUrlField.activeFocus ? paletteTokens.fieldBorderFocus : paletteTokens.fieldBorder
-                                radius: paletteTokens.controlRadius
-                            }
-                        }
-
-                        PlasmaComponents3.ToolButton {
-                            id: downloadButton
-                            Layout.preferredHeight: 41
-                            icon.name: "download"
-                            icon.color: paletteTokens.text
-                            // Space between the left border and the content,
-                            // matching the 12px padding the text fields already
-                            // carry.
-                            leftPadding: 12
-                            display: PlasmaComponents3.AbstractButton.TextBesideIcon
-                            text: i18n("Import")
-                            flat: false
-                            // Enabled for an unsupported paste too, on purpose: a click then
-                            // reports why it was refused instead of the button looking dead.
-                            enabled: !fullRoot.downloadInFlight
-                                && fullRoot.downloadReady
-                                && videoUrlField.text.trim() !== ""
-                            onClicked: fullRoot.downloadRequested(videoUrlField.text)
-                            Kirigami.Theme.textColor: paletteTokens.text
-
-                            background: Rectangle {
-                                color: downloadButton.hovered ? paletteTokens.buttonSurfaceHover : paletteTokens.buttonSurface
-                                radius: paletteTokens.controlRadius
-                                border.width: paletteTokens.appBorderWidth
-                                border.color: downloadButton.hovered ? paletteTokens.buttonBorderHover : paletteTokens.buttonBorder
-                            }
-
-                            // A PC3 ToolTip only renders when its parent is an AbstractButton,
-                            // so this one works here and would not work on the TextField above.
-                            PlasmaComponents3.ToolTip {
-                                text: i18n("Download this video with yt-dlp, using your configured cookies browser")
-                            }
-                        }
-
-                        PlasmaComponents3.BusyIndicator {
-                            Layout.preferredWidth: Kirigami.Units.iconSizes.small
-                            Layout.preferredHeight: Kirigami.Units.iconSizes.small
-                            running: fullRoot.downloadInFlight
-                            visible: fullRoot.downloadInFlight
-                        }
-                    }
-
-                    PlasmaComponents3.Label {
-                        Layout.fillWidth: true
-                        text: fullRoot.cookiesBrowserDisplay !== ""
-                            ? i18nc("@info", "Cookies from: %1", fullRoot.cookiesBrowserDisplay)
-                            : i18nc("@info", "Cookies: not used")
-                        color: paletteTokens.muted
-                        font.family: paletteTokens.fontFamily
-                        font.pixelSize: paletteTokens.subtlePixelSize
-                    }
-
-                    PlasmaComponents3.Label {
-                        Layout.fillWidth: true
-                        visible: fullRoot.pastedLinkUnsupported
-                        text: i18n("Only YouTube and X (Twitter) links are supported.")
-                        color: Kirigami.Theme.negativeTextColor
-                        wrapMode: Text.WordWrap
-                        font.family: paletteTokens.fontFamily
-                        font.pixelSize: paletteTokens.subtlePixelSize
-                    }
-
-                    // The dot carries the severity, exactly as in the header: no second
-                    // severity-to-colour switch is allowed to exist.
-                    RowLayout {
-                        Layout.fillWidth: true
-                        visible: fullRoot.downloadFeedback !== ""
-                        spacing: 6
-
-                        SeverityDot {
-                            Layout.alignment: Qt.AlignVCenter
-                            severity: fullRoot.downloadFeedbackSeverity
-                        }
-
-                        PlasmaComponents3.Label {
-                            Layout.fillWidth: true
-                            text: fullRoot.downloadFeedback
-                            color: paletteTokens.text
-                            wrapMode: Text.WordWrap
-                            font.family: paletteTokens.fontFamily
-                            font.pixelSize: paletteTokens.subtlePixelSize
-                        }
-                    }
-                }
-            }
-        }
-
-        // --- Countdown to Extinction -----------------------------------------
-        // The countdown itself is owned by main.qml: this representation only renders the
-        // local deadline and emits start/stop. Play disables the instant the sequence starts,
-        // so it can only ever be armed once; stop is the only way to cancel and, because
-        // cancel is purely local, it needs no privilege. The power-off adds no polkit rule
-        // and does not widen the grant (ALLOWED_VERBS stays ["start"]); unlike the daemon
-        // stop it does not prompt, because logind's default policy for
-        // org.freedesktop.login1.power-off is allow_active=yes. The safeguards are the
-        // deliberate activation, the more-than-10-minute countdown, the visible countdown
-        // and the cancel button, not a password gate (adr-0009).
-        Rectangle {
-            Layout.fillWidth: true
-            implicitHeight: countdownBody.implicitHeight + 32
-            radius: paletteTokens.cardRadius
-            border.width: paletteTokens.appBorderWidth
-            border.color: paletteTokens.line
-            color: Qt.rgba(paletteTokens.panelSunken.r, paletteTokens.panelSunken.g, paletteTokens.panelSunken.b, 0.45)
-            clip: true
-
-            ColumnLayout {
-                id: countdownBody
-                anchors.fill: parent
-                anchors.margins: 16
-                spacing: 0
-
-                // Single-row header: title beside the timer tile, no subtitle line
-                // underneath (the follow-up that also removed the topbar's big title).
+                // Single-row header for the merged section: the "Miscelánea" title and
+                // the right-side toggle on one line, no subtitle. The toggle states the
+                // section's open/closed state directly and collapses BOTH sub-blocks.
                 //
-                // Wrapped in a plain Item, exactly like the other two sections, so a
-                // tap anywhere on the header collapses the whole countdown body --
-                // except while a shutdown is pending, when the body is deliberately
-                // un-collapsible (adr-0009's visible safeguards; see
-                // countdownBodyVisible below). This header has no horizontal insets
-                // of its own, so the wrapper carries none either. The timer tile is
-                // the section's identity and stays visible in both states.
+                // The row is wrapped in a plain Item so tapping the header can collapse
+                // the body below it. As in the per-group header, the wrapper -- a direct
+                // child of this ColumnLayout -- carries the horizontal insets the
+                // RowLayout used to, and the RowLayout fills the wrapper, keeping its
+                // vertical insets as anchor margins. The header and separator never
+                // collapse.
                 Item {
                     Layout.fillWidth: true
-                    implicitHeight: countdownHeaderRow.implicitHeight
+                    Layout.leftMargin: 16
+                    Layout.rightMargin: 16
+                    implicitHeight: miscHeaderRow.implicitHeight + 24
 
+                    // The whole header strip is the tap target, including the 16px
+                    // gutters and the vertical padding. This MouseArea is the ONLY writer
+                    // of miscSectionExpanded.
                     MouseArea {
                         anchors.fill: parent
-                        onClicked: fullRoot.countdownSectionExpanded = !fullRoot.countdownSectionExpanded
+                        onClicked: fullRoot.miscSectionExpanded = !fullRoot.miscSectionExpanded
                     }
 
                     RowLayout {
-                        id: countdownHeaderRow
+                        id: miscHeaderRow
                         anchors.fill: parent
+                        anchors.topMargin: 12
+                        anchors.bottomMargin: 12
                         spacing: 12
 
                         PlasmaComponents3.Label {
                             Layout.fillWidth: true
-                            text: i18n("Countdown to Extinction")
+                            text: i18n("Miscelánea")
                             color: paletteTokens.text
                             elide: Text.ElideRight
                             font.family: paletteTokens.fontFamily
@@ -1263,44 +1042,26 @@ Item {
                             font.weight: 650
                         }
 
-                        Rectangle {
-                            Layout.preferredWidth: 35
-                            Layout.preferredHeight: 35
-                            Layout.alignment: Qt.AlignVCenter
-                            radius: paletteTokens.controlRadius
-                            color: paletteTokens.iconTileSurface
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: "◷"
-                                color: paletteTokens.iconTileTextAlt
-                                font.family: paletteTokens.fontFamily
-                                font.pixelSize: paletteTokens.titlePixelSize
-                            }
-                        }
-
-                        // The open/close affordance, laid out like the other two
-                        // sections' headers: the MINUS sign (U+2212) when the body
-                        // is showing and a plus when it is collapsed, with a larger
-                        // low-opacity copy of the same glyph behind it as a crude
-                        // halo. Two plain Text items, no shader effect and no extra
-                        // import.
+                        // The open/close affordance, identical to the per-compose-group
+                        // header's: the MINUS sign (U+2212) when the body is open and a
+                        // plus when it is collapsed, with a larger low-opacity copy of the
+                        // same glyph behind it as a crude halo. Two plain Text items, no
+                        // shader effect and no extra import.
                         //
-                        // It reads countdownBodyVisible, NOT the raw section bool:
-                        // the glyph has to describe what the user can actually see.
-                        // While a shutdown is pending the body is un-collapsible, so
-                        // the affordance must show the open state -- a minus next to
-                        // hidden controls would be a lie, and could read as "collapse
-                        // the countdown away".
+                        // It reads miscBodyVisible, NOT the raw section bool: the glyph has
+                        // to describe what the user can actually see. While a shutdown is
+                        // pending the body is un-collapsible, so the affordance must show
+                        // the open state -- a minus next to hidden controls would be a lie,
+                        // and could read as "collapse the countdown away".
                         Item {
                             Layout.alignment: Qt.AlignVCenter
-                            implicitWidth: countdownToggleGlow.implicitWidth
-                            implicitHeight: countdownToggleGlow.implicitHeight
+                            implicitWidth: miscToggleGlow.implicitWidth
+                            implicitHeight: miscToggleGlow.implicitHeight
 
                             Text {
-                                id: countdownToggleGlow
+                                id: miscToggleGlow
                                 anchors.centerIn: parent
-                                text: fullRoot.countdownBodyVisible ? "−" : "+"
+                                text: fullRoot.miscBodyVisible ? "−" : "+"
                                 color: paletteTokens.toggleIndicator
                                 opacity: 0.3
                                 font.family: paletteTokens.fontFamily
@@ -1309,7 +1070,7 @@ Item {
 
                             Text {
                                 anchors.centerIn: parent
-                                text: countdownToggleGlow.text
+                                text: miscToggleGlow.text
                                 color: paletteTokens.toggleIndicator
                                 font.family: paletteTokens.fontFamily
                                 font.pixelSize: paletteTokens.toggleIndicatorPixelSize
@@ -1318,205 +1079,422 @@ Item {
                     }
                 }
 
-                // The countdown length is editable here, not only in the config page, because
-                // this is the surface where the play button and its disabled state actually
-                // live. The field deliberately refuses no keystrokes: a non-number has to be
-                // typeable so the error cue below can explain why play is disabled. The
-                // seed/sync pair exists because a plain `text:` binding would be destroyed by
-                // the first user edit -- the same trap the config page's cookies combo
-                // documents -- so the stored value is copied in once and afterwards only
-                // mirrored while the field is unfocused.
-                RowLayout {
+                Rectangle {
                     Layout.fillWidth: true
-                    Layout.topMargin: 17
-                    visible: fullRoot.countdownBodyVisible
-                    spacing: 10
+                    Layout.preferredHeight: 1
+                    color: paletteTokens.line
+                }
 
-                    PlasmaComponents3.Label {
+                // Collapsed by a tap on the header above. Nothing inside is deleted --
+                // both sub-blocks are only gated on this one flag, so reopening restores
+                // them exactly as they were.
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    Layout.margins: 16
+                    visible: fullRoot.miscBodyVisible
+                    spacing: 8
+
+                    // Download sub-block: the one place this widget accepts input. The URL
+                    // is validated twice: here, to arm the button and to show a hint; and
+                    // again inside buildVideoDownloadCommand(), which refuses it and
+                    // shell-quotes it before it becomes a command. An unsupported paste is
+                    // reported, never silently ignored.
+                    //
+                    // The sub-block carries the old card's chrome: the downloaderEnabled
+                    // gate moves here, so the inner title, the rows and the trailing
+                    // hairline all disappear together when the setting is off.
+                    ColumnLayout {
                         Layout.fillWidth: true
-                        text: i18n("Minutes until power-off:")
-                        color: paletteTokens.labelText
-                        font.family: paletteTokens.fontFamily
-                        font.pixelSize: paletteTokens.labelPixelSize
+                        visible: fullRoot.downloaderEnabled
+                        spacing: 8
+
+                        PlasmaComponents3.Label {
+                            text: i18n("Import content")
+                            color: paletteTokens.text
+                            font.family: paletteTokens.fontFamily
+                            font.pixelSize: paletteTokens.sectionTitlePixelSize
+                            font.weight: 650
+                        }
+
+                        PlasmaComponents3.Label {
+                            text: i18n("YouTube or X URL")
+                            color: paletteTokens.labelText
+                            font.family: paletteTokens.fontFamily
+                            font.pixelSize: paletteTokens.labelPixelSize
+                            font.weight: 650
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 8
+
+                            PlasmaComponents3.TextField {
+                                id: videoUrlField
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 41
+                                placeholderText: i18n("Paste a YouTube or X link")
+                                color: paletteTokens.text
+                                placeholderTextColor: paletteTokens.placeholder
+                                leftPadding: 12
+                                rightPadding: 12
+                                enabled: !fullRoot.downloadInFlight
+                                onAccepted: {
+                                    if (downloadButton.enabled) {
+                                        fullRoot.downloadRequested(videoUrlField.text);
+                                    }
+                                }
+
+                                background: Rectangle {
+                                    color: paletteTokens.fieldSurface
+                                    border.width: paletteTokens.appBorderWidth
+                                    border.color: videoUrlField.activeFocus ? paletteTokens.fieldBorderFocus : paletteTokens.fieldBorder
+                                    radius: paletteTokens.controlRadius
+                                }
+                            }
+
+                            PlasmaComponents3.ToolButton {
+                                id: downloadButton
+                                Layout.preferredHeight: 41
+                                icon.name: "download"
+                                icon.color: paletteTokens.text
+                                // Space between the left border and the content,
+                                // matching the 12px padding the text fields already
+                                // carry.
+                                leftPadding: 12
+                                display: PlasmaComponents3.AbstractButton.TextBesideIcon
+                                text: i18n("Import")
+                                flat: false
+                                // Enabled for an unsupported paste too, on purpose: a click then
+                                // reports why it was refused instead of the button looking dead.
+                                enabled: !fullRoot.downloadInFlight
+                                    && fullRoot.downloadReady
+                                    && videoUrlField.text.trim() !== ""
+                                onClicked: fullRoot.downloadRequested(videoUrlField.text)
+                                Kirigami.Theme.textColor: paletteTokens.text
+
+                                background: Rectangle {
+                                    color: downloadButton.hovered ? paletteTokens.buttonSurfaceHover : paletteTokens.buttonSurface
+                                    radius: paletteTokens.controlRadius
+                                    border.width: paletteTokens.appBorderWidth
+                                    border.color: downloadButton.hovered ? paletteTokens.buttonBorderHover : paletteTokens.buttonBorder
+                                }
+
+                                // A PC3 ToolTip only renders when its parent is an AbstractButton,
+                                // so this one works here and would not work on the TextField above.
+                                PlasmaComponents3.ToolTip {
+                                    text: i18n("Download this video with yt-dlp, using your configured cookies browser")
+                                }
+                            }
+
+                            PlasmaComponents3.BusyIndicator {
+                                Layout.preferredWidth: Kirigami.Units.iconSizes.small
+                                Layout.preferredHeight: Kirigami.Units.iconSizes.small
+                                running: fullRoot.downloadInFlight
+                                visible: fullRoot.downloadInFlight
+                            }
+                        }
+
+                        PlasmaComponents3.Label {
+                            Layout.fillWidth: true
+                            text: fullRoot.cookiesBrowserDisplay !== ""
+                                ? i18nc("@info", "Cookies from: %1", fullRoot.cookiesBrowserDisplay)
+                                : i18nc("@info", "Cookies: not used")
+                            color: paletteTokens.muted
+                            font.family: paletteTokens.fontFamily
+                            font.pixelSize: paletteTokens.subtlePixelSize
+                        }
+
+                        PlasmaComponents3.Label {
+                            Layout.fillWidth: true
+                            visible: fullRoot.pastedLinkUnsupported
+                            text: i18n("Only YouTube and X (Twitter) links are supported.")
+                            color: Kirigami.Theme.negativeTextColor
+                            wrapMode: Text.WordWrap
+                            font.family: paletteTokens.fontFamily
+                            font.pixelSize: paletteTokens.subtlePixelSize
+                        }
+
+                        // The dot carries the severity, exactly as in the header: no second
+                        // severity-to-colour switch is allowed to exist.
+                        RowLayout {
+                            Layout.fillWidth: true
+                            visible: fullRoot.downloadFeedback !== ""
+                            spacing: 6
+
+                            SeverityDot {
+                                Layout.alignment: Qt.AlignVCenter
+                                severity: fullRoot.downloadFeedbackSeverity
+                            }
+
+                            PlasmaComponents3.Label {
+                                Layout.fillWidth: true
+                                text: fullRoot.downloadFeedback
+                                color: paletteTokens.text
+                                wrapMode: Text.WordWrap
+                                font.family: paletteTokens.fontFamily
+                                font.pixelSize: paletteTokens.subtlePixelSize
+                            }
+                        }
+
+                        // Hairline closing the download sub-block, separating it from the
+                        // countdown sub-block below. It is the download sub-block's LAST
+                        // child, so it disappears with the sub-block when the downloader is
+                        // turned off and never leaves a dangling rule.
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 1
+                            color: paletteTokens.line
+                        }
                     }
 
-                    PlasmaComponents3.TextField {
-                        id: shutdownMinutesField
-                        Layout.preferredWidth: 92
-                        Layout.preferredHeight: 41
-                        placeholderText: i18n("15")
-                        leftPadding: 12
-                        rightPadding: 12
-                        // Disabled while a countdown is pending or in flight: the deadline is
-                        // snapshotted in main.qml, so editing here could only imply a running
-                        // deadline would change.
-                        enabled: !fullRoot.shutdownPending && !fullRoot.shutdownInFlight
-                        // No new severity mapping: an invalid value just tints the text, and
-                        // the hint below says what to fix. The dot stays reserved for status
-                        // severity, and the tint keeps the theme's functional error colour
-                        // (not a palette accent) exactly as the config page does.
-                        color: fullRoot.shutdownMinutesFieldValid ? paletteTokens.text : Kirigami.Theme.negativeTextColor
-
-                        background: Rectangle {
-                            color: paletteTokens.fieldSurface
-                            border.width: paletteTokens.appBorderWidth
-                            border.color: shutdownMinutesField.activeFocus ? paletteTokens.fieldBorderFocus : paletteTokens.fieldBorder
-                            radius: paletteTokens.controlRadius
-                        }
-
-                        // seeded flips LAST in Component.onCompleted, after programmatic is
-                        // cleared, so the seed write can never look like a user edit and emit.
-                        property bool seeded: false
-                        property bool programmatic: false
-
-                        Component.onCompleted: {
-                            programmatic = true;
-                            text = fullRoot.shutdownMinutesText;
-                            programmatic = false;
-                            seeded = true;
-                        }
-
-                        onTextChanged: {
-                            if (!shutdownMinutesField.seeded || shutdownMinutesField.programmatic) return;
-                            fullRoot.shutdownMinutesEdited(shutdownMinutesField.text);
-                        }
-
-                        // A stored value that changed while this field had focus would
-                        // otherwise never be mirrored: onShutdownMinutesTextChanged skips a
-                        // focused field, and nothing re-runs on blur. Only a VALID text is
-                        // mirrored -- invalid text is the user's to fix and must stay visible,
-                        // and a valid user-typed value is already persisted, so a
-                        // valid-but-different text on blur can only be an external change that
-                        // was missed.
-                        onActiveFocusChanged: {
-                            if (activeFocus || !shutdownMinutesField.seeded || shutdownMinutesField.programmatic) return;
-                            if (shutdownMinutesField.text === fullRoot.shutdownMinutesText) return;
-                            if (DockerStatus.resolveShutdownMinutes(shutdownMinutesField.text) === null) return;
-                            shutdownMinutesField.programmatic = true;
-                            shutdownMinutesField.text = fullRoot.shutdownMinutesText;
-                            shutdownMinutesField.programmatic = false;
-                        }
-                    }
-
-                    PlasmaComponents3.Label {
-                        text: i18n("min")
-                        color: paletteTokens.muted
-                        font.family: paletteTokens.fontFamily
-                        font.pixelSize: paletteTokens.labelPixelSize
-                    }
-                }
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    Layout.topMargin: 16
-                    visible: fullRoot.countdownBodyVisible
-                    spacing: 9
-
-                    PlasmaComponents3.Button {
-                        id: shutdownPlayButton
+                    // Countdown sub-block. The countdown itself is owned by main.qml: this
+                    // representation only renders the local deadline and emits start/stop.
+                    // Play disables the instant the sequence starts, so it can only ever be
+                    // armed once; stop is the only way to cancel and, because cancel is
+                    // purely local, it needs no privilege. The power-off adds no polkit rule
+                    // and does not widen the grant (ALLOWED_VERBS stays ["start"]); unlike
+                    // the daemon stop it does not prompt, because logind's default policy
+                    // for org.freedesktop.login1.power-off is allow_active=yes. The
+                    // safeguards are the deliberate activation, the more-than-10-minute
+                    // countdown, the visible countdown and the cancel button, not a password
+                    // gate (adr-0009). The 35x35 timer tile beside the inner title is the
+                    // countdown's identity and moves inside the body with it.
+                    ColumnLayout {
                         Layout.fillWidth: true
-                        icon.name: "media-playback-start"
-                        icon.color: paletteTokens.buttonPrimaryText
-                        // Space between the left border and the content, matching
-                        // the 12px padding the text fields already carry.
-                        leftPadding: 12
-                        text: fullRoot.shutdownPending
-                            ? i18n("Shutting down…")
-                            : i18n("Shut down")
-                        enabled: fullRoot.shutdownPlayEnabled
-                        opacity: enabled ? 1 : 0.38
-                        onClicked: fullRoot.shutdownStartRequested()
-                        Kirigami.Theme.textColor: paletteTokens.buttonPrimaryText
+                        spacing: 8
 
-                        background: Rectangle {
-                            color: shutdownPlayButton.hovered ? paletteTokens.buttonPrimaryHover : paletteTokens.buttonPrimary
-                            radius: paletteTokens.controlRadius
-                            border.width: paletteTokens.appBorderWidth
-                            border.color: paletteTokens.buttonPrimary
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 12
+
+                            PlasmaComponents3.Label {
+                                Layout.fillWidth: true
+                                text: i18n("Countdown to Extinction")
+                                color: paletteTokens.text
+                                elide: Text.ElideRight
+                                font.family: paletteTokens.fontFamily
+                                font.pixelSize: paletteTokens.sectionTitlePixelSize
+                                font.weight: 650
+                            }
+
+                            Rectangle {
+                                Layout.preferredWidth: 35
+                                Layout.preferredHeight: 35
+                                Layout.alignment: Qt.AlignVCenter
+                                radius: paletteTokens.controlRadius
+                                color: paletteTokens.iconTileSurface
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "◷"
+                                    color: paletteTokens.iconTileTextAlt
+                                    font.family: paletteTokens.fontFamily
+                                    font.pixelSize: paletteTokens.titlePixelSize
+                                }
+                            }
                         }
 
-                        PlasmaComponents3.ToolTip {
-                            text: i18nc("@info", "Arm a %1-minute countdown; the machine powers off when it expires", fullRoot.shutdownMinutes)
+                        // The countdown length is editable here, not only in the config page, because
+                        // this is the surface where the play button and its disabled state actually
+                        // live. The field deliberately refuses no keystrokes: a non-number has to be
+                        // typeable so the error cue below can explain why play is disabled. The
+                        // seed/sync pair exists because a plain `text:` binding would be destroyed by
+                        // the first user edit -- the same trap the config page's cookies combo
+                        // documents -- so the stored value is copied in once and afterwards only
+                        // mirrored while the field is unfocused.
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Layout.topMargin: 17
+                            visible: fullRoot.miscBodyVisible
+                            spacing: 10
+
+                            PlasmaComponents3.Label {
+                                Layout.fillWidth: true
+                                text: i18n("Minutes until power-off:")
+                                color: paletteTokens.labelText
+                                font.family: paletteTokens.fontFamily
+                                font.pixelSize: paletteTokens.labelPixelSize
+                            }
+
+                            PlasmaComponents3.TextField {
+                                id: shutdownMinutesField
+                                Layout.preferredWidth: 92
+                                Layout.preferredHeight: 41
+                                placeholderText: i18n("15")
+                                leftPadding: 12
+                                rightPadding: 12
+                                // Disabled while a countdown is pending or in flight: the deadline is
+                                // snapshotted in main.qml, so editing here could only imply a running
+                                // deadline would change.
+                                enabled: !fullRoot.shutdownPending && !fullRoot.shutdownInFlight
+                                // No new severity mapping: an invalid value just tints the text, and
+                                // the hint below says what to fix. The dot stays reserved for status
+                                // severity, and the tint keeps the theme's functional error colour
+                                // (not a palette accent) exactly as the config page does.
+                                color: fullRoot.shutdownMinutesFieldValid ? paletteTokens.text : Kirigami.Theme.negativeTextColor
+
+                                background: Rectangle {
+                                    color: paletteTokens.fieldSurface
+                                    border.width: paletteTokens.appBorderWidth
+                                    border.color: shutdownMinutesField.activeFocus ? paletteTokens.fieldBorderFocus : paletteTokens.fieldBorder
+                                    radius: paletteTokens.controlRadius
+                                }
+
+                                // seeded flips LAST in Component.onCompleted, after programmatic is
+                                // cleared, so the seed write can never look like a user edit and emit.
+                                property bool seeded: false
+                                property bool programmatic: false
+
+                                Component.onCompleted: {
+                                    programmatic = true;
+                                    text = fullRoot.shutdownMinutesText;
+                                    programmatic = false;
+                                    seeded = true;
+                                }
+
+                                onTextChanged: {
+                                    if (!shutdownMinutesField.seeded || shutdownMinutesField.programmatic) return;
+                                    fullRoot.shutdownMinutesEdited(shutdownMinutesField.text);
+                                }
+
+                                // A stored value that changed while this field had focus would
+                                // otherwise never be mirrored: onShutdownMinutesTextChanged skips a
+                                // focused field, and nothing re-runs on blur. Only a VALID text is
+                                // mirrored -- invalid text is the user's to fix and must stay visible,
+                                // and a valid user-typed value is already persisted, so a
+                                // valid-but-different text on blur can only be an external change that
+                                // was missed.
+                                onActiveFocusChanged: {
+                                    if (activeFocus || !shutdownMinutesField.seeded || shutdownMinutesField.programmatic) return;
+                                    if (shutdownMinutesField.text === fullRoot.shutdownMinutesText) return;
+                                    if (DockerStatus.resolveShutdownMinutes(shutdownMinutesField.text) === null) return;
+                                    shutdownMinutesField.programmatic = true;
+                                    shutdownMinutesField.text = fullRoot.shutdownMinutesText;
+                                    shutdownMinutesField.programmatic = false;
+                                }
+                            }
+
+                            PlasmaComponents3.Label {
+                                text: i18n("min")
+                                color: paletteTokens.muted
+                                font.family: paletteTokens.fontFamily
+                                font.pixelSize: paletteTokens.labelPixelSize
+                            }
                         }
-                    }
 
-                    PlasmaComponents3.Button {
-                        id: shutdownCancelButton
-                        icon.name: "media-playback-stop"
-                        // Space between the left border and the content, matching
-                        // the 12px padding the text fields already carry.
-                        leftPadding: 12
-                        text: i18n("Cancel")
-                        enabled: fullRoot.shutdownPending
-                        opacity: enabled ? 1 : 0.38
-                        onClicked: fullRoot.shutdownStopRequested()
-                        Kirigami.Theme.textColor: paletteTokens.text
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Layout.topMargin: 16
+                            visible: fullRoot.miscBodyVisible
+                            spacing: 9
 
-                        background: Rectangle {
-                            color: shutdownCancelButton.hovered ? paletteTokens.buttonSurfaceHover : paletteTokens.buttonSurface
-                            radius: paletteTokens.controlRadius
-                            border.width: paletteTokens.appBorderWidth
-                            border.color: shutdownCancelButton.hovered ? paletteTokens.buttonBorderHover : paletteTokens.buttonBorder
+                            PlasmaComponents3.Button {
+                                id: shutdownPlayButton
+                                Layout.fillWidth: true
+                                icon.name: "media-playback-start"
+                                icon.color: paletteTokens.buttonPrimaryText
+                                // Space between the left border and the content, matching
+                                // the 12px padding the text fields already carry.
+                                leftPadding: 12
+                                text: fullRoot.shutdownPending
+                                    ? i18n("Shutting down…")
+                                    : i18n("Shut down")
+                                enabled: fullRoot.shutdownPlayEnabled
+                                opacity: enabled ? 1 : 0.38
+                                onClicked: fullRoot.shutdownStartRequested()
+                                Kirigami.Theme.textColor: paletteTokens.buttonPrimaryText
+
+                                background: Rectangle {
+                                    color: shutdownPlayButton.hovered ? paletteTokens.buttonPrimaryHover : paletteTokens.buttonPrimary
+                                    radius: paletteTokens.controlRadius
+                                    border.width: paletteTokens.appBorderWidth
+                                    border.color: paletteTokens.buttonPrimary
+                                }
+
+                                PlasmaComponents3.ToolTip {
+                                    text: i18nc("@info", "Arm a %1-minute countdown; the machine powers off when it expires", fullRoot.shutdownMinutes)
+                                }
+                            }
+
+                            PlasmaComponents3.Button {
+                                id: shutdownCancelButton
+                                icon.name: "media-playback-stop"
+                                // Space between the left border and the content, matching
+                                // the 12px padding the text fields already carry.
+                                leftPadding: 12
+                                text: i18n("Cancel")
+                                enabled: fullRoot.shutdownPending
+                                opacity: enabled ? 1 : 0.38
+                                onClicked: fullRoot.shutdownStopRequested()
+                                Kirigami.Theme.textColor: paletteTokens.text
+
+                                background: Rectangle {
+                                    color: shutdownCancelButton.hovered ? paletteTokens.buttonSurfaceHover : paletteTokens.buttonSurface
+                                    radius: paletteTokens.controlRadius
+                                    border.width: paletteTokens.appBorderWidth
+                                    border.color: shutdownCancelButton.hovered ? paletteTokens.buttonBorderHover : paletteTokens.buttonBorder
+                                }
+
+                                PlasmaComponents3.ToolTip {
+                                    text: i18n("Cancel the pending shutdown")
+                                }
+                            }
                         }
 
-                        PlasmaComponents3.ToolTip {
-                            text: i18n("Cancel the pending shutdown")
+                        PlasmaComponents3.Label {
+                            Layout.fillWidth: true
+                            Layout.topMargin: 8
+                            // Ungated by the collapse flag on purpose: this line only exists
+                            // while a shutdown is pending, and that armed state must never be
+                            // collapsed away (adr-0009's visible-countdown safeguard).
+                            visible: fullRoot.shutdownPending
+                            text: i18nc("@info", "Powering off in %1", DockerStatus.formatCountdown(fullRoot.shutdownRemainingSeconds))
+                            color: paletteTokens.muted
+                            font.family: paletteTokens.fontFamily
+                            font.pixelSize: paletteTokens.subtlePixelSize
                         }
-                    }
-                }
 
-                PlasmaComponents3.Label {
-                    Layout.fillWidth: true
-                    Layout.topMargin: 8
-                    // Ungated by the collapse flag on purpose: this line only exists
-                    // while a shutdown is pending, and that armed state must never be
-                    // collapsed away (adr-0009's visible-countdown safeguard).
-                    visible: fullRoot.shutdownPending
-                    text: i18nc("@info", "Powering off in %1", DockerStatus.formatCountdown(fullRoot.shutdownRemainingSeconds))
-                    color: paletteTokens.muted
-                    font.family: paletteTokens.fontFamily
-                    font.pixelSize: paletteTokens.subtlePixelSize
-                }
+                        // A disabled play button must never look dead without a reason: the inline
+                        // value that failed validation says what to fix. The countdown is editable on
+                        // this surface, so pointing at the config page would be stale.
+                        PlasmaComponents3.Label {
+                            Layout.fillWidth: true
+                            Layout.topMargin: 8
+                            // Two gates, and this row has to be hidden twice over: the field's
+                            // own value must be invalid, and the section must be visible. The
+                            // invalid test leads on purpose, because a static-text test pins
+                            // this exact expression -- rewording it into a different shape
+                            // would silently drop that pin instead of failing.
+                            visible: !fullRoot.shutdownMinutesFieldValid && fullRoot.miscBodyVisible
+                            text: i18n("Enter a whole number of minutes greater than 10.")
+                            color: Kirigami.Theme.negativeTextColor
+                            wrapMode: Text.WordWrap
+                            font.family: paletteTokens.fontFamily
+                            font.pixelSize: paletteTokens.subtlePixelSize
+                        }
 
-                // A disabled play button must never look dead without a reason: the inline
-                // value that failed validation says what to fix. The countdown is editable on
-                // this surface, so pointing at the config page would be stale.
-                PlasmaComponents3.Label {
-                    Layout.fillWidth: true
-                    Layout.topMargin: 8
-                    // Two gates, and this row has to be hidden twice over: the field's
-                    // own value must be invalid, and the section must be visible. The
-                    // invalid test leads on purpose, because a static-text test pins
-                    // this exact expression -- rewording it into a different shape
-                    // would silently drop that pin instead of failing.
-                    visible: !fullRoot.shutdownMinutesFieldValid && fullRoot.countdownBodyVisible
-                    text: i18n("Enter a whole number of minutes greater than 10.")
-                    color: Kirigami.Theme.negativeTextColor
-                    wrapMode: Text.WordWrap
-                    font.family: paletteTokens.fontFamily
-                    font.pixelSize: paletteTokens.subtlePixelSize
-                }
+                        // The dot carries the severity, exactly as in the header: no second
+                        // severity-to-colour switch is allowed to exist.
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Layout.topMargin: 8
+                            visible: fullRoot.miscBodyVisible && fullRoot.shutdownFeedback !== ""
+                            spacing: 6
 
-                // The dot carries the severity, exactly as in the header: no second
-                // severity-to-colour switch is allowed to exist.
-                RowLayout {
-                    Layout.fillWidth: true
-                    Layout.topMargin: 8
-                    visible: fullRoot.countdownBodyVisible && fullRoot.shutdownFeedback !== ""
-                    spacing: 6
+                            SeverityDot {
+                                Layout.alignment: Qt.AlignVCenter
+                                severity: fullRoot.shutdownFeedbackSeverity
+                            }
 
-                    SeverityDot {
-                        Layout.alignment: Qt.AlignVCenter
-                        severity: fullRoot.shutdownFeedbackSeverity
-                    }
-
-                    PlasmaComponents3.Label {
-                        Layout.fillWidth: true
-                        text: fullRoot.shutdownFeedback
-                        color: paletteTokens.text
-                        wrapMode: Text.WordWrap
-                        font.family: paletteTokens.fontFamily
-                        font.pixelSize: paletteTokens.subtlePixelSize
+                            PlasmaComponents3.Label {
+                                Layout.fillWidth: true
+                                text: fullRoot.shutdownFeedback
+                                color: paletteTokens.text
+                                wrapMode: Text.WordWrap
+                                font.family: paletteTokens.fontFamily
+                                font.pixelSize: paletteTokens.subtlePixelSize
+                            }
+                        }
                     }
                 }
             }
