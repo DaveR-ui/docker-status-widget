@@ -4,7 +4,7 @@ category: adrs
 tags: [hub, index, adr, decisions]
 aliases: [ADR Index, Decision Records]
 related: [adr-0001-corpus-location-and-entry-point]
-version: 1.2
+version: 1.3
 status: active
 ---
 
@@ -39,7 +39,8 @@ re-litigated from the code alone does not need a record either — only the *why
 - [[adr-0008-configurable-cookies-browser-and-bottom-text]] — the cookies browser becomes a validated
   setting, reversing ADR-0006's browser-constancy clause; the bottom text is configuration, and the stop
   button gets a fixed narrow width. Its fixed narrow-width clause is superseded by
-  [[adr-0011-fixed-dark-palette-from-mockup]]; the rest still stands.
+  [[adr-0011-fixed-dark-palette-from-mockup]] and its bottom-text clause by
+  [[adr-0020-footer-removal-and-pinned-popup-layout]]; the rest still stands.
 - [[adr-0009-widget-owned-shutdown-countdown]] — the shutdown countdown is widget-owned (a wall-clock
   deadline with a local cancel), the power-off is a fixed command that adds no second command-building
   exception, and, unlike the docker stop, it does not prompt: logind's `allow_active=yes` default makes a
@@ -99,6 +100,14 @@ re-litigated from the code alone does not need a record either — only the *why
   the old `countdownBodyVisible`; the config page merges its two cards into one. It supersedes
   nothing: adr-0009's un-collapsible armed countdown and every safeguard are preserved, and adr-0016
   and adr-0017 are untouched.
+- [[adr-0020-footer-removal-and-pinned-popup-layout]] — the popup's footer and its configurable bottom
+  text are deleted end-to-end (the `taglineText` kcfg entry, its config control, its `main.qml` forwarding
+  and the preview-harness injection included), and the popup becomes a pinned column: the status card on
+  top, the container section as the scrollable middle region floored at one and a half rows
+  (`containerRowHeight * 3 / 2` = 78px), the merged Miscelánea card pinned last, and the update notice in a
+  reserved one-grid-unit row between the middle region and Miscelánea. It supersedes only
+  [[adr-0008-configurable-cookies-browser-and-bottom-text]]'s bottom-text clause; the cookies clause and
+  the rest of that record still stand.
 
 ## Elsewhere
 

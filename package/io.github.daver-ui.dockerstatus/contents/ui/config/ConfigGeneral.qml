@@ -42,7 +42,6 @@ Kirigami.FormLayout {
     property alias cfg_jsRuntime: jsRuntime.text
     property alias cfg_ytDlpBinary: ytDlpBinary.text
     property alias cfg_podmanDesktopPath: podmanDesktopPath.text
-    property alias cfg_taglineText: taglineText.text
     property alias cfg_shutdownCountdownMinutes: shutdownCountdownMinutes.text
     property alias cfg_updateCheckIntervalHours: updateCheckIntervalHours.value
 
@@ -554,7 +553,7 @@ Kirigami.FormLayout {
 
             QQC2.Label {
                 Layout.fillWidth: true
-                text: i18n("The panel icon and the widget's bottom text.")
+                text: i18n("The panel icon shown for this widget.")
                 color: paletteTokens.muted
                 wrapMode: Text.WordWrap
                 font.family: paletteTokens.fontFamily
@@ -581,25 +580,6 @@ Kirigami.FormLayout {
                     }
 
                     QQC2.ToolTip.text: i18n("Any icon name from the active theme, e.g. folder-docker-symbolic.")
-                    QQC2.ToolTip.visible: hovered
-                }
-
-                QQC2.TextField {
-                    id: taglineText
-                    Kirigami.FormData.label: i18n("Bottom text:")
-
-                    color: paletteTokens.text
-                    placeholderTextColor: paletteTokens.placeholder
-                    font.family: paletteTokens.fontFamily
-                    font.pixelSize: paletteTokens.labelPixelSize
-                    background: Rectangle {
-                        color: paletteTokens.fieldSurface
-                        border.width: 1
-                        border.color: taglineText.activeFocus ? paletteTokens.fieldBorderFocus : paletteTokens.fieldBorder
-                        radius: paletteTokens.controlRadius
-                    }
-
-                    QQC2.ToolTip.text: i18n("Muted text shown at the bottom of the widget. Leave empty to hide it.")
                     QQC2.ToolTip.visible: hovered
                 }
             }

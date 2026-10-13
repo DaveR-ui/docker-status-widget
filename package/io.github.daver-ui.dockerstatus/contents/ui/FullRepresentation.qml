@@ -19,7 +19,7 @@ import "dockerstatus.js" as DockerStatus
  * page documents.
  *
  * SEVERITY: this file never maps a state to a colour. Every accent that means severity
- * -- the header dot, the pill, the progress fill, the footer dot -- is read from
+ * -- the header dot, the pill and the progress fill -- is read from
  * statusDot.severityColor, the single mapping that lives in SeverityDot.qml and
  * nowhere else.
  *
@@ -59,7 +59,6 @@ Item {
     property bool downloadInFlight: false
     property string downloadFeedback: ""
     property string downloadFeedbackSeverity: "muted"
-    property string taglineText: ""
     property string cookiesBrowser: ""
     property bool shutdownReady: false
     property int shutdownMinutes: 0
@@ -125,7 +124,8 @@ Item {
 
     // Update check. main.qml owns the whole check; this representation only renders the one
     // line it produces and can ask for a manual re-check. No severity here: the line reuses
-    // the tagline's muted style, so there is deliberately no updateSeverity property.
+    // the muted, centred line style the bottom text used to carry, so there is deliberately
+    // no updateSeverity property.
     property bool updateAvailable: false
     property string updateFeedback: ""
 
@@ -206,6 +206,20 @@ Item {
         return fullRoot.containerIcons[index];
     }
 
+    // --- Middle-region sizing -------------------------------------------------
+    // The height of one container row: the 32px glyph tile plus the 20px of
+    // vertical padding the row's own layout carries (see containerRow below).
+    // The scroll floor is written against this unit rather than as a magic
+    // number, so "one and a half rows" survives a type-scale change.
+    readonly property int containerRowHeight: 52
+
+    // The middle region never collapses below one and a half rows, so the bottom
+    // half of the next row peeks in and the operator can tell there is more
+    // below -- and that the region scrolls. The region also never drives the
+    // widget's height (see the container section below), so a list that grows or
+    // shrinks cannot resize the widget.
+    readonly property int containerScrollFloor: fullRoot.containerRowHeight * 3 / 2
+
     // Stopping is destructive, so the button never fires on one click: the first click
     // arms, a deliberate second click (after the dwell below) confirms. The arming expires
     // on its own so a forgotten armed button cannot be completed by an unrelated later click.
@@ -279,7 +293,15 @@ Item {
     // Adding them back makes the root advertise the whole card rather than just the
     // column inside it; otherwise the popup is sized ~44px too narrow and ~42px too
     // short, the last rows are clipped, and the planar widget comes up short too.
-    implicitWidth: content.implicitWidth + content.anchors.leftMargin + content.anchors.rightMargin
+    //
+    // The width also takes a floor of its own: the popup is a FIXED 34 grid units
+    // (Layout.preferredWidth below), and the widest natural-width child used to be
+    // the footer's row. With the footer gone, a content-derived width collapses to
+    // the card's gutters alone, so the wider of the two is what the card advertises.
+    implicitWidth: Math.max(
+        content.implicitWidth + content.anchors.leftMargin + content.anchors.rightMargin,
+        Kirigami.Units.gridUnit * 34
+    )
     implicitHeight: content.implicitHeight + content.anchors.topMargin + content.anchors.bottomMargin
 
     // The fixed dark palette and type scale of the mockup. A QtObject, so it claims no
@@ -315,6 +337,9 @@ Item {
         spacing: Kirigami.Units.largeSpacing
 
         // --- Status card -----------------------------------------------------
+        // Pinned at the top of the column: it carries the whole daemon state and is
+        // never part of a scroll region, so it stays put while the middle region
+        // below scrolls.
         Rectangle {
             Layout.fillWidth: true
             implicitHeight: statusBody.implicitHeight + 32
@@ -629,9 +654,16 @@ Item {
         }
 
         // --- Container section -----------------------------------------------
+        // The MIDDLE region of the popup: pinned between the status card above and
+        // the Miscelanea section below. It fills whatever height the widget has and
+        // scrolls its own content, so the list growing or shrinking never resizes
+        // the widget, and it can never collapse below one and a half container rows
+        // (containerScrollFloor) so the next row always peeks in.
         Rectangle {
             Layout.fillWidth: true
-            implicitHeight: containerBody.implicitHeight
+            Layout.fillHeight: true
+            Layout.minimumHeight: fullRoot.containerScrollFloor
+            Layout.preferredHeight: fullRoot.containerScrollFloor
             visible: fullRoot.containerListEnabled
             radius: paletteTokens.cardRadius
             border.width: paletteTokens.appBorderWidth
@@ -652,12 +684,11 @@ Item {
                 ListView {
                     id: containerGroupList
                     Layout.fillWidth: true
-                    // The grouped list needs more headroom than the old flat one: every
-                    // project now contributes its own header row above its container rows,
-                    // so the same container count occupies more vertical space. 13 grid
-                    // units (up from the flat list's 10) leaves room for a group header
-                    // plus its first rows instead of clipping mid-group.
-                    Layout.preferredHeight: Math.min(contentHeight, Kirigami.Units.gridUnit * 13)
+                    Layout.fillHeight: true
+                    // No fixed cap any more: the list is the scrollable middle region,
+                    // so it fills the card and scrolls when its content is taller,
+                    // instead of capping itself at a fixed 13 grid units and growing the
+                    // widget with the content.
                     clip: true
                     // An empty list hides the view and shows the empty state below
                     // instead. With the section header gone there is no collapse gate
@@ -705,6 +736,17 @@ Item {
                                 RowLayout {
                                     id: containerGroupHeaderRow
                                     anchors.fill: parent
+                                    // The header shares the container rows' gutter: the same
+                                    // 8px inset containerRowLayout below carries, so a group
+                                    // name and the rows it opens line up on one left edge and
+                                    // nothing hugs the sunken card's border. It deliberately
+                                    // rides on the ROW, not the wrapper Item above, because
+                                    // that wrapper's full-width MouseArea is the group's tap
+                                    // target and insetting it would shrink the tap area. The
+                                    // merged Miscelanea header insets its wrapper's Layout
+                                    // margins instead -- that convention is not copied here.
+                                    anchors.leftMargin: 8
+                                    anchors.rightMargin: 8
                                     anchors.topMargin: 6
                                     anchors.bottomMargin: 6
                                     spacing: 12
@@ -972,7 +1014,35 @@ Item {
             }
         }
 
+        // --- Update notice ---------------------------------------------------
+        // Shown ONLY when an update is actually available, on the same
+        // fullRoot.updateAvailable gate the indicator above reads, so an offline
+        // machine, a missing curl or an unparseable manifest renders nothing at
+        // all -- this line is the feature's entire footprint. It is deliberately
+        // NOT a button and NOT a SeverityDot: it is neither a health state nor a
+        // link. The one click target this file owns is the indicator beside the
+        // daemon status above, and it is pinned to the fixed release-page constant.
+        //
+        // It occupies a RESERVED row of one grid unit between the scroll region and
+        // the pinned Miscelanea section: the text is emptied rather than the label
+        // being hidden, so the row is blank until an update exists and the widget
+        // never grows by a line when one appears.
+        PlasmaComponents3.Label {
+            Layout.fillWidth: true
+            Layout.preferredHeight: Kirigami.Units.gridUnit
+            text: fullRoot.updateAvailable ? fullRoot.updateFeedback : ""
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
+            color: paletteTokens.muted
+            opacity: 0.5
+            font.family: paletteTokens.fontFamily
+            font.pixelSize: paletteTokens.subtlePixelSize
+        }
+
         // --- Miscelanea section -----------------------------------------------
+        // Pinned at the bottom of the column (its last child) and never part of the
+        // scroll region: it stays put while the middle region above scrolls.
         // One merged, collapsible card (adr-0019-miscelanea-section-merge) that holds
         // BOTH blocks the popup used to render as two separate collapsible sections: the
         // video-download row and the "Countdown to Extinction" shutdown controls. The
@@ -1006,11 +1076,13 @@ Item {
                 // section's open/closed state directly and collapses BOTH sub-blocks.
                 //
                 // The row is wrapped in a plain Item so tapping the header can collapse
-                // the body below it. As in the per-group header, the wrapper -- a direct
-                // child of this ColumnLayout -- carries the horizontal insets the
-                // RowLayout used to, and the RowLayout fills the wrapper, keeping its
-                // vertical insets as anchor margins. The header and separator never
-                // collapse.
+                // the body below it. The wrapper -- a direct child of this ColumnLayout
+                // -- carries the horizontal insets the RowLayout used to, and the
+                // RowLayout fills the wrapper, keeping its vertical insets as anchor
+                // margins. The header and separator never collapse. This is the one
+                // header whose gutter rides on the wrapper: the per-group header's
+                // gutter rides on its row's anchors instead, so that row's full-width
+                // tap target stays full-width (see the container group header above).
                 Item {
                     Layout.fillWidth: true
                     Layout.leftMargin: 16
@@ -1495,95 +1567,6 @@ Item {
                                 font.pixelSize: paletteTokens.subtlePixelSize
                             }
                         }
-                    }
-                }
-            }
-        }
-
-        // --- Update notice ---------------------------------------------------
-        // Shown ONLY when an update is actually available, on the same
-        // fullRoot.updateAvailable gate the indicator above reads, so an offline machine, a
-        // missing curl or an unparseable manifest renders nothing at all -- this line is the
-        // feature's entire footprint. It reuses the tagline's muted, centred style and is
-        // deliberately NOT a button and NOT a SeverityDot: it is neither a health state nor a
-        // link. The one click target this file owns is the indicator beside the daemon status
-        // above, and it is pinned to the fixed release-page constant.
-        PlasmaComponents3.Label {
-            Layout.fillWidth: true
-            text: fullRoot.updateFeedback
-            visible: fullRoot.updateAvailable
-            horizontalAlignment: Text.AlignHCenter
-            elide: Text.ElideRight
-            color: paletteTokens.muted
-            opacity: 0.5
-            font.family: paletteTokens.fontFamily
-            font.pixelSize: paletteTokens.subtlePixelSize
-        }
-
-        // --- Tagline ----------------------------------------------------------
-        // Configured text (default "Persiguiendo la singularidad"), not a status message: it
-        // is deliberately muted so it never competes with the daemon state for the reader's
-        // attention, and it disappears entirely when the setting is empty. This is the only
-        // surface allowed to carry text -- the panel representation stays icon-sized.
-        PlasmaComponents3.Label {
-            Layout.fillWidth: true
-            text: fullRoot.taglineText
-            visible: fullRoot.taglineText !== ""
-            horizontalAlignment: Text.AlignHCenter
-            color: paletteTokens.muted
-            opacity: 0.5
-            font.family: paletteTokens.fontFamily
-            font.pixelSize: paletteTokens.subtlePixelSize
-        }
-
-        // --- Footer -----------------------------------------------------------
-        ColumnLayout {
-            Layout.fillWidth: true
-            spacing: 0
-
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 1
-                color: paletteTokens.line
-            }
-
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.topMargin: 13
-                Layout.bottomMargin: 13
-                spacing: 12
-
-                PlasmaComponents3.Label {
-                    text: i18n("Docker Status") + " · " + i18n("Local panel")
-                    color: paletteTokens.footerText
-                    font.family: paletteTokens.fontFamily
-                    font.pixelSize: paletteTokens.subtlePixelSize
-                }
-
-                Item {
-                    Layout.fillWidth: true
-                }
-
-                RowLayout {
-                    Layout.alignment: Qt.AlignVCenter
-                    spacing: 6
-
-                    // The footer dot reads the header dot's colour: one severity, one mapping.
-                    Rectangle {
-                        Layout.alignment: Qt.AlignVCenter
-                        Layout.preferredWidth: 5
-                        Layout.preferredHeight: 5
-                        radius: 2.5
-                        color: statusDot.severityColor
-                    }
-
-                    PlasmaComponents3.Label {
-                        text: fullRoot.daemonRunning
-                            ? i18n("All systems available")
-                            : i18nc("@info", "Docker daemon is %1", fullRoot.daemonState)
-                        color: paletteTokens.footerText
-                        font.family: paletteTokens.fontFamily
-                        font.pixelSize: paletteTokens.subtlePixelSize
                     }
                 }
             }

@@ -4,7 +4,7 @@ category: widget
 tags: [slice, generality, widget, qml]
 aliases: [Widget slice, QML surfaces slice]
 related: [widget-index, status-slice, ui-surfaces]
-version: 1.1
+version: 1.2
 status: active
 ---
 
@@ -113,6 +113,17 @@ same way: one "Miscelánea" card (after Podman Desktop, before Updates) whose si
 `Kirigami.FormLayout` holds the seven download and shutdown controls in their original order, with no kcfg
 entry, `cfg_*` alias, control id or tooltip changed; the page now renders six section cards.
 
+The popup is a pinned column ([[adr-0020-footer-removal-and-pinned-popup-layout]]): the status card is its
+first region and the merged Miscelánea card is its last, neither inside a scroll region, and the container
+section between them is the scrollable middle region — `Layout.fillHeight: true`, its `ListView` uncapped
+and clipped, and a height floor of one and a half container rows
+(`containerScrollFloor: containerRowHeight * 3 / 2` = 78px) so the next row always peeks in and the widget
+never resizes as the list grows. The update notice sits in a reserved one-grid-unit row between the middle
+region and the pinned Miscelánea card, its text emptied rather than the label hidden, so it cannot grow the
+widget either. The footer and the configurable bottom text are removed; the palette's `footerText` token
+stays in `DockerStatusPalette.qml` because the palette is the mockup's fixed set, not a list of tokens in
+use ([[adr-0020-footer-removal-and-pinned-popup-layout]]).
+
 The Podman Desktop launch ADR-0014 added as the popup's fourth collapsible card, and ADR-0016 removed, is back
 as a square 28x28 `ToolButton` beside the daemon-status label in the status card: `FullRepresentation.qml`
 emits `podmanLaunchRequested()` and `main.qml` answers with `launchPodmanDesktop()`, running
@@ -164,7 +175,9 @@ action ("Check for updates", `enabled: !root.updateCheckInFlight`), and it token
 because a polled source's `connectedSources` is a binding. State ownership is unchanged: `main.qml` owns
 `installedVersion`, `updateCheckInFlight`, `updateAvailable` and `updateFeedback`, and the
 representation is a pure consumer. `FullRepresentation.qml` renders the feature as a muted, centred
-line — visible only while `updateAvailable`, reading `updateFeedback`, reusing the tagline's style —
+line in a reserved row between the scroll region and the pinned Miscelánea card, reading
+`updateFeedback`, its text emptied while no update exists so the row stays blank and the widget never
+grows by a line when one appears —
 plus a small flat `emblem-important` `ToolButton` beside the daemon state in the status card, on the
 same `updateAvailable` gate. The line stays deliberately neither a button nor a `SeverityDot` nor a
 link, but the indicator is the widget's one sanctioned exception: its click opens the fixed

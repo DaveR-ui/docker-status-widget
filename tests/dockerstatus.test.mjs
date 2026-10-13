@@ -1758,13 +1758,15 @@ test("isUpdateAvailable never cries wolf on garbage on either side", () => {
 
 /*
  * ---------------------------------------------------------------------------
- * Configurable tagline, cookies feedback and the action row geometry
+ * Pinned popup layout, cookies feedback and the action row geometry
  * ---------------------------------------------------------------------------
- * Four pieces of shipped QML that a runtime test cannot reach: a kcfg default, the
- * config-page alias target, the bindings that carry both values into the popup, and
- * the width of the stop button. They are pinned as text because every one of them
- * compiles and renders when it is silently dropped, and the failure only shows up as
- * a setting that does nothing or a button that moves under the cursor.
+ * Shipped QML that a runtime test cannot reach: the removal of the configurable bottom
+ * text and the footer, the scroll card that now holds the container list, the reserved
+ * update-notice row, the bindings that carry the cookies setting into the popup, and the
+ * width of the stop button. They are pinned as text because every one of them compiles
+ * and renders when it is silently dropped -- or silently returns -- and the failure only
+ * shows up as a removed surface reappearing, a region that resizes the widget, or a button
+ * that moves under the cursor.
  *
  * The cookies combo joins them below for the same reason, with a sharper failure mode:
  * a missing seed does not render wrong, it SAVES wrong.
@@ -1795,7 +1797,7 @@ const fullQml = readFileSync(fullQmlUrl, "utf8");
 /*
  * The opening tag and the body of one kcfg entry, so a default is asserted against the
  * entry that owns it instead of against the whole file: another entry can carry the same
- * default, and a file-wide includes() would not notice the tagline losing its own.
+ * default, and a file-wide includes() would not notice one entry losing its own.
  */
 function kcfgEntry(xml, name) {
     const match = new RegExp(`<entry name="${name}"([^>]*)>([\\s\\S]*?)</entry>`).exec(xml);
@@ -1805,23 +1807,13 @@ function kcfgEntry(xml, name) {
 
 /*
  * Strips QML comments so a code assertion cannot be satisfied -- or defeated -- by prose.
- * The tagline block deliberately names its shipped default in a comment, so the
- * "no hardcoded literal" assertion below must read code only. It is regex-level and
- * therefore approximate; it is only used on the tagline literal, which shares no line
- * with a URL or a regex literal.
+ * The removed tagline, footer and update-notice copy is still named in the surrounding
+ * comments, so the "gone from the code" assertions below must read code only. It is
+ * regex-level and therefore approximate; it is only used where a comment could otherwise
+ * stand in for the code the test is pinning.
  */
 const stripQmlComments = (source) =>
     source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
-
-test("main.xml declares the configurable tagline with the existing motto as its default", () => {
-    const tagline = kcfgEntry(mainXml, "taglineText");
-
-    assert.ok(tagline.attributes.includes('type="String"'), tagline.attributes);
-    assert.ok(
-        tagline.body.includes("<default>Persiguiendo la singularidad</default>"),
-        "the widget must keep its current wording as the out-of-the-box default",
-    );
-});
 
 test("main.xml still declares the cookies browser and defaults it to firefox", () => {
     const cookies = kcfgEntry(mainXml, "cookiesBrowser");
@@ -1830,17 +1822,20 @@ test("main.xml still declares the cookies browser and defaults it to firefox", (
     assert.ok(cookies.body.includes("<default>firefox</default>"), cookies.body);
 });
 
-test("ConfigGeneral.qml aliases the bottom text to a plain writable TextField", () => {
-    assert.ok(
-        configGeneral.includes("property alias cfg_taglineText: taglineText.text"),
-        "Plasma reads the setting through the cfg_<entryName> alias",
-    );
+test("ConfigGeneral.qml no longer configures the bottom text", () => {
+    const code = stripQmlComments(configGeneral);
 
-    // The alias target has to stay a plain writable property: aliasing an expression is a
-    // silent no-op on save, which is what the file's own header comment warns about.
     assert.ok(
-        /QQC2\.TextField\s*\{\s*\n\s*id: taglineText/.test(configGeneral),
-        "the alias target must be a QQC2.TextField with id taglineText",
+        !code.includes("cfg_taglineText"),
+        "the removed bottom-text setting must leave no cfg_ alias behind",
+    );
+    assert.ok(
+        !code.includes("id: taglineText"),
+        "the removed bottom-text TextField must not come back",
+    );
+    assert.ok(
+        !configGeneral.includes("Bottom text:"),
+        "the removed bottom-text label must not come back",
     );
 });
 
@@ -1901,33 +1896,166 @@ test("ConfigGeneral.qml seeds the cookies combo from the setting, then unmutes t
     );
 });
 
-test("main.qml forwards the tagline and the cookies browser into the full representation", () => {
+test("main.qml forwards the cookies browser but no tagline into the full representation", () => {
     const blockStart = mainQml.indexOf("fullRepresentation: FullRepresentation {");
     assert.ok(blockStart >= 0, "main.qml must define the full representation");
 
     const fullRepresentationBlock = mainQml.slice(blockStart);
 
     assert.ok(
-        fullRepresentationBlock.includes("taglineText: Plasmoid.configuration.taglineText"),
-        "the tagline setting must reach the popup representation",
+        fullRepresentationBlock.includes("cookiesBrowser: Plasmoid.configuration.cookiesBrowser"),
+        "the cookies browser must still reach the popup representation",
     );
     assert.ok(
-        fullRepresentationBlock.includes("cookiesBrowser: Plasmoid.configuration.cookiesBrowser"),
-        "the cookies browser must reach the popup representation",
+        !fullRepresentationBlock.includes("taglineText"),
+        "the removed bottom text must not be forwarded into the popup representation",
     );
 });
 
-test("FullRepresentation.qml binds the tagline to the setting and drops the hardcoded motto", () => {
+test("FullRepresentation.qml no longer carries the bottom text in code", () => {
     const code = stripQmlComments(fullQml);
 
-    assert.ok(code.includes("text: fullRoot.taglineText"), "the tagline must be the configured text");
-    assert.ok(
-        code.includes('visible: fullRoot.taglineText !== ""'),
-        "an empty setting must hide the tagline instead of leaving a blank row",
-    );
+    assert.ok(!code.includes("taglineText"), "the removed bottom-text property must be gone");
     assert.ok(
         !code.includes("Persiguiendo la singularidad"),
-        "the shipped code must not hardcode the motto any more",
+        "the shipped code must not carry the removed motto",
+    );
+});
+
+test("FullRepresentation.qml no longer renders the footer", () => {
+    const code = stripQmlComments(fullQml);
+
+    assert.ok(!code.includes('i18n("All systems available")'), "the footer's state label must be gone");
+    assert.ok(
+        !code.includes('i18n("Docker Status") + " · " + i18n("Local panel")'),
+        "the static footer label must be gone",
+    );
+    assert.ok(!code.includes("paletteTokens.footerText"), "the footer text token must not be read");
+    assert.ok(!fullQml.includes("--- Footer"), "the footer section comment must be gone");
+});
+
+test("FullRepresentation.qml pins the column order: status, container, update, Miscelanea", () => {
+    const statusIndex = fullQml.indexOf("--- Status card");
+    const containerIndex = fullQml.indexOf("--- Container section");
+    const updateIndex = fullQml.indexOf("--- Update notice");
+    const miscIndex = fullQml.indexOf("--- Miscelanea section");
+
+    assert.ok(statusIndex >= 0, "the status card section must be present");
+    assert.ok(containerIndex >= 0, "the container section must be present");
+    assert.ok(updateIndex >= 0, "the update notice section must be present");
+    assert.ok(miscIndex >= 0, "the Miscelanea section must be present");
+
+    assert.ok(statusIndex < containerIndex, "the status card must be pinned above the container section");
+    assert.ok(containerIndex < updateIndex, "the update notice must sit below the container section");
+    assert.ok(updateIndex < miscIndex, "the Miscelanea section must be the last region, below the update notice");
+
+    // Nothing follows the Miscelanea section: no other section marker can come after it.
+    assert.equal(
+        fullQml.indexOf("// ---", miscIndex + 1),
+        -1,
+        "no section may follow the pinned Miscelanea section",
+    );
+});
+
+test("FullRepresentation.qml makes the container section the scrollable middle region", () => {
+    const containerStart = fullQml.indexOf("--- Container section");
+    const updateStart = fullQml.indexOf("--- Update notice");
+    const miscStart = fullQml.indexOf("--- Miscelanea section");
+
+    assert.ok(
+        containerStart >= 0 && updateStart >= 0 && miscStart >= 0,
+        "the section markers must be present",
+    );
+
+    const containerBlock = fullQml.slice(containerStart, updateStart);
+    const miscBlock = fullQml.slice(miscStart);
+
+    assert.ok(
+        containerBlock.includes("Layout.fillHeight: true"),
+        "the middle region must fill the widget's height",
+    );
+    assert.ok(
+        containerBlock.includes("Layout.minimumHeight: fullRoot.containerScrollFloor"),
+        "the middle region must never collapse below the scroll floor",
+    );
+    assert.ok(
+        containerBlock.includes("Layout.preferredHeight: fullRoot.containerScrollFloor"),
+        "the middle region's preferred height must be the scroll floor",
+    );
+
+    const listViewStart = containerBlock.indexOf("ListView {");
+    assert.ok(listViewStart >= 0, "the container list must still exist");
+    const listViewBlock = containerBlock.slice(
+        listViewStart,
+        containerBlock.indexOf("delegate:", listViewStart),
+    );
+    assert.ok(
+        listViewBlock.includes("Layout.fillHeight: true"),
+        "the list must fill and scroll instead of capping its own height",
+    );
+
+    assert.ok(
+        !miscBlock.includes("Layout.fillHeight"),
+        "the pinned Miscelanea section must not participate in the height fill",
+    );
+
+    assert.ok(
+        !fullQml.includes("Math.min(contentHeight"),
+        "the removed 13-grid-unit list cap must not come back",
+    );
+});
+
+test("FullRepresentation.qml sizes the scroll floor to one and a half rows", () => {
+    assert.ok(
+        fullQml.includes("readonly property int containerRowHeight: 52"),
+        "the row height must be a named constant",
+    );
+    assert.ok(
+        fullQml.includes("readonly property int containerScrollFloor: fullRoot.containerRowHeight * 3 / 2"),
+        "the floor must be one and a half rows, written against the row height",
+    );
+    assert.equal(52 * 3 / 2, 78, "one and a half rows must be 78px");
+});
+
+test("FullRepresentation.qml floors the root implicit width at the fixed popup width", () => {
+    assert.ok(
+        fullQml.includes("Layout.preferredWidth: Kirigami.Units.gridUnit * 34"),
+        "the popup's fixed preferred width must stay 34 grid units",
+    );
+
+    // The root is a plain Item whose content column is anchored to fill, so its implicit
+    // width excludes the column's margins; the widest natural-width child used to be the
+    // footer's row. With the footer gone a content-derived width collapses to the card's
+    // gutters alone, so the binding must take the wider of the card and the fixed popup.
+    assert.ok(
+        /implicitWidth:\s*Math\.max\(\s*content\.implicitWidth\s*\+\s*content\.anchors\.leftMargin\s*\+\s*content\.anchors\.rightMargin,\s*Kirigami\.Units\.gridUnit\s*\*\s*34\s*\)/
+            .test(fullQml),
+        "implicitWidth must take a Math.max whose second argument is the fixed popup width",
+    );
+});
+
+test("FullRepresentation.qml reserves the update-notice row so it cannot resize the widget", () => {
+    const updateStart = fullQml.indexOf("--- Update notice");
+    const miscStart = fullQml.indexOf("--- Miscelanea section");
+
+    assert.ok(
+        updateStart >= 0 && miscStart > updateStart,
+        "the update notice must sit before the Miscelanea section",
+    );
+
+    const updateBlock = fullQml.slice(updateStart, miscStart);
+
+    assert.ok(
+        updateBlock.includes("Layout.preferredHeight: Kirigami.Units.gridUnit"),
+        "the notice must occupy a reserved row of one grid unit",
+    );
+    assert.ok(
+        updateBlock.includes('text: fullRoot.updateAvailable ? fullRoot.updateFeedback : ""'),
+        "the text must be emptied rather than the label hidden, so the row never collapses",
+    );
+    assert.ok(
+        !updateBlock.includes("visible:"),
+        "the notice must not have a visible gate that would collapse the reserved row",
     );
 });
 
@@ -2833,6 +2961,48 @@ test("the compose controls are small flat icon buttons, not the 38px surfaces", 
 });
 
 /*
+ * Why this test exists. The compose group header row used to sit flush against the
+ * sunken card's borders while the container rows below it carried an 8px inset, so
+ * the leading glyph tile and the trailing +/- toggle hugged the card edge and the
+ * header did not line up with its own rows. The gutter now rides on the header ROW,
+ * matching containerRowLayout's 8px inset, and NOT on the wrapper Item above it --
+ * that wrapper's full-width MouseArea is the group's tap target, so insetting the
+ * wrapper would silently shrink the click area. Pinned as text because the wrapper's
+ * Layout margins are the tempting wrong fix: the merged Miscelanea header insets its
+ * wrapper, and copying that here would look right while breaking the tap target.
+ */
+test("the compose group header shares its rows' 8px gutter without shrinking the tap target", () => {
+    const headerRowStart = fullQml.indexOf("id: containerGroupHeaderRow");
+    assert.ok(headerRowStart > 0, "the group header must keep its RowLayout");
+    const headerRowSpacing = fullQml.indexOf("spacing: 12", headerRowStart);
+    assert.ok(headerRowSpacing > headerRowStart, "the header row must keep its spacing");
+    const headerSlice = fullQml.slice(headerRowStart, headerRowSpacing);
+    assert.ok(headerSlice.includes("anchors.leftMargin: 8"), "the group header carries the left gutter");
+    assert.ok(headerSlice.includes("anchors.rightMargin: 8"), "the group header carries the right gutter");
+
+    const rowStart = fullQml.indexOf("id: containerRowLayout");
+    assert.ok(rowStart > 0, "the container row must keep its layout");
+    const rowSpacing = fullQml.indexOf("spacing: 11", rowStart);
+    assert.ok(rowSpacing > rowStart, "the container row must keep its spacing");
+    const rowSlice = fullQml.slice(rowStart, rowSpacing);
+    assert.ok(rowSlice.includes("anchors.leftMargin: 8"), "the container rows still carry the left gutter");
+    assert.ok(rowSlice.includes("anchors.rightMargin: 8"), "the container rows still carry the right gutter");
+
+    const wrapperStart = fullQml.indexOf("implicitHeight: containerGroupHeaderRow.implicitHeight + 12");
+    assert.ok(wrapperStart > 0, "the header wrapper must keep its implicit height");
+    assert.ok(wrapperStart < headerRowStart, "the header wrapper must sit above the header row");
+    const wrapperSlice = fullQml.slice(wrapperStart, headerRowStart);
+    assert.ok(
+        !wrapperSlice.includes("Layout.leftMargin"),
+        "the header wrapper has no left Layout margin -- the tap target stays full-width",
+    );
+    assert.ok(
+        !wrapperSlice.includes("Layout.rightMargin"),
+        "the header wrapper has no right Layout margin either",
+    );
+});
+
+/*
  * The Podman Desktop launch returned as a square status-card button (adr-0017)
  * after the ADR-0016 section removal: the section, its collapse and its full-width
  * card are gone, but the launch itself came back -- not as a surface the popup
@@ -3190,7 +3360,7 @@ test("main.qml adds the check-for-updates action and forwards the update state t
     assert.ok(!block.includes("latestVersion: root.latestVersion"));
 });
 
-test("FullRepresentation.qml carries the visible-guarded update line and its signal", () => {
+test("FullRepresentation.qml carries the reserved update line and its signal", () => {
     // Inbound properties and the outbound signal.
     assert.ok(fullQml.includes("property bool updateAvailable: false"));
     assert.ok(fullQml.includes('property string updateFeedback: ""'));
@@ -3201,13 +3371,13 @@ test("FullRepresentation.qml carries the visible-guarded update line and its sig
     // constant, and the muted version line itself stays a non-clickable label.
     const updateLine = fullQml
         .split("PlasmaComponents3.Label {")
-        .find((block) => block.includes("text: fullRoot.updateFeedback"));
+        .find((block) => block.includes('text: fullRoot.updateAvailable ? fullRoot.updateFeedback : ""'));
     assert.ok(updateLine, "the update line must be a PlasmaComponents3.Label");
 
     const lineBody = updateLine.slice(0, updateLine.indexOf("\n        }"));
     assert.ok(
-        lineBody.includes("visible: fullRoot.updateAvailable"),
-        "the line must render nothing when no update is available",
+        lineBody.includes('text: fullRoot.updateAvailable ? fullRoot.updateFeedback : ""'),
+        "the line must empty its text when no update is available, so its reserved row never grows",
     );
     assert.ok(!lineBody.includes("onClicked"), "the update line must not be a button");
 
@@ -3226,8 +3396,8 @@ test("FullRepresentation.qml carries the visible-guarded update line and its sig
     );
     assert.equal(
         fullQml.split("visible: fullRoot.updateAvailable").length - 1,
-        2,
-        "the indicator and the muted line share the same silence gate",
+        1,
+        "only the indicator keeps the silence gate; the line's reserved row stays blank instead",
     );
 });
 

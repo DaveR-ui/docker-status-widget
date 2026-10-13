@@ -54,7 +54,6 @@ Window {
             item.shutdownFeedback = ""
             item.updateAvailable = previewUpdateAvailable
             item.updateFeedback = previewUpdateFeedback
-            item.taglineText = "Persiguiendo la singularidad"
             item.cookiesBrowser = "firefox"
         }
     }

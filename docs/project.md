@@ -1,9 +1,9 @@
 ---
-last_updated: 2026-10-12
+last_updated: 2026-10-13
 status: active
 description: Agent-facing entry point for the Docker Status plasmoid — stack, slices, commands, conventions, vocabulary and symptom routing.
 tags: [project, entry-point, routing, slices]
-version: 1.1
+version: 1.2
 doc_language: en
 ---
 
@@ -114,7 +114,7 @@ package/io.github.daver-ui.dockerstatus/      the plasmoid KPackage — what Pla
     └── ui/
         ├── main.qml                  PlasmoidItem: fixed commands, polling, actions, download wiring, update check, state
         ├── CompactRepresentation.qml panel: icon + severity dot
-        ├── FullRepresentation.qml    popup/desktop: state, list, start/stop action row, feedback, download row, shutdown countdown, update indicator + line, tagline
+        ├── FullRepresentation.qml    popup/desktop: pinned column — status card, scrollable container middle (1.5-row floor), update notice row, pinned Miscelánea
         ├── SeverityDot.qml           the single severity -> palette colour mapping
         ├── DockerStatusPalette.qml   the mockup's fixed dark palette and type scale (neutral chrome tokens)
         ├── dockerstatus.js           pure logic, no QML types, unit tested

@@ -168,7 +168,7 @@ PlasmoidItem {
     property string shutdownFeedback: ""
     property string shutdownFeedbackSeverity: DockerStatus.SEVERITY_MUTED
 
-    // Update check state. updateFeedback reuses the popup tagline's muted style, so there
+    // Update check state. updateFeedback reuses the popup's muted, centred line style, so there
     // is no updateFeedbackSeverity and no second colour mapping. updateAvailable is the
     // only thing that shows the line; everything else exists to make it never cry wolf.
     // installedVersion is a cache of the last successfully read installed version: every
@@ -788,7 +788,6 @@ PlasmoidItem {
         actionKind: root.actionKind
         actionFeedback: root.actionFeedback
         downloaderEnabled: Plasmoid.configuration.showVideoDownloader
-        taglineText: Plasmoid.configuration.taglineText
         cookiesBrowser: Plasmoid.configuration.cookiesBrowser
         downloadReady: root.homeDirectory !== ""
         downloadInFlight: root.downloadInFlight

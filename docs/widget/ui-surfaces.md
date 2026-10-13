@@ -4,7 +4,7 @@ category: widget
 tags: [ui, inventory, widget, surfaces, qml]
 aliases: [UI Surfaces, Widget UI Inventory]
 related: [widget-index, widget-slice, troubleshooting]
-version: 1.1
+version: 1.2
 status: active
 ---
 
@@ -39,20 +39,19 @@ There is no other surface. A new one is a design decision, not an implementation
 | Configuration never supplies a command, only validated values inside one. | The video-download row is the ONE place user input enters a command; the URL is validated against a host allow-list and every interpolated value is shell-quoted, so the run token stays safe. A second exception needs a new ADR ([[adr-0006-video-downloader-command-boundary]]). |
 | The update check is fixed and silent. | Its command is assembled entirely from constants — no configuration, no input — and every failure draws nothing. Its notice is a muted line plus one icon whose click opens the fixed Pages constant; never a notification, and the URL is never configurable ([[adr-0013-widget-update-check-and-release-site]], [[adr-0015-update-indicator-opens-the-release-page]]). |
 | `unknown` never looks healthy. | Muted (the palette's `muted` grey), never neutral (the palette's `orange` accent). |
-| Secondary text stays secondary. | The palette's `muted` colour for small labels and footer text; `opacity: 0.5` for the tagline, `0.38` for a disabled button, `1.0`/`0.5` for the panel icon. |
+| Secondary text stays secondary. | The palette's `muted` colour for small labels and the update notice line; `opacity: 0.5` for the update notice line, `0.38` for a disabled button, `1.0`/`0.5` for the panel icon. |
 | Everything user-visible is translated. | `i18n(...)` for plain strings, `i18nc("@info", ...)` when the argument needs context. |
 
 Verification tooling: two `qmllint` binaries exist on this machine and they are not interchangeable. The
 one on `PATH` is Qt5 (`qt5-declarative 5.15.19`) and reports syntax only. The matching
 `/usr/lib/qt6/bin/qmllint` (`qt6-declarative 6.12.0`) is the semantic tool for a Plasma 6 target. Measured
-on the five `contents/ui/*.qml` files it reports 0 errors, 140 warnings (every one `[unqualified]`) and 89
-infos, of which 2 are `[unused-imports]`; on `contents/ui/config/*.qml` it reports 0 errors, 38 warnings
+on the five `contents/ui/*.qml` files it reports 0 errors, 136 warnings (every one `[unqualified]`) and 89
+infos, of which 2 are `[unused-imports]`; on `contents/ui/config/*.qml` it reports 0 errors, 36 warnings
 (all `[unqualified]`) and 5 infos, none of them `[unused-imports]`. Across the six files that is 0
-errors, 178 warnings and 94 infos (2 `[unused-imports]`), and none of `[missing-property]`,
-`[incompatible-type]`, `[unresolved-type]` or `[import]`. The total sits one warning below adr-0017's 179:
-adr-0019 merged the popup's two collapsible sections into one Miscelánea card (the merged header adds one
-`[unqualified]` site in `contents/ui/`) and merged the config page's two cards into one (the single nested
-`Kirigami.FormLayout` removes two on `contents/ui/config/`). The earlier 97/53 and 32/5 counts
+errors, 172 warnings and 94 infos (2 `[unused-imports]`), and none of `[missing-property]`,
+`[incompatible-type]`, `[unresolved-type]` or `[import]`. That total is six below adr-0019's 178: adr-0020
+removed the footer on `contents/ui/` (−4 `[unqualified]` sites) and the bottom-text control on
+`contents/ui/config/` (−2), so it is now seven below adr-0017's 179. The earlier 97/53 and 32/5 counts
 predate adr-0017. Every
 "Verification" line below means both binaries were run; "the Qt6 semantic run is clean" records that
 measured result, and the exit code is not the evidence (Qt6 exits 0 unless `--max-warnings` is set).
@@ -92,15 +91,17 @@ delegating to `SeverityDot`. Hiding the dot when the state is unknown.
 ### FullRepresentation
 
 #### Purpose
-The popup/desktop surface, restyled to the mockup's fixed dark palette: a status card (the daemon state
-label with the relocated busy indicator, the square refresh and Podman Desktop launch buttons and the
-update indicator beside it, an ONLINE/OFFLINE pill, a running-container count and progress bar, the
-start/stop button row), the flat
-container list, one merged collapsible "Miscelánea" section holding both the video-download row with its
-cookies-browser line and the "Countdown to Extinction" shutdown controls (each under its own inner
-title), one muted update line and its indicator, shown only when a newer release is known, the
-configurable bottom text and a
-footer. It paints its own dark 20px-radius card, so Plasma's own background is switched off
+The popup/desktop surface, restyled to the mockup's fixed dark palette and laid out as a pinned column:
+a status card pinned at the top (the
+daemon state label with the relocated busy indicator, the square refresh and Podman Desktop launch
+buttons and the update indicator beside it, an ONLINE/OFFLINE pill, a running-container count and
+progress bar, the start/stop button row), the flat container list as the scrollable middle region, and
+one merged collapsible "Miscelánea" section pinned at the bottom, holding both the video-download row
+with its cookies-browser line and the "Countdown to Extinction" shutdown controls (each under its own
+inner title). The update notice occupies a reserved row between the scrollable middle region and the
+Miscelánea card, shown only when a newer release is known. The footer and the configurable bottom text
+are removed ([[adr-0020-footer-removal-and-pinned-popup-layout]]). It paints its own dark 20px-radius
+card, so Plasma's own background is switched off
 (`Plasmoid.backgroundHints: PlasmaCore.Types.NoBackground` in `main.qml`;
 [[adr-0011-fixed-dark-palette-from-mockup]]).
 
@@ -111,7 +112,7 @@ footer. It paints its own dark 20px-radius card, so Plasma's own background is s
 Takes `daemonState`, `containers`, `daemonRunning`, `containerListEnabled`, `actionInFlight`,
 `actionKind`, `actionFeedback`, `composeActionInFlight`, `composeActionProject`, `composeActionKind`,
 `composeActionFeedback`, `composeActionFeedbackSeverity`, `podmanLaunchInFlight`, `podmanLaunchFeedback`,
-`podmanLaunchFeedbackSeverity`, `downloaderEnabled`, `taglineText`, `cookiesBrowser`, `downloadReady`,
+`podmanLaunchFeedbackSeverity`, `downloaderEnabled`, `cookiesBrowser`, `downloadReady`,
 `downloadInFlight`, `downloadFeedback`, `downloadFeedbackSeverity`, `shutdownReady`, `shutdownMinutes`,
 `shutdownMinutesText`, `shutdownPending`, `shutdownInFlight`, `shutdownRemainingSeconds`, `shutdownFeedback`,
 `shutdownFeedbackSeverity`, `updateAvailable` and `updateFeedback`; emits `startRequested()`,
@@ -147,7 +148,7 @@ launch buttons beside the daemon-state label, and the update indicator
 The status card shows the daemon state beside a severity dot (`halo: true`), an ONLINE/OFFLINE pill whose
 text and tint both derive from that dot's `severityColor`, the running/total figure (`DockerStatus.countByState()`
 over the container count) over a progress bar whose fill is the same severity colour, and the action row.
-Every severity accent on the card — dot, pill, progress fill, footer dot — is read from
+Every severity accent on the card — dot, pill, progress fill — is read from
 `statusDot.severityColor`; no colour is computed here. Both buttons are always visible and equal width
 (`Layout.fillWidth: true`), which supersedes ADR-0008's narrow-stop clause (`gridUnit * 7`); the row still
 cannot reflow between "Stop daemon" and "Confirm stop", because both fill and only their labels change.
@@ -172,11 +173,19 @@ launch renders the card's small feedback row instead of being swallowed. There i
 eyebrow and logo tile were removed at the human operator's request
 ([[adr-0017-podman-launch-button-and-topbar-removal]]).
 
-The container list is a `ListView` over the grouped model; each group is one flat header row — the
+The container list is a `ListView` over the grouped model that forms the popup's scrollable middle
+region: it fills whatever height the pinned status card and Miscelánea card leave and scrolls its own
+content, so the list growing or shrinking never resizes the widget. Its height floor is one and a half
+container rows — `containerScrollFloor: containerRowHeight * 3 / 2` (52 × 1.5 = 78px) — so the bottom half
+of the next row always peeks in and the operator can see there is more below
+([[adr-0020-footer-removal-and-pinned-popup-layout]]). Each group is one flat header row — the
 bundled `contents/icons/dockerstatus.svg` box glyph on a 28px tile (resolved with `Qt.resolvedUrl`, so
 there is no external asset and no network fetch), the project name (`Other containers` for the standalone
 bucket), the running/total counter, and, for compose-backed groups only, small flat 28x28 play/stop
 `ToolButton`s with muted glyphs and no chunky surface — with the per-group ± collapse affordance last.
+The header row and its container rows share one left edge: both carry the same 8px horizontal inset
+inside the sunken card, so the group tile and the ± affordance sit clear of the card borders instead of
+hugging them.
 There is no section header above the list and no section collapse flag: a group's ± toggles only that
 group's local open/closed state. Every container row keeps its deterministic theme-icon tile
 (`containerIconFor(name)`, a cheap hash into a fixed list of generic theme names, so the same container
@@ -187,13 +196,13 @@ flight, while the paste is empty, or until the one-shot `homeSource` has reporte
 configured on the same page and resolved
 through `DockerStatus.resolveCookiesBrowser()`, the same function `main.qml` feeds into the command, so
 the muted `Cookies from: <browser>` line under the row can never claim a browser the download is not
-using; an opted-out setting reads `Cookies: not used`. The configured bottom text (default
-`Persiguiendo la singularidad`) is a muted, centre-aligned line that disappears entirely when the setting
-is empty; it is configured copy, not a status message. A footer closes the card: a hairline rule, the
-static "Docker Status · Local panel" label, and the daemon state beside a five-pixel dot that reuses the
-header dot's `severityColor`.
+using; an opted-out setting reads `Cookies: not used`. The popup now ends on the pinned Miscelánea card:
+the footer (hairline, the static "Docker Status · Local panel" label and its daemon-state dot) and the
+configurable bottom text are both removed, and nothing else sits below the scroll region
+([[adr-0020-footer-removal-and-pinned-popup-layout]]).
 
-The merged "Miscelánea" section sits above the tagline ([[adr-0019-miscelanea-section-merge]]): one card
+The merged "Miscelánea" section is the last region of the column, pinned at the bottom
+([[adr-0019-miscelanea-section-merge]]): one card
 with a single tappable header — a bold `i18n("Miscelánea")` title and the same ± glyph pair the group
 headers use — a 1px separator, and one body holding the download sub-block above the countdown sub-block,
 each under its own inner title. The single header toggles one flag, `miscSectionExpanded` (local view
@@ -231,8 +240,10 @@ the ticker and the fixed power-off command all live in `main.qml`, and the colla
 representation — never persisted and never reaching `main.qml`
 ([[adr-0019-miscelanea-section-merge]]).
 
-The update notice has two parts, both on the same `updateAvailable` gate. Above the tagline and below the
-Miscelánea section sits a muted, centred `PlasmaComponents3.Label` naming the newer version; it stays
+The update notice has two parts, both on the same `updateAvailable` gate. In a reserved row of one grid
+unit between the scrollable middle region and the pinned Miscelánea section sits a muted, centred
+`PlasmaComponents3.Label` naming the newer version; the text is emptied rather than the label hidden, so
+the row never collapses and the widget never grows by a line when an update appears. It stays
 deliberately non-clickable, neither a button, a `SeverityDot` nor a link. Beside the daemon state in the
 status card sits a small flat `emblem-important` `ToolButton`, and its click is the feature's one
 browser-opening call: it opens exactly `https://dave-r-ui.github.io/docker-status-widget/`
@@ -246,8 +257,9 @@ re-runs the check on demand.
 A stop that runs on a single click, a stop entry in the context menu, or widening `ALLOWED_VERBS` to make
 stopping passwordless — the confirmation plus the interactive prompt are the whole safety argument
 ([[adr-0007-stop-button-confirmation-and-narrow-grant]]). Swallowing a failed action into a silent no-op
-instead of showing `stderr`. Rendering the container list while the daemon is down. Binding the tagline to
-state — it is configured copy, not a status message. Building the download command here instead of in
+instead of showing `stderr`. Rendering the container list while the daemon is down. Reintroducing a footer
+or a configurable bottom text: the bottom half of the popup is the pinned Miscelánea section and nothing
+else ([[adr-0020-footer-removal-and-pinned-popup-layout]]). Building the download command here instead of in
 `dockerstatus.js`. Adding a second severity-to-colour mapping for the download feedback. Reading or
 writing `Plasmoid.configuration` (or touching a `DataSource`) from the inline minutes field: the field is
 sanctioned, but persistence goes only through its value-carrying signal to `main.qml`, the single writer of
@@ -351,7 +363,7 @@ the resolved `severityColor`.
 it never maps a severity.
 
 #### Usage Pattern
-Used by the compact icon row, the popup status card, the running-count progress fill, the footer dot, the
+Used by the compact icon row, the popup status card, the running-count progress fill, the
 download and shutdown feedback rows and every container row. The status card opts into `halo: true` (the
 mockup's soft ring); the six-pixel list dots do not, so a consumer opts in rather than getting a bigger
 dot by accident. The `default` branch resolves to the muted colour on purpose — never neutral.
@@ -370,7 +382,7 @@ Reusing `neutral` for unknown states, which would make a broken probe look merel
 The configuration page, restyled to the palette as six section cards (Docker, Container list, Podman
 Desktop, Miscelánea, Updates, Appearance): poll interval, panel icon name, whether
 containers are listed, the Podman Desktop path, the download settings and the shutdown minutes (both in
-the merged Miscelánea card), the update-check interval and the bottom text. The Miscelánea card's one
+the merged Miscelánea card), the update-check interval. The Miscelánea card's one
 nested `Kirigami.FormLayout` carries the seven download and shutdown controls in their original order,
 with no kcfg entry, `cfg_*` alias, control id or tooltip changed
 ([[adr-0019-miscelanea-section-merge]]). The page keeps Plasma's chrome — unlike
@@ -383,13 +395,12 @@ the popup it does not switch the background off — and paints the palette's opt
 (the `source` in `contents/config/config.qml` is resolved relative to `contents/ui/`, not `contents/`).
 
 #### Interface
-Eleven `cfg_*` aliases — `cfg_pollIntervalSeconds`, `cfg_iconName`, `cfg_showContainerList`,
+Ten `cfg_*` aliases — `cfg_pollIntervalSeconds`, `cfg_iconName`, `cfg_showContainerList`,
 `cfg_showVideoDownloader`, `cfg_downloadDirectory`, `cfg_jsRuntime`, `cfg_ytDlpBinary`,
-`cfg_podmanDesktopPath`, `cfg_taglineText`, `cfg_shutdownCountdownMinutes` and `cfg_updateCheckIntervalHours` — each bound to a
+`cfg_podmanDesktopPath`, `cfg_shutdownCountdownMinutes` and `cfg_updateCheckIntervalHours` — each bound to a
 plain writable property of a
 widget, plus a plain string `cfg_cookiesBrowser`. The Podman Desktop path field feeds the square launch
-button in the status card ([[adr-0017-podman-launch-button-and-topbar-removal]]). The bottom text is a setting like the rest: display-only
-copy that leaves the panel representation untouched, and the browser is validated by
+button in the status card ([[adr-0017-podman-launch-button-and-topbar-removal]]). The browser is validated by
 `resolveCookiesBrowser()` before it reaches the command.
 
 The browser is the one setting carried by a `QQC2.ComboBox`, and that is why it alone is not an alias.
@@ -494,7 +505,7 @@ in [[adr-0011-fixed-dark-palette-from-mockup]]. The severity accents are consume
 | `paletteTokens.green` (`#55d69e`) | healthy daemon, running container |
 | `paletteTokens.orange` (`#ffad5c`) | stopped daemon, exited/created container |
 | `paletteTokens.red` (`#ff737d`) | failed daemon, crash-looping container |
-| `paletteTokens.muted` (`#b3c1c8`) | unknown state (muted), footer text, secondary labels |
+| `paletteTokens.muted` (`#b3c1c8`) | unknown state (muted), the update notice line, secondary labels |
 | `paletteTokens.line` | hairline borders and the list separator |
 | `Kirigami.Theme.negativeTextColor` | functional error text and the update-available attention icon (not a severity accent): a failed action, an armed stop, an invalid inline value, and the `emblem-important` indicator beside the daemon status |
 
@@ -504,7 +515,8 @@ in [[adr-0011-fixed-dark-palette-from-mockup]]. The severity accents are consume
 |---|---|
 | `Kirigami.Units.smallSpacing` | gaps inside every layout row |
 | `Kirigami.Units.largeSpacing` | section spacing, config-card margins |
-| `Kirigami.Units.gridUnit` | dot diameter (`/3`), popup width (`*34`, minimum `*30`), list height cap (`*10`) |
+| `Kirigami.Units.gridUnit` | dot diameter (`/3`), the fixed popup width (`*34`, minimum `*30`), the reserved update-notice row (`*1`) |
+| `containerScrollFloor` (`containerRowHeight * 3 / 2` = 78px) | the container middle region's height floor (one and a half rows; `containerRowHeight` = 52) |
 | `Kirigami.Units.iconSizes.smallMedium` | the panel icon |
 | `Kirigami.Units.iconSizes.small` | the busy indicators |
 
@@ -520,7 +532,7 @@ in [[adr-0011-fixed-dark-palette-from-mockup]]. The severity accents are consume
 | Value | Used for |
 |---|---|
 | `1.0` / `0.5` | panel icon when the daemon runs / when it does not |
-| `0.5` | the configured bottom text |
+| `0.5` | the update notice line |
 | `0.38` | a disabled button |
 
 ## Related

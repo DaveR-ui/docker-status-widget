@@ -1,9 +1,9 @@
 ---
-last_updated: 2026-10-12
+last_updated: 2026-10-13
 status: active
 description: Single entry point for the Docker Status documentation corpus — what the project is and how to navigate its docs.
 tags: [entry-point, index, navigation]
-version: 1.1
+version: 1.2
 doc_language: en
 related: [project]
 ---
@@ -17,8 +17,8 @@ A KDE Plasma 6 widget for the Docker daemon. It tells you the state at a glance,
 password prompt, stops it behind a deliberate confirmation, and downloads the YouTube or X link you just
 pasted — no terminal, no browser tab, no `sudo` dance.
 
-![The panel popup: daemon state, container count and list, the start/stop row, the download row, and the configured bottom text](screenshots/widget-popup.png)
-![The config page: polling, panel icon, container list, the whole download row, and the bottom text](screenshots/settings-general.png)
+![The design mockup the popup follows: the daemon state, the container count and list, the action row, the download row and the shutdown countdown](screenshots/widget-popup.png)
+![The design mockup the config page follows: polling, the panel icon, the container list, the whole download row and the shutdown minutes](screenshots/settings-general.png)
 
 KDE Plasma 6 on Wayland, developed and verified against **Plasma 6.7.4 / plasma5support 6.7.4 / polkit 127
 on CachyOS**.
@@ -57,7 +57,7 @@ only for downloads — a `yt-dlp` reachable on plasmashell's `PATH`, plus a Java
 | Surface | Content |
 | --- | --- |
 | Panel (compact) | Theme icon (dimmed when stopped) + severity dot |
-| Popup / desktop (full) | Daemon state, `running/total` container count, container list, start/stop buttons, refresh button, video-download row, bottom text |
+| Popup / desktop (full) | Daemon state, `running/total` container count, scrollable container list, start/stop buttons, refresh button, video-download row |
 
 State is reported honestly in four levels, not two:
 
@@ -148,14 +148,13 @@ command, and a value it refuses falls back to the default in this table.
 | JS runtime | `node` | Passed as `--js-runtimes`; leave empty to omit the flag entirely. |
 | yt-dlp binary | `yt-dlp` | Executable name or path; `~/` expands. |
 | Cookies browser | `firefox` | Passed as `--cookies-from-browser`; accepts yt-dlp syntax such as `chrome:Default` or `firefox+gnomekeyring`. Leave empty to send no cookies. |
-| Bottom text | `Persiguiendo la singularidad` | Muted text at the bottom of the widget. Leave empty to hide it entirely. |
 
 ## What it shows
 
 | Surface | Content |
 | --- | --- |
 | Panel (compact) | Theme icon (dimmed when stopped) + severity dot |
-| Popup / desktop (full) | Daemon state, `running/total` container count, container list, start/stop buttons, refresh button, download row, bottom text |
+| Popup / desktop (full) | Daemon state, `running/total` container count, scrollable container list, start/stop buttons, refresh button, download row |
 
 The daemon state is reported in four levels instead of two, so that a probe that fails is never mistaken
 for a daemon that is stopped:
@@ -286,7 +285,7 @@ is rebuilt, never rescued — if it is lost, rerun the generator.
 | [adrs/adr-0005-doc-classes-and-body-shape-exceptions.md](docs/adrs/adr-0005-doc-classes-and-body-shape-exceptions.md) | Four doc classes are registered here, with an explicit body-shape exception; the checklist half of the registry is retired by [ADR-0018](docs/adrs/adr-0018-onrails-v1-4-retrofit.md). |
 | [adrs/adr-0006-video-downloader-command-boundary.md](docs/adrs/adr-0006-video-downloader-command-boundary.md) | The video-download row is the one sanctioned exception to the fixed-command rule. |
 | [adrs/adr-0007-stop-button-confirmation-and-narrow-grant.md](docs/adrs/adr-0007-stop-button-confirmation-and-narrow-grant.md) | A stop button that confirms on a second click, with the polkit grant deliberately left at `["start"]` so stop prompts while start does not. |
-| [adrs/adr-0008-configurable-cookies-browser-and-bottom-text.md](docs/adrs/adr-0008-configurable-cookies-browser-and-bottom-text.md) | The cookies browser becomes a validated setting, reversing ADR-0006's browser-constancy clause; the bottom text is configuration, and the stop button gets a fixed narrow width. |
+| [adrs/adr-0008-configurable-cookies-browser-and-bottom-text.md](docs/adrs/adr-0008-configurable-cookies-browser-and-bottom-text.md) | The cookies browser becomes a validated setting, reversing ADR-0006's browser-constancy clause; the bottom text is configuration, and the stop button gets a fixed narrow width. Its bottom-text clause is superseded by [ADR-0020](docs/adrs/adr-0020-footer-removal-and-pinned-popup-layout.md), which removes the bottom text and the footer entirely. |
 | [adrs/adr-0009-widget-owned-shutdown-countdown.md](docs/adrs/adr-0009-widget-owned-shutdown-countdown.md) | A widget-owned "Countdown to Extinction" shutdown: the power-off is a fixed command, the duration is a validated setting that never reaches it, and, unlike the docker stop, it does not prompt. Its inline-field rejection is superseded by ADR-0010. |
 | [adrs/adr-0010-inline-shutdown-minutes-in-the-representation.md](docs/adrs/adr-0010-inline-shutdown-minutes-in-the-representation.md) | The shutdown minutes become an inline field in the representation: it emits a value-carrying signal and `main.qml` stays the only writer of the kcfg entry; the duration still never reaches a shell. |
 | [adrs/adr-0011-fixed-dark-palette-from-mockup.md](docs/adrs/adr-0011-fixed-dark-palette-from-mockup.md) | The widget paints the mockup's fixed dark palette and type scale instead of following the Kirigami theme: a deliberate override that reverses the colour half of the SeverityDot rule (severity still resolves only in `SeverityDot.qml`), switches the popup to its own card, and makes the action buttons equal width. |
@@ -296,6 +295,7 @@ is rebuilt, never rescued — if it is lost, rerun the generator.
 | [adrs/adr-0016-containers-flat-rows-and-podman-section-removal.md](docs/adrs/adr-0016-containers-flat-rows-and-podman-section-removal.md) | The Containers header and its collapse flag are removed and group rows go flat per the mockup; the Podman Desktop section is deleted while its builders, kcfg entry and tests are retained — superseding ADR-0014's UI-section clause, with the compose boundary left standing. |
 | [adrs/adr-0017-podman-launch-button-and-topbar-removal.md](docs/adrs/adr-0017-podman-launch-button-and-topbar-removal.md) | The Podman Desktop launch returns as a square button beside the daemon-status label, and the "Workspace" topbar is removed — superseding ADR-0016's Podman Desktop UI-removal clause, with the flat container rows still standing. |
 | [adrs/adr-0018-onrails-v1-4-retrofit.md](docs/adrs/adr-0018-onrails-v1-4-retrofit.md) | The corpus is retrofitted to documentation-onrails v1.4: the root `README.md` becomes the single entry point, the procedure container becomes `docs/protocols/`, the validator and the generated artifacts move to the repo root, and the methodology is cited by URL. |
+| [adrs/adr-0020-footer-removal-and-pinned-popup-layout.md](docs/adrs/adr-0020-footer-removal-and-pinned-popup-layout.md) | The popup's footer and its configurable bottom text are deleted end to end (kcfg entry and config control included), and the popup becomes a pinned column — status card on top, Miscelánea at the bottom, the container list as a scrollable middle region floored at one and a half rows — so the widget no longer resizes as the list grows. Its bottom-text clause supersedes only ADR-0008's. |
 
 ## Layout
 
