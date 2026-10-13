@@ -4,7 +4,7 @@ category: templates
 tags: [template, project-md, entry-point]
 aliases: [project.md Template]
 related: [project, slice-generalities-template]
-version: 1.0
+version: 1.1
 status: active
 ---
 
@@ -20,7 +20,7 @@ they have to hunt for.
 ## Solution
 
 Copy the fenced skeleton below as `docs/project.md`. It carries the **context-doc contract**
-(see [the upstream document contract](https://github.com/DaveR-ui/DocumentationAsAService) §4)
+(see [the upstream document contract §4](https://github.com/DaveR-ui/documentation-onrails/blob/main/guidelines/02-document-contract.md))
 plus the entry-point-only key `doc_language`, and **nine fixed sections in fixed order, fixed
 names**: Overview, Technology Stack, Slices, Commands, Repository Structure, Key Conventions,
 Domain Entities, Context Index, Common Lookups. Keep it short (~100–150 lines) — its value is
@@ -30,7 +30,7 @@ being read whole, every session; depth lives in `docs/context/`, linked from the
 
 Day zero of any repo an agent will operate in — and as the audit checklist for any agent system
 that "keeps misunderstanding the project". Fill it in the bootstrap order of
-[the upstream project.md guidance](https://github.com/DaveR-ui/DocumentationAsAService) (facts
+[the upstream project.md guidance](https://github.com/DaveR-ui/documentation-onrails/blob/main/guidelines/06-project-md.md) (facts
 from reality first, Slices from recent change history).
 
 ## When not to use
@@ -108,5 +108,5 @@ pattern name. Exactness beats ranges.
 
 - [[project]] — the artifact this skeleton produces.
 - [[slice-generalities-template]] — the per-slice doc each Slices row points at.
-- [Documentation as a Service](https://github.com/DaveR-ui/DocumentationAsAService) — the
-  upstream section anatomy and bootstrap order this skeleton instantiates.
+- [documentation-onrails](https://github.com/DaveR-ui/documentation-onrails) — the upstream
+  section anatomy and bootstrap order this skeleton instantiates.

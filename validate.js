@@ -1,19 +1,6 @@
 #!/usr/bin/env node
 /*
- * validate.js — minimum-viable validator for the Docker Status documentation corpus.
- *
- * VENDORED AND ADAPTED from the DocumentationAsAService reference implementation
- * (https://github.com/DaveR-ui/DocumentationAsAService). Three adaptations only:
- *   1. `readme.md` is the corpus entry point (this corpus is lower-case by contract).
- *   2. `project.md` is classified as a context-doc entry point, not a note.
- *   3. Folder classification uses this corpus's lower-case folder names
- *      (adrs/, templates/, checklists/, context/) instead of the upstream ones.
- * The adaptation is recorded in adrs/adr-0002-lowercase-naming-convention.md.
- *
- * This corpus did NOT vendor the upstream guidelines/ prose. The normative
- * contract for this corpus is the one the templates encode:
- *   - note + context-doc frontmatter and body shape: templates/document-template.md
- *   - the catalog below (8 errors, 3 warnings) is the normative review list here.
+ * validate.js — corpus validator for the Docker Status documentation corpus.
  *
  * Plain, zero-dependency Node.js (CommonJS). No package.json, no npm install.
  *
@@ -21,6 +8,9 @@
  *   node validate.js --write  -> regenerate the two generated regions IN EXISTING
  *                                FILES ONLY (never creates index.md / tag-index.md),
  *                                write-if-diff, then run the full check.
+ *
+ * Run from the repo root — ROOT is the directory containing this file, not the
+ * cwd, so the command works from anywhere.
  *
  * Output: one finding per line `path:line — check-name: message` (POSIX relative
  * paths), then `N error(s), M warning(s) — files scanned: K`. Exit 1 iff N > 0.
@@ -34,21 +24,53 @@
  * even when backticked (the anti-smuggling rule), and secret scanning keeps
  * the fenced-blocks-only exemption (inline code can still hide a secret).
  *
- * This script carries the machine walk of the catalog above under the contract
+ * This script carries the machine walk of the catalog below under the contract
  * encoded by templates/document-template.md. Where this file disagrees with the
  * template, the TEMPLATE WINS and this file carries the bug.
  *
- * Catalog (the normative list for this corpus):
+ * The upstream guidelines prose is NOT vendored: this corpus follows
+ * documentation-onrails v1.4 by URL, and its normative contract is the one the
+ * templates encode.
+ *
+ * ---------------------------------------------------------------------------
+ * CONSUMER ADAPTATION (documentation-onrails v1.4 -> docker-status-widget).
+ *
+ * The reference validator was written for the methodology repository itself
+ * (guidelines/, templates/, protocols/, adrs/ at ITS root). This consumer keeps
+ * its corpus under `docs/`, its human entry point at the repository root and
+ * its generated artifacts at the root, so only the FILE COLLECTION and the FILE
+ * CLASSIFICATION adapt — exactly four changes, no check, severity, renderer,
+ * secret catalog or output-format behaviour touched:
+ *
+ *   1. collectMarkdown() skips dot-directories (.git, .atl, …) and common
+ *      build/vendor directories, plus `dist/`, so a consumer repo's tooling,
+ *      caches and build output never join the corpus scan.
+ *   2. classify() maps this consumer's layout onto the same doc classes:
+ *      root `README.md` and `docs/project.md` -> context-entry; `docs/` ->
+ *      context-doc (the `docs/context/` mapping is kept for the day that folder
+ *      exists — it does not, so it is not in the map); `docs/adrs/` -> adr,
+ *      `docs/templates/` -> template, `docs/protocols/` -> protocol (the same
+ *      schema folders are recognised at the root depth too); the five
+ *      `docs/<topic>/` slice folders stay notes behind their hubs.
+ *   3. NOTE_CLASSES carries `protocol`; the schema-folder class the pre-v1.4
+ *      corpus used is retired, and its folder is now `docs/protocols/`.
+ *   4. checkCategory() compares against the folder's FINAL path segment, so the
+ *      nested `docs/protocols/` folder still matches category "protocols".
+ *
+ * Every check, the severity model, the generated-region renderer, the secret
+ * catalog and the output format behave exactly as in the reference. The
+ * normative record of this adaptation is
+ * docs/adrs/adr-0018-onrails-v1-4-retrofit.md; it supersedes the vendored-copy
+ * clause of adrs/adr-0002-lowercase-naming-convention.md.
+ * ---------------------------------------------------------------------------
+ *
+ * Catalog (the normative list for this corpus; upstream: guidelines/04-validation.md):
  *   ERRORS    metadata-outside-contract, duplicate-ids, dangling-related-target,
  *             dangling-link, orphan-note, missing-from-hub, stale-generated-index,
  *             secret-in-prose
  *   WARNINGS  no-h1, category-mismatch-folder, near-duplicate-body
  *
  * Reference implementation: small, readable, commented. No cleverness.
- *
- * Run from anywhere — ROOT is the directory containing this file, not the cwd:
- *   node docs/validate.js            check only, strictly read-only
- *   node docs/validate.js --write    regenerate the two generated regions, then check
  */
 'use strict';
 
@@ -72,7 +94,7 @@ const NOTE_OPTIONAL = ['supersedes', 'expires_at', 'moved_from'];
 // Context-doc contract: 5 required + 2 optional (guidelines/02 §4).
 const CTX_REQUIRED = ['last_updated', 'status', 'description', 'tags', 'version'];
 const CTX_OPTIONAL = ['related', 'moved_from'];
-// readme.md / project.md = context-doc entry points + one extra required key.
+// README.md (root) / docs/project.md = context-doc entry points + one extra key.
 const ENTRY_EXTRA = 'doc_language';
 
 // Which keys must be scalars per contract (everything else present is a list).
@@ -85,16 +107,23 @@ const GENERATED_ARTIFACTS = [
   { rel: 'tag-index.md', marker: 'tags' },
 ];
 
-const NOTE_CLASSES = new Set(['note', 'hub', 'adr', 'template', 'checklist']);
+const NOTE_CLASSES = new Set(['note', 'hub', 'adr', 'template', 'protocol']);
+
+// Consumer adaptation (4/4): directories never walked by the corpus scan. Dot
+// directories (.git, .atl, …) cover a consumer repo's tooling and local agent
+// state; the rest are common build/vendor outputs, `dist/` included.
+const SKIP_DIRS = new Set(['diagrams', 'node_modules', '__pycache__', 'dist', 'build', 'site-packages']);
 
 // ----------------------------- File collection & classification ------------------------------
 
 /** Recursively collect all .md files under dir as sorted POSIX relative paths.
- *  `.git` and any folder named `diagrams` are skipped entirely; every non-.md
- *  file (LICENSE, .gitignore, validate.js, html, …) is never collected. */
+ *  Dot-directories (.git, .atl, …) and SKIP_DIRS are skipped entirely; every
+ *  non-.md file (LICENSE, .gitignore, validate.js, html, …) is never collected.
+ *  Consumer adaptation: what a consumer repo holds outside the corpus (tooling,
+ *  caches, build output) never joins the scan. */
 function collectMarkdown(dir, out) {
   for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (ent.name === '.git' || ent.name === 'diagrams') continue;
+    if (ent.name.startsWith('.') || SKIP_DIRS.has(ent.name)) continue;
     const abs = path.join(dir, ent.name);
     if (ent.isDirectory()) collectMarkdown(abs, out);
     else if (ent.isFile() && ent.name.toLowerCase().endsWith('.md')) {
@@ -104,23 +133,25 @@ function collectMarkdown(dir, out) {
   out.sort();
 }
 
-/** File classification, path-based. Order matters: readme.md -> context-entry;
- *  project.md -> context-entry (the agent-facing entry point carries the
- *  context-doc key set plus doc_language); root index.md/tag-index.md ->
- *  generated artifact (BEFORE the hub rule, else tag-index.md looks like a hub
- *  by name); any `*-index.md` -> hub (note contract, body not validated);
- *  context/ -> context-doc; adrs/ | templates/ | checklists/ ->
- *  adr | template | checklist; rest -> note. */
+/** File classification, path-based. Order matters: root README.md ->
+ *  context-entry; docs/project.md -> context-entry (the agent-facing entry
+ *  point carries the context-doc key set plus doc_language); root
+ *  index.md/tag-index.md -> generated artifact (BEFORE the hub rule, else
+ *  tag-index.md looks like a hub by name); any `*-index.md` -> hub (note
+ *  contract, body not validated); docs/ -> context-doc; adrs/ | templates/ |
+ *  protocols/ (root or under docs/) -> adr | template | protocol; rest -> note.
+ *  Consumer adaptation: the corpus lives under `docs/`, so the schema folders
+ *  are mapped at both depths and the slice folders stay plain notes. */
 function classify(rel) {
-  if (rel === 'readme.md') return 'context-entry';
-  if (rel === 'project.md') return 'context-entry';
+  if (rel === 'README.md') return 'context-entry';
+  if (rel === 'docs/project.md') return 'context-entry';
   if (rel === 'index.md' || rel === 'tag-index.md') return 'generated';
   if (rel.slice(rel.lastIndexOf('/') + 1).endsWith('-index.md')) return 'hub';
   const dir = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '';
-  if (dir === 'context') return 'context-doc';
-  if (dir === 'adrs') return 'adr';
-  if (dir === 'templates') return 'template';
-  if (dir === 'checklists') return 'checklist';
+  if (dir === 'docs') return 'context-doc';
+  if (dir === 'adrs' || dir === 'docs/adrs') return 'adr';
+  if (dir === 'templates' || dir === 'docs/templates') return 'template';
+  if (dir === 'protocols' || dir === 'docs/protocols') return 'protocol';
   return 'note';
 }
 
@@ -412,8 +443,8 @@ function collectEdges(docs, resolver) {
 
 // ----------------------------- ERROR 5: orphan-note ------------------------------
 
-/** A note-class file (note/hub/adr/template/checklist) with ZERO non-self
- *  edges in both directions. EXEMPTION: context-docs (readme.md and
+/** A note-class file (note/hub/adr/template/protocol) with ZERO non-self
+ *  edges in both directions. EXEMPTION: context-docs (README.md and
  *  project.md) are exempt — they are entry furniture reached through the
  *  entry-point navigation table, not graph content. Generated artifacts and
  *  skipped files are exempt too. */
@@ -430,19 +461,19 @@ function checkOrphans(docs, out, inn) {
 
 /** - note in a folder containing a hub -> must be referenced BY THE HUB
  *    (wikilink or markdown link to its stem/id/path, i.e. any resolvable edge).
- *  - note in a hub-less folder (templates/, checklists/, root-level notes)
- *    -> must be referenced by a resolvable MARKDOWN link in readme.md.
+ *  - note in a hub-less folder (templates/, protocols/, root-level notes)
+ *    -> must be referenced by a resolvable MARKDOWN link in README.md.
  *  - hubs themselves must also be referenced by a resolvable markdown link in
- *    readme.md. */
+ *    README.md. */
 function checkHubMembership(docs, out, mdOut) {
-    const readmeLinks = mdOut.get('readme.md') || new Set();
+    const readmeLinks = mdOut.get('README.md') || new Set();
   const hubByDir = new Map();
   for (const d of docs) if (d.cls === 'hub') hubByDir.set(d.dir, d);
   for (const d of docs) {
     if (!NOTE_CLASSES.has(d.cls)) continue;
     if (d.cls === 'hub') {
       if (!readmeLinks.has(d.rel)) {
-        err(d.rel, 1, 'missing-from-hub', 'hub is not referenced by a resolvable markdown link in readme.md');
+        err(d.rel, 1, 'missing-from-hub', 'hub is not referenced by a resolvable markdown link in README.md');
       }
       continue;
     }
@@ -453,7 +484,7 @@ function checkHubMembership(docs, out, mdOut) {
       }
     } else if (!readmeLinks.has(d.rel)) {
       err(d.rel, 1, 'missing-from-hub',
-        'note sits in a hub-less folder and is not referenced by a resolvable markdown link in readme.md');
+        'note sits in a hub-less folder and is not referenced by a resolvable markdown link in README.md');
     }
   }
 }
@@ -461,25 +492,25 @@ function checkHubMembership(docs, out, mdOut) {
 // ----------------------------- Generated region rendering (deterministic — byte-stable for unchanged input) ------------------------------
 
 function classCounts(docs) {
-  const c = { ctx: 0, note: 0, hub: 0, adr: 0, tmpl: 0, chk: 0 };
+  const c = { ctx: 0, note: 0, hub: 0, adr: 0, tmpl: 0, proto: 0 };
   for (const d of docs) {
     if (d.cls === 'context-entry' || d.cls === 'context-doc') c.ctx++;
     else if (d.cls === 'hub') c.hub++;
     else if (d.cls === 'adr') c.adr++;
     else if (d.cls === 'template') c.tmpl++;
-    else if (d.cls === 'checklist') c.chk++;
+    else if (d.cls === 'protocol') c.proto++;
     else if (d.cls === 'note') c.note++;
   }
   return c;
 }
 function treeLabel(d) {
   return { 'context-entry': 'context-doc (entry)', 'context-doc': 'context-doc', generated: 'generated',
-    hub: 'hub', adr: 'adr', template: 'template', checklist: 'checklist' }[d.cls] || 'note';
+    hub: 'hub', adr: 'adr', template: 'template', protocol: 'protocol' }[d.cls] || 'note';
 }
 function idSuffix(d) { return NOTE_CLASSES.has(d.cls) && d.id ? `, id: \`${d.id}\`` : ''; }
 
 /** Body of the index.md "index" region (snapshot line added at write time).
- *  Root files first: readme.md then tag-index.md (index.md never lists itself;
+ *  Root files first: README.md then tag-index.md (index.md never lists itself;
  *  validate.js is not scanned so never appears), rest of the root sorted; then
  *  folders sorted alphabetically, files sorted inside. Folders without any
  *  scanned .md (e.g. diagrams/) are not listed. */
@@ -488,14 +519,14 @@ function renderIndexRegion(docs) {
   const c = classCounts(docs);
   L.push('## Generated index', '', '### Overview', '');
   L.push(`- Markdown files: ${docs.length}`); // total scanned = every walked .md incl. artifacts
-  L.push(`- Context docs: ${c.ctx} | Notes: ${c.note} | Hubs: ${c.hub} | ADRs: ${c.adr} | Templates: ${c.tmpl} | Checklists: ${c.chk}`);
+  L.push(`- Context docs: ${c.ctx} | Notes: ${c.note} | Hubs: ${c.hub} | adrs: ${c.adr} | templates: ${c.tmpl} | protocols: ${c.proto}`);
   L.push('', '### Tree', '');
   const fmt = (d, indent) => `${indent}- ${d.name} ${DASH} ${treeLabel(d)}${idSuffix(d)}`;
-  for (const rel of ['readme.md', 'tag-index.md']) {
+  for (const rel of ['README.md', 'tag-index.md']) {
     const d = docs.find((x) => x.rel === rel);
     if (d) L.push(fmt(d, ''));
   }
-  const rootRest = docs.filter((d) => d.dir === '' && d.rel !== 'index.md' && d.rel !== 'readme.md' && d.rel !== 'tag-index.md')
+  const rootRest = docs.filter((d) => d.dir === '' && d.rel !== 'index.md' && d.rel !== 'README.md' && d.rel !== 'tag-index.md')
     .sort((a, b) => ciCompare(a.name, b.name));
   for (const d of rootRest) L.push(fmt(d, ''));
   const dirs = [...new Set(docs.filter((d) => d.dir !== '').map((d) => d.dir))].sort(ciCompare);
@@ -653,7 +684,10 @@ function checkCategory(docs) {
     if (!NOTE_CLASSES.has(d.cls) || d.dir === '') continue; // root-level notes: no folder to compare
     const ent = d.entries.get('category');
     if (!ent || ent.kind !== 'scalar' || !ent.value) continue; // absence/blank owned by check 1
-    if (ent.value.trim().toLowerCase() !== d.dir.toLowerCase()) {
+    // Consumer adaptation (4/4): compare against the folder's final segment, so
+    // a nested docs/protocols/ folder still matches category "protocols".
+    const folder = d.dir.slice(d.dir.lastIndexOf('/') + 1);
+    if (ent.value.trim().toLowerCase() !== folder.toLowerCase()) {
       warn(d.rel, ent.line, 'category-mismatch-folder', `category '${ent.value.trim()}' does not match folder '${d.dir}/'`);
     }
   }

@@ -4,7 +4,7 @@ category: templates
 tags: [template, ui, inventory, components, styles]
 aliases: [UI Inventory Template]
 related: [document-template, troubleshooting-template, project]
-version: 1.0
+version: 1.1
 status: active
 ---
 
@@ -26,7 +26,7 @@ item carries the same seven subsections in the same order, then style tokens ope
 anchor index so a lookup never scrolls. A compatibility matrix or decision tree is optional;
 `## Related` points symptom write-ups at troubleshooting sheets and never copies fixes. The body
 shape is a contracted exception under
-[the upstream document contract §2](https://github.com/DaveR-ui/DocumentationAsAService); the
+[the upstream document contract §2](https://github.com/DaveR-ui/documentation-onrails/blob/main/guidelines/02-document-contract.md); the
 frontmatter is the standard note contract. Rationale:
 [[adr-0005-doc-classes-and-body-shape-exceptions|ADR-0005]].
 

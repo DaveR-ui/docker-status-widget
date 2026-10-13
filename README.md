@@ -1,3 +1,13 @@
+---
+last_updated: 2026-10-12
+status: active
+description: Single entry point for the Docker Status documentation corpus — what the project is and how to navigate its docs.
+tags: [entry-point, index, navigation]
+version: 1.1
+doc_language: en
+related: [project]
+---
+
 # Docker Status
 
 **The two things every developer actually needs, one click away in the panel: a Docker daemon that is
@@ -163,6 +173,130 @@ for a daemon that is stopped:
 `polkit/49-docker-status-widget.rules` grants exactly one action id, one unit, one verb, from a local
 active session only. It does not grant stop, restart, disable or mask.
 
+---
+
+## How to navigate this corpus
+
+This corpus documents the Docker Status plasmoid: its QML surfaces, its pure logic, its privilege
+model, its installer and the way it is proven. The thesis is the same one every corpus in this
+family states — *the files are the store*; the organization **is** the index; and health is a
+routine walk of a machine-checkable catalog, not a feeling. The methodology it follows is
+[documentation-onrails](https://github.com/DaveR-ui/documentation-onrails) v1.4 — an upstream
+referenced by URL, never vendored. Navigation is designed, not discovered: this file is the single
+entry point, every topic folder has exactly one hub, and every note is reachable in three hops or
+fewer.
+
+**Start with [`docs/project.md`](docs/project.md)** — the canonical agent-facing entry point
+(overview, technology stack, the Slices routing table, commands, conventions, domain entities,
+context index, common lookups). This README is the single human entry point; there is no second
+"start here".
+
+| File | Purpose | When to read |
+|---|---|---|
+| [docs/project.md](docs/project.md) | Canonical agent-facing entry point: overview, stack, Slices routing table, commands, conventions, domain entities, context index, common lookups. | First, if you are an agent; whenever you need to know where a task lands. |
+| [docs/widget/widget-index.md](docs/widget/widget-index.md) | Hub for the QML surfaces slice. | Changing anything Plasma renders. |
+| [docs/widget/widget-slice.md](docs/widget/widget-slice.md) | Slice map: boundaries, flows, conventions, known gaps. | Before touching the representations or the config page. |
+| [docs/widget/ui-surfaces.md](docs/widget/ui-surfaces.md) | UI inventory sheet: which surface to pick, and what each one is. | Choosing where a change belongs in the UI. |
+| [docs/status/status-index.md](docs/status/status-index.md) | Hub for the pure-logic slice. | Changing parsing, state, severity or a command boundary. |
+| [docs/status/status-slice.md](docs/status/status-slice.md) | Slice map for the pure logic. | Before changing `dockerstatus.js`. |
+| [docs/status/data-engine-contract.md](docs/status/data-engine-contract.md) | Interface-surface sheet: the `executable` engine payload and set semantics. | When a data source behaves unexpectedly. |
+| [docs/privilege/privilege-index.md](docs/privilege/privilege-index.md) | Hub for the scoped polkit grant. | Touching privilege or the passwordless start. |
+| [docs/privilege/privilege-slice.md](docs/privilege/privilege-slice.md) | Slice map for the grant. | Before widening or narrowing what a local user may do. |
+| [docs/installer/installer-index.md](docs/installer/installer-index.md) | Hub for the lifecycle CLI slice. | Changing install, upgrade or removal. |
+| [docs/installer/installer-slice.md](docs/installer/installer-slice.md) | Slice map for the lifecycle CLI. | Before changing `install.sh`. |
+| [docs/verification/verification-index.md](docs/verification/verification-index.md) | Hub for how the project is proven. | Running the tests, auditing evidence, chasing a symptom. |
+| [docs/verification/verification-slice.md](docs/verification/verification-slice.md) | Slice map for the evidence layers and their limits. | Deciding what a claim rests on. |
+| [docs/verification/troubleshooting.md](docs/verification/troubleshooting.md) | Symptom-keyed write-ups. | Resolving an exact error or symptom string. |
+| [docs/verification/render-preview.md](docs/verification/render-preview.md) | The `tools/` render harness and its capture tiers. | Seeing the widget without a Plasma session. |
+| [docs/protocols/new-note-protocol.md](docs/protocols/new-note-protocol.md) | Procedure: add a note to this corpus and keep validation green. | Before writing any documentation here. |
+| [docs/protocols/bootstrap-protocol.md](docs/protocols/bootstrap-protocol.md) | Procedure: bootstrap or audit the corpus skeleton. | When starting or restructuring the docs. |
+| [docs/adrs/adr-index.md](docs/adrs/adr-index.md) | Hub for the append-only decision records. | When questioning *why* the corpus is shaped this way. |
+| [tools/README.md](tools/README.md) | The dev and verification aids (headless render harness). | Rendering the widget without plasmashell. |
+| [index.md](index.md) | Generated tree and stats of the whole corpus (region `index`). | To see everything the corpus holds. |
+| [tag-index.md](tag-index.md) | Generated tag → docs surface (region `tags`). | When the vocabulary is unknown — search by tag. |
+| [validate.js](validate.js) | Zero-dependency corpus validator. Run `node validate.js` (read-only) or `node validate.js --write` (regenerate the two indexes), from the repo root. | Before every change; after adding or moving docs. |
+
+### Folders
+
+| Folder | Hub | What it holds |
+|---|---|---|
+| `docs/widget/` | [widget-index.md](docs/widget/widget-index.md) | The QML surfaces slice and its UI inventory sheet. |
+| `docs/status/` | [status-index.md](docs/status/status-index.md) | The pure-logic slice and the data engine contract sheet. |
+| `docs/privilege/` | [privilege-index.md](docs/privilege/privilege-index.md) | The scoped polkit grant slice. |
+| `docs/installer/` | [installer-index.md](docs/installer/installer-index.md) | The lifecycle CLI slice. |
+| `docs/verification/` | [verification-index.md](docs/verification/verification-index.md) | How the project is proven, and the symptom write-ups. |
+| `docs/adrs/` | [adr-index.md](docs/adrs/adr-index.md) | Append-only decision records: the archaeology of *why*. |
+| `docs/protocols/` | — (schema folder) | The corpus's procedures: bootstrap and new-note. |
+| `docs/templates/` | — (schema folder) | The copyable shapes: note, hub, ADR, project entry, slice generalities, and the three registered doc classes. |
+| `tools/` | — (no hub) | Dev and verification aids; nothing here ships in the plasmoid. |
+
+Schema folders have no hub on purpose: their files register in the navigation tables above instead.
+
+### Generated navigation
+
+- [index.md](index.md) — tree, counts and ids for the whole corpus.
+- [tag-index.md](tag-index.md) — tag → documents, for when the vocabulary is unknown.
+
+Both live at the repository root and are written by `node validate.js --write` into marker-delimited
+regions, write-if-diff. Human text outside the markers survives regeneration; text **inside** them
+is rebuilt, never rescued — if it is lost, rerun the generator.
+
+### Rules of this corpus
+
+- Every corpus file and folder name is **lower-case**; ids are slugs. The conventional `README.md`
+  is the one exemption.
+- Notes carry the 7 required frontmatter keys and the 7 verbatim body sections; context docs carry
+  their own lighter key set, with `doc_language` on the entry points.
+- `related` uses **ids**; wikilinks and body links use **filename stems**. One resolver accepts both,
+  case-insensitively.
+- One hub per folder; a note missing from its hub, an unresolvable link, or a duplicate id is an
+  **error** at review. Warnings (no H1, `category` ≠ folder, near-duplicate body) advise without
+  blocking.
+- Nothing is documented per file: the map scales with areas, not with the size of the territory.
+- The methodology is **referenced by URL**, never vendored: the normative prose lives in
+  [documentation-onrails](https://github.com/DaveR-ui/documentation-onrails), and this corpus keeps
+  the shapes its templates encode.
+
+### Schema layer
+
+| Template | Instantiate it when |
+|---|---|
+| [templates/document-template.md](docs/templates/document-template.md) | Creating any note. |
+| [templates/hub-template.md](docs/templates/hub-template.md) | Creating any folder's `<folder>-index.md`. |
+| [templates/adr-template.md](docs/templates/adr-template.md) | Recording a decision under `docs/adrs/`. |
+| [templates/project-md-template.md](docs/templates/project-md-template.md) | Starting (or auditing) `docs/project.md`. |
+| [templates/slice-generalities-template.md](docs/templates/slice-generalities-template.md) | Building the map of a slice. |
+| [templates/ui-inventory-template.md](docs/templates/ui-inventory-template.md) | Adding a surface readers must choose among. |
+| [templates/interface-surface-template.md](docs/templates/interface-surface-template.md) | Documenting a group's surfaces or a payload contract. |
+| [templates/troubleshooting-template.md](docs/templates/troubleshooting-template.md) | Writing up a symptom that can recur. |
+
+| Protocol | Walks |
+|---|---|
+| [protocols/new-note-protocol.md](docs/protocols/new-note-protocol.md) | One note, before it merges. |
+| [protocols/bootstrap-protocol.md](docs/protocols/bootstrap-protocol.md) | A whole corpus, when structure changes. |
+
+### Decision records
+
+| Record | Decision |
+|---|---|
+| [adrs/adr-0001-corpus-location-and-entry-point.md](docs/adrs/adr-0001-corpus-location-and-entry-point.md) | The corpus lives in `docs/`; `readme.md` is the entry point, `project.md` the agent-facing one. Its router clause is superseded by [ADR-0018](docs/adrs/adr-0018-onrails-v1-4-retrofit.md). |
+| [adrs/adr-0002-lowercase-naming-convention.md](docs/adrs/adr-0002-lowercase-naming-convention.md) | Every name under `docs/` is lower-case, and the validator is vendored and adapted to match. Its validator-location clause is superseded by [ADR-0018](docs/adrs/adr-0018-onrails-v1-4-retrofit.md). |
+| [adrs/adr-0003-slice-taxonomy.md](docs/adrs/adr-0003-slice-taxonomy.md) | The five slices, and the evidence each one rests on. |
+| [adrs/adr-0004-scoped-polkit-grant.md](docs/adrs/adr-0004-scoped-polkit-grant.md) | Privilege is granted by one scoped polkit rule, not by `pkexec` per click or a sudoers entry. |
+| [adrs/adr-0005-doc-classes-and-body-shape-exceptions.md](docs/adrs/adr-0005-doc-classes-and-body-shape-exceptions.md) | Four doc classes are registered here, with an explicit body-shape exception; the checklist half of the registry is retired by [ADR-0018](docs/adrs/adr-0018-onrails-v1-4-retrofit.md). |
+| [adrs/adr-0006-video-downloader-command-boundary.md](docs/adrs/adr-0006-video-downloader-command-boundary.md) | The video-download row is the one sanctioned exception to the fixed-command rule. |
+| [adrs/adr-0007-stop-button-confirmation-and-narrow-grant.md](docs/adrs/adr-0007-stop-button-confirmation-and-narrow-grant.md) | A stop button that confirms on a second click, with the polkit grant deliberately left at `["start"]` so stop prompts while start does not. |
+| [adrs/adr-0008-configurable-cookies-browser-and-bottom-text.md](docs/adrs/adr-0008-configurable-cookies-browser-and-bottom-text.md) | The cookies browser becomes a validated setting, reversing ADR-0006's browser-constancy clause; the bottom text is configuration, and the stop button gets a fixed narrow width. |
+| [adrs/adr-0009-widget-owned-shutdown-countdown.md](docs/adrs/adr-0009-widget-owned-shutdown-countdown.md) | A widget-owned "Countdown to Extinction" shutdown: the power-off is a fixed command, the duration is a validated setting that never reaches it, and, unlike the docker stop, it does not prompt. Its inline-field rejection is superseded by ADR-0010. |
+| [adrs/adr-0010-inline-shutdown-minutes-in-the-representation.md](docs/adrs/adr-0010-inline-shutdown-minutes-in-the-representation.md) | The shutdown minutes become an inline field in the representation: it emits a value-carrying signal and `main.qml` stays the only writer of the kcfg entry; the duration still never reaches a shell. |
+| [adrs/adr-0011-fixed-dark-palette-from-mockup.md](docs/adrs/adr-0011-fixed-dark-palette-from-mockup.md) | The widget paints the mockup's fixed dark palette and type scale instead of following the Kirigami theme: a deliberate override that reverses the colour half of the SeverityDot rule (severity still resolves only in `SeverityDot.qml`), switches the popup to its own card, and makes the action buttons equal width. |
+| [adrs/adr-0013-widget-update-check-and-release-site.md](docs/adrs/adr-0013-widget-update-check-and-release-site.md) | The installed widget learns an update exists from one local file and one fixed https manifest — a human-approved reversal of the "no network code" goal — and a GitHub Pages site publishes that manifest, generated from `metadata.json` so the version is authored once; the sixth-slice question for `site/` and `.github/` is left to the human. |
+| [adrs/adr-0014-compose-grouping-and-podman-desktop-launch.md](docs/adrs/adr-0014-compose-grouping-and-podman-desktop-launch.md) | Containers group by the `com.docker.compose.project` label — the no-project bucket is a group like any other — a per-project play/stop runs a label-filtered `docker start\|stop` as a new container-level mutation, and the Podman Desktop path is one validated setting quoted into a fixed command; the polkit grant stays at `["start"]`. Its Podman Desktop UI-section clause is superseded by ADR-0016, which removes the popup section while retaining the builders, kcfg entry and tests. |
+| [adrs/adr-0015-update-indicator-opens-the-release-page.md](docs/adrs/adr-0015-update-indicator-opens-the-release-page.md) | An exclamation-mark indicator beside the daemon status, shown only while an update exists, opens the widget's fixed Pages URL on one click — superseding only ADR-0013's "not a link" clause, with the silence contract and the fixed-URL rule left standing. |
+| [adrs/adr-0016-containers-flat-rows-and-podman-section-removal.md](docs/adrs/adr-0016-containers-flat-rows-and-podman-section-removal.md) | The Containers header and its collapse flag are removed and group rows go flat per the mockup; the Podman Desktop section is deleted while its builders, kcfg entry and tests are retained — superseding ADR-0014's UI-section clause, with the compose boundary left standing. |
+| [adrs/adr-0017-podman-launch-button-and-topbar-removal.md](docs/adrs/adr-0017-podman-launch-button-and-topbar-removal.md) | The Podman Desktop launch returns as a square button beside the daemon-status label, and the "Workspace" topbar is removed — superseding ADR-0016's Podman Desktop UI-removal clause, with the flat container rows still standing. |
+| [adrs/adr-0018-onrails-v1-4-retrofit.md](docs/adrs/adr-0018-onrails-v1-4-retrofit.md) | The corpus is retrofitted to documentation-onrails v1.4: the root `README.md` becomes the single entry point, the procedure container becomes `docs/protocols/`, the validator and the generated artifacts move to the repo root, and the methodology is cited by URL. |
+
 ## Layout
 
 ```
@@ -181,7 +315,11 @@ package/io.github.daver-ui.dockerstatus/
 polkit/49-docker-status-widget.rules
 tests/dockerstatus.test.mjs
 screenshots/                          # the two images above
-docs/                                 # documentation corpus — entry point: docs/readme.md
+docs/                                 # documentation corpus — entry point: this README; routing: docs/project.md
+index.md                              # generated corpus tree (marker region, repo root)
+tag-index.md                          # generated tag → docs surface (marker region, repo root)
+validate.js                           # zero-dependency corpus validator: node validate.js
+tools/                                # dev/verification aids — nothing here ships in the plasmoid
 ```
 
 Notes on the layout, both learned the hard way:

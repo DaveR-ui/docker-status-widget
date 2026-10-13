@@ -4,7 +4,7 @@ category: templates
 tags: [template, interface-surface, catalog, contract]
 aliases: [Interface Surface Template]
 related: [document-template, slice-generalities-template, project]
-version: 1.0
+version: 1.1
 status: active
 ---
 
@@ -24,8 +24,8 @@ operation; pick the mode per sheet. Record
 the mode in `tags`: `interface-catalog` for the group-keyed listing of what exists,
 `interface-contract` for the full mapping of one operation. Membership and mode ride on `tags`,
 never on invented frontmatter keys (inventing keys is a metadata-outside-contract error — see
-[[new-note-checklist]]). The body shape below is a contracted exception under
-[the upstream document contract §2](https://github.com/DaveR-ui/DocumentationAsAService) —
+[[new-note-protocol]]). The body shape below is a contracted exception under
+[the upstream document contract §2](https://github.com/DaveR-ui/documentation-onrails/blob/main/guidelines/02-document-contract.md) —
 registered doc classes keep their documented anatomy — while the frontmatter contract is
 unchanged. The rationale for one class instead of two lives in
 [[adr-0005-doc-classes-and-body-shape-exceptions|ADR-0005]]; link it, don't restate it.
@@ -130,5 +130,5 @@ Request row points here; payloads live nowhere else.
 
 - [[document-template]] — the base note shape this specializes.
 - [[slice-generalities-template]] — the slice doc that links here, not vice versa.
-- [Documentation as a Service](https://github.com/DaveR-ui/DocumentationAsAService) — the upstream
+- [documentation-onrails](https://github.com/DaveR-ui/documentation-onrails) — the upstream
   one-class, two-modes specification.

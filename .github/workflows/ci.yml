@@ -5,7 +5,7 @@ name: ci
 #   test      node --test tests/*.mjs — the documented canonical command, run from
 #                                      the repo root (docs/project.md, Commands)
 #   qmllint   Qt6 qmllint over both QML roots, error-counted (see below)
-#   docs      node docs/validate.js   — the corpus checker, check mode only
+#   docs      node validate.js        — the corpus checker, check mode only
 #
 # Deliberately NOT a push trigger: running the same checks on push and on the
 # pull request reports every context twice, which is noise branch protection
@@ -158,8 +158,8 @@ jobs:
         with:
           node-version: "22"
 
-      # Check mode only. docs/validate.js --write rewrites the two generated
+      # Check mode only. validate.js --write rewrites the two generated
       # regions; CI never rewrites anything, it only reports, so the flag is
       # deliberately absent.
       - name: Validate the documentation corpus
-        run: node docs/validate.js
+        run: node validate.js

@@ -4,7 +4,7 @@ category: templates
 tags: [template, troubleshooting, symptoms]
 aliases: [Troubleshooting Template]
 related: [project, document-template]
-version: 1.0
+version: 1.1
 status: active
 ---
 
@@ -26,7 +26,7 @@ verify steps. The interplay rule: the entry point's Common Lookups table ([[proj
 symptom strings to these headings, the folder's hub lists the sheet, and the write-up lives in
 EXACTLY ONE place — the sheet. The symptom heading is a contract: the string doubles as grep pattern
 and routing key. The body shape is a contracted exception under
-[the upstream document contract §2](https://github.com/DaveR-ui/DocumentationAsAService); the
+[the upstream document contract §2](https://github.com/DaveR-ui/documentation-onrails/blob/main/guidelines/02-document-contract.md); the
 frontmatter is the standard note contract. Rationale:
 [[adr-0005-doc-classes-and-body-shape-exceptions|ADR-0005]].
 
@@ -58,7 +58,7 @@ Quick-ref sheet — entries keyed by the verbatim symptom:
 ## build fails: "Module not found: payments/config"
 **Context:** any build right after a folder rename in the payments area.
 **Root cause:** a stale barrel import survived the rename.
-**Fix:** update the import path; the rename checklist now catches this.
+**Fix:** update the import path; the new-note protocol now catches this.
 **Reference:** none
 ```
 
@@ -100,5 +100,5 @@ What fails, why it fails that way, and when this became understood. One paragrap
 
 - [[project]] — Common Lookups, the routing layer.
 - [[document-template]] — the base note shape.
-- [Documentation as a Service](https://github.com/DaveR-ui/DocumentationAsAService) — the upstream
+- [documentation-onrails](https://github.com/DaveR-ui/documentation-onrails) — the upstream
   class decision behind the quick-ref/deep-dive split.

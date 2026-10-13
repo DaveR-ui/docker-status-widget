@@ -1,14 +1,15 @@
 ---
-id: new-note-checklist
-category: checklists
-tags: [checklist, contract]
-aliases: [New Note Checklist]
-related: [document-template, bootstrap-checklist]
-version: 1.0
+id: new-note-protocol
+category: protocols
+tags: [protocol, contract]
+aliases: [New Note Protocol]
+related: [document-template, bootstrap-protocol]
+moved_from: [checklists/new-note-checklist.md]
+version: 1.1
 status: active
 ---
 
-# New-Note Checklist
+# New-Note Protocol
 
 ## Problem
 
@@ -48,25 +49,25 @@ Every note creation or major edit, before the merge.
 ## When not to use
 
 Repo-level docs under the context-doc contract (see
-[the upstream document contract](https://github.com/DaveR-ui/DocumentationAsAService) §4) — required
+[the upstream document contract §4](https://github.com/DaveR-ui/documentation-onrails/blob/main/guidelines/02-document-contract.md)) — required
 keys `last_updated`, `status`, `description`, `tags`, `version` — still check links and language.
 
 ## Examples
 
 Compare a just-written note against the micro-vault in the
-[upstream bootstrap walk](https://github.com/DaveR-ui/DocumentationAsAService) — its frontmatter and
+[upstream bootstrap walk](https://github.com/DaveR-ui/documentation-onrails/blob/main/guidelines/09-bootstrap-workflow.md) — its frontmatter and
 link wiring satisfy every box (bodies are abbreviated for space; the section skeleton is the
 template's job).
 
 ## Common mistakes
 
-- Checking the boxes by editing the checklist instead of the note.
+- Checking the boxes by editing this protocol instead of the note.
 - Adding `related` targets "that sound right" without verifying resolution — the next reviewer
   will, now or later.
 
 ## References
 
 - [[document-template]] — the contract itself.
-- [[bootstrap-checklist]] — the corpus-level walk this one feeds.
-- [Documentation as a Service](https://github.com/DaveR-ui/DocumentationAsAService) — the upstream
-  review catalog this checklist mirrors.
+- [[bootstrap-protocol]] — the corpus-level walk this one feeds.
+- [documentation-onrails — protocols/new-note-protocol.md](https://github.com/DaveR-ui/documentation-onrails/blob/main/protocols/new-note-protocol.md)
+  — the upstream normative shape this protocol follows.

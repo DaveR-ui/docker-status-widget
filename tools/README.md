@@ -1,3 +1,13 @@
+---
+id: tools-readme
+category: tools
+tags: [tooling, dev-aids, verification, render-preview]
+aliases: ["tools README", "tools/"]
+related: [project, render-preview, verification-slice]
+version: 1.0
+status: active
+---
+
 # tools/
 
 Developer and verification aids. Nothing in here ships in the plasmoid: the

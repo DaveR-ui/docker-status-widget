@@ -71,6 +71,6 @@ repository root later "for discoverability" — that decision would need a succe
 ## References
 
 - [../project.md](../project.md) — the entry point this record fixes.
-- [../readme.md](../readme.md) — the corpus router.
+- [../../README.md](../../README.md) — the corpus router (moved to the repository root by ADR-0018).
 - [../templates/project-md-template.md](../templates/project-md-template.md) — the skeleton `project.md` instantiates.
 - [adr-0002-lowercase-naming-convention](adr-0002-lowercase-naming-convention.md) — the naming rule that came with it.

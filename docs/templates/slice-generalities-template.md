@@ -4,7 +4,7 @@ category: templates
 tags: [template, slice, brownfield]
 aliases: [Slice Generalities Template]
 related: [project, hub-template]
-version: 1.0
+version: 1.1
 status: active
 ---
 
@@ -22,12 +22,12 @@ Copy the fenced shape below: exactly one generalities doc per slice, answering w
 where its boundaries are, which paths a reader starts from, and what is honestly unwritten.
 Slice membership is metadata, not a key: it rides on `category` and `tags` — there is **no**
 `slice:` frontmatter key, and inventing keys is a metadata-outside-contract error (see
-[[new-note-checklist]]).
+[[new-note-protocol]]).
 
 ## When to use
 
 Brownfield Step 1
-([the upstream brownfield walk](https://github.com/DaveR-ui/DocumentationAsAService)): every
+([the upstream brownfield walk](https://github.com/DaveR-ui/documentation-onrails/blob/main/guidelines/08-brownfield.md)): every
 slice row in the Slices table gets one of these, before anything else — the slices are the hubs
 of the retrofit and the routing unit of the query loop.
 
@@ -77,5 +77,5 @@ status: active
 
 - [[project]] — the Slices table each doc is registered in.
 - [[hub-template]] — the folder-hub role the slices mirror for code.
-- [Documentation as a Service](https://github.com/DaveR-ui/DocumentationAsAService) — the
+- [documentation-onrails](https://github.com/DaveR-ui/documentation-onrails) — the
   upstream brownfield walk (Step 1) this shape serves.

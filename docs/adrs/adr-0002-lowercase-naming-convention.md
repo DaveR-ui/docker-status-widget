@@ -76,7 +76,7 @@ node docs/validate.js --write  # regenerate the two generated regions, then chec
 
 ## References
 
-- [../validate.js](../validate.js) — the vendored machine walk and its adaptation header.
+- [../../validate.js](../../validate.js) — the vendored machine walk and its adaptation header (moved to the repository root by ADR-0018).
 - [../templates/document-template.md](../templates/document-template.md) — the contract the validator enforces.
 - [adr-0001-corpus-location-and-entry-point](adr-0001-corpus-location-and-entry-point.md) — where the corpus lives.
 - [DocumentationAsAService](https://github.com/DaveR-ui/DocumentationAsAService) — the upstream methodology this corpus follows.

@@ -3,7 +3,7 @@ last_updated: 2026-10-12
 status: active
 description: Agent-facing entry point for the Docker Status plasmoid — stack, slices, commands, conventions, vocabulary and symptom routing.
 tags: [project, entry-point, routing, slices]
-version: 1.0
+version: 1.1
 doc_language: en
 ---
 
@@ -90,12 +90,12 @@ beyond the explicit `install-polkit` command.
 | `./install.sh test` | Run the Node unit tests (`node --test tests/*.mjs`). |
 | `node --test tests/*.mjs` | Same tests without the wrapper. |
 | `qmllint package/io.github.daver-ui.dockerstatus/contents/ui/*.qml` | Lint every QML file. |
-| `node docs/validate.js` | Walk the documentation catalog. Read-only; exit 1 on errors. |
-| `node docs/validate.js --write` | Regenerate the two generated regions (write-if-diff), then validate. |
+| `node validate.js` | Walk the documentation catalog from the repo root. Read-only; exit 1 on errors. |
+| `node validate.js --write` | Regenerate the two generated regions (write-if-diff), then validate. |
 | `python3 tools/render_preview.py` | Dev aid: render the shipped full representation headlessly and write PNGs to `/tmp/dockerstatus-render/`. Needs Qt6 QML modules + PyQt6; never part of the tested path or the shipped artifact. |
 
 Working-directory quirks: `install.sh` resolves every path from its own directory and
-`docs/validate.js` from the directory containing itself, so both work from any cwd. The plasmoid's QML
+`validate.js` from the directory containing itself, so both work from any cwd. The plasmoid's QML
 files are not runnable from a shell as the widget — `main.qml` is plasmashell-only; the full
 representation *is* previewable headlessly through `tools/` ([[render-preview]], see Common
 Lookups). The release site has no local serve command: it is
@@ -135,7 +135,17 @@ site/                                 the GitHub Pages release site (the widget'
 ├── styles.css                        the site's stylesheet
 ├── latest.json                       generated manifest the widget fetches (version only)
 └── e2e/                              non-gating Playwright scaffold over the static site
-docs/                                 this corpus — entry: readme.md, routing: project.md
+docs/                                 this corpus — entry point: the root README.md
+├── project.md                        the agent-facing entry point (nine fixed sections)
+├── adrs/                             append-only decision records, behind adr-index.md
+├── protocols/                        corpus procedures (bootstrap, new note)
+├── templates/                        the copyable note, hub, ADR and project shapes
+└── <topic>/                          the five slice folders, each behind its <topic>-index.md hub
+index.md                              generated corpus tree (marker region, repo root)
+tag-index.md                          generated tag → docs surface (marker region, repo root)
+validate.js                           zero-dependency corpus validator (run from the repo root)
+tools/                                dev/verification aids — nothing here ships in the plasmoid
+README.md                             the single human entry point, with the corpus navigation table
 ```
 
 ## Key Conventions
@@ -226,8 +236,9 @@ docs/                                 this corpus — entry: readme.md, routing:
 - [verification/render-preview.md](verification/render-preview.md) — seeing the widget rendered: the
   `tools/` harness, the three capture tiers and their prerequisites.
 - [adrs/adr-index.md](adrs/adr-index.md) — decision records, append-only.
+- [protocols/new-note-protocol.md](protocols/new-note-protocol.md) — walk one note before merging.
+- [protocols/bootstrap-protocol.md](protocols/bootstrap-protocol.md) — bootstrap or audit the corpus skeleton.
 - [templates/document-template.md](templates/document-template.md) — the note contract, copyable.
-- [checklists/new-note-checklist.md](checklists/new-note-checklist.md) — walk one note before merging.
 
 ## Common Lookups
 

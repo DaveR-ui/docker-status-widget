@@ -4,7 +4,7 @@ category: templates
 tags: [template, adr, decision-record]
 aliases: [ADR Template]
 related: [document-template, adr-index]
-version: 1.0
+version: 1.1
 status: active
 ---
 
@@ -29,7 +29,7 @@ fallout in Common mistakes or an addendum. Register every new ADR in `adrs/adr-i
 
 Every structural or contract-schema decision: a change to the note or context-doc key set, the
 folder anatomy, the generated-artifact pipeline, or the version-bump policy — see the
-[upstream lifecycle guidance](https://github.com/DaveR-ui/DocumentationAsAService) §4, where a
+[upstream lifecycle guidance](https://github.com/DaveR-ui/documentation-onrails/blob/main/guidelines/03-lifecycle-and-generated-files.md) §4, where a
 contract-breaking (MAJOR) bump *requires* an ADR.
 
 ## When not to use
@@ -96,5 +96,5 @@ The guidelines and artifacts this decision binds.
 
 - [[document-template]] — the general note shape this specializes.
 - [[adr-index]] — the hub every new ADR must be registered in.
-- [Documentation as a Service](https://github.com/DaveR-ui/DocumentationAsAService) — the upstream
+- [documentation-onrails](https://github.com/DaveR-ui/documentation-onrails) — the upstream
   lifecycle, ADR placement, and version policy this record adapts.

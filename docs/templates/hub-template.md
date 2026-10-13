@@ -3,8 +3,8 @@ id: hub-template
 category: templates
 tags: [template, hub, navigation]
 aliases: [Hub Template]
-related: [document-template, readme]
-version: 1.0
+related: [document-template, README]
+version: 1.1
 status: active
 ---
 
@@ -31,9 +31,10 @@ second note. Also as the review reference when a missing-from-hub finding appear
 
 ## When not to use
 
-Not for the root entry point (readme is unique — a second "start here" is a maze); not for
-hub-less schema folders (`templates/`, `checklists/`), whose files register in the entry point's
-navigation table instead; never as a content page — duplication makes the hub a rival truth.
+Not for the root entry point (the root `README.md` is unique — a second "start here" is a maze);
+not for hub-less schema folders (`templates/`, `protocols/`), whose files register in the entry
+point's navigation table instead; never as a content page — duplication makes the hub a rival
+truth.
 
 ## Examples
 
@@ -74,13 +75,13 @@ are the whole job; the verbatim note sections are optional here.
   (the near-duplicate-body check) and future drift.
 - Adding a note without adding its hub row in the same commit — the gap-close loop closes only
   when note, hub row, and tag entry have all landed
-  ([upstream reference](https://github.com/DaveR-ui/DocumentationAsAService)).
+  ([the upstream brownfield walk](https://github.com/DaveR-ui/documentation-onrails/blob/main/guidelines/08-brownfield.md)).
 - A hub reading like a phone book: past ~30 notes, split the folder — a hub that doesn't route
   is decoration.
 
 ## References
 
 - [[document-template]] — the note shape the hub routes to.
-- [[new-note-checklist]] — the walk that catches a note missing from its hub.
-- [Documentation as a Service](https://github.com/DaveR-ui/DocumentationAsAService) — the
-  upstream corpus that defines the hub rule and folder anatomy.
+- [[new-note-protocol]] — the walk that catches a note missing from its hub.
+- [documentation-onrails](https://github.com/DaveR-ui/documentation-onrails) — the upstream
+  methodology that defines the hub rule and folder anatomy.

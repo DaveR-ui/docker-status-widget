@@ -4,7 +4,7 @@ category: adrs
 tags: [hub, index, adr, decisions]
 aliases: [ADR Index, Decision Records]
 related: [adr-0001-corpus-location-and-entry-point]
-version: 1.0
+version: 1.1
 status: active
 ---
 
@@ -21,7 +21,9 @@ re-litigated from the code alone does not need a record either — only the *why
 ## Contents
 
 - [[adr-0001-corpus-location-and-entry-point]] — the corpus lives in `docs/`, with `readme.md` as
-  entry point and `project.md` as the agent-facing one.
+  entry point and `project.md` as the agent-facing one. Its router clause is superseded by
+  [[adr-0018-onrails-v1-4-retrofit]], which moves the entry point to the root `README.md`; the
+  record itself is append-only and unedited.
 - [[adr-0002-lowercase-naming-convention]] — every name under `docs/` is lower-case, and the
   validator is vendored and adapted to match.
 - [[adr-0003-slice-taxonomy]] — the five slices, and the evidence each one rests on.
@@ -83,9 +85,16 @@ re-litigated from the code alone does not need a record either — only the *why
   busy indicator relocated into the status card; it supersedes
   [[adr-0016-containers-flat-rows-and-podman-section-removal]]'s Podman Desktop UI-removal clause,
   and the flat container rows still stand.
+- [[adr-0018-onrails-v1-4-retrofit]] — the whole corpus is retrofitted to
+  [documentation-onrails](https://github.com/DaveR-ui/documentation-onrails) v1.4: the root
+  `README.md` becomes the single entry point (superseding ADR-0001's router clause), the procedure
+  container becomes `docs/protocols/` (retiring the checklist class of the registry ADR-0005
+  fixed), the validator and the two generated artifacts move to the repository root, and the
+  methodology's name in every live citation becomes `documentation-onrails`. The append-only
+  records above keep their historical text; this one carries the deltas.
 
 ## Elsewhere
 
 - The contract these decisions bind: [../templates/document-template.md](../templates/document-template.md)
-- The corpus rules in one page: [../readme.md](../readme.md)
+- The corpus rules in one page: [../../README.md](../../README.md)
 - The slice map these records presuppose: [../project.md](../project.md)

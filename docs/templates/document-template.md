@@ -3,8 +3,8 @@ id: document-template
 category: templates
 tags: [template, contract]
 aliases: [Document Template]
-related: [new-note-checklist, hub-template]
-version: 1.0
+related: [new-note-protocol, hub-template]
+version: 1.1
 status: active
 ---
 
@@ -83,6 +83,6 @@ Sources and links to related notes (for example [[payments]]).
 
 ## References
 
-- [[new-note-checklist]] — the same contract as a checklist.
-- [Documentation as a Service](https://github.com/DaveR-ui/DocumentationAsAService) — the upstream
-  reference implementation whose bootstrap workflow this contract instantiates.
+- [[new-note-protocol]] — the same contract as a protocol walk.
+- [documentation-onrails](https://github.com/DaveR-ui/documentation-onrails) — the upstream
+  methodology (v1.4) whose document contract this template instantiates.
