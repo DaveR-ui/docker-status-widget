@@ -60,6 +60,14 @@ Item {
     property string downloadFeedback: ""
     property string downloadFeedbackSeverity: "muted"
     property string cookiesBrowser: ""
+    // Display and open-folder forms of the configured download directory. main.qml owns
+    // both -- it reads configuration and calls the pure helpers -- and this representation
+    // only renders the finished strings; it reads no configuration itself, exactly like
+    // every other consumer here. downloadDirectoryDisplay is "" until $HOME is known, and
+    // downloadFolderUrl is "" in the same case, so the shortcut stays disabled rather than
+    // opening a bogus URL.
+    property string downloadDirectoryDisplay: ""
+    property string downloadFolderUrl: ""
     property bool shutdownReady: false
     property int shutdownMinutes: 0
     property bool shutdownPending: false
@@ -1188,12 +1196,46 @@ Item {
                             font.weight: 650
                         }
 
-                        PlasmaComponents3.Label {
+                        // The title doubles as the hover target for the configured download
+                        // folder, because a PlasmaComponents3.ToolTip renders ONLY when its
+                        // parent is an AbstractButton (ToolTip.qml:
+                        // `visible: parent instanceof T.AbstractButton`). Hanging a ToolTip
+                        // off the Label this used to be would be a silent no-op, so the label
+                        // becomes a flat, transparent, focus-less ToolButton that exists purely
+                        // to be the ToolTip's legal parent. TextOnly is deliberate: there is no
+                        // icon, so TextBesideIcon would reserve icon space for nothing.
+                        PlasmaComponents3.ToolButton {
+                            id: downloadDirectoryTitle
+                            display: PlasmaComponents3.AbstractButton.TextOnly
+                            flat: true
+                            // A label that steals tab focus would be a regression.
+                            focusPolicy: Qt.NoFocus
                             text: i18n("YouTube or X URL")
-                            color: paletteTokens.labelText
+                            // The label's type is kept verbatim, so the control reads as the
+                            // plain label it replaced.
                             font.family: paletteTokens.fontFamily
                             font.pixelSize: paletteTokens.labelPixelSize
                             font.weight: 650
+                            // A ToolButton carries padding a Label did not, so it is zeroed
+                            // to leave the title's geometry unchanged.
+                            leftPadding: 0
+                            rightPadding: 0
+                            topPadding: 0
+                            bottomPadding: 0
+                            Kirigami.Theme.textColor: paletteTokens.labelText
+                            // Invisible as a button: no surface, and no colour change on
+                            // hover or press -- the mockup's fixed palette governs.
+                            background: Rectangle {
+                                color: "transparent"
+                            }
+
+                            PlasmaComponents3.ToolTip {
+                                // An empty text keeps the ToolTip invisible, so nothing is
+                                // shown until the one-shot has answered $HOME.
+                                text: fullRoot.downloadDirectoryDisplay !== ""
+                                    ? i18nc("@info:tooltip", "Download folder: %1", fullRoot.downloadDirectoryDisplay)
+                                    : ""
+                            }
                         }
 
                         RowLayout {
@@ -1305,6 +1347,38 @@ Item {
                                 wrapMode: Text.WordWrap
                                 font.family: paletteTokens.fontFamily
                                 font.pixelSize: paletteTokens.subtlePixelSize
+                            }
+
+                            // Appended LAST so it sits on the row's right edge: the label above
+                            // fills the width, which pushes this control into the corner. Only a
+                            // SUCCESSFUL download offers the shortcut -- a failed download
+                            // (negative severity) and an in-flight/neutral state must never look
+                            // like there is a file to open -- and only once $HOME gave a usable
+                            // path (downloadFolderUrl !== ""), the belt-and-braces gate the
+                            // disabled state repeats.
+                            PlasmaComponents3.ToolButton {
+                                Layout.alignment: Qt.AlignVCenter
+                                Layout.preferredWidth: 24
+                                Layout.preferredHeight: 24
+                                icon.name: "folder-open"
+                                icon.color: paletteTokens.text
+                                display: PlasmaComponents3.AbstractButton.IconOnly
+                                flat: true
+                                visible: fullRoot.downloadFeedback !== ""
+                                    && fullRoot.downloadFeedbackSeverity === DockerStatus.SEVERITY_POSITIVE
+                                    && fullRoot.downloadFolderUrl !== ""
+                                enabled: fullRoot.downloadFolderUrl !== ""
+                                // The widget's SECOND Qt.openUrlExternally call site; the first
+                                // is the update indicator opening the fixed
+                                // DockerStatus.UPDATE_PAGE_URL release page. This URL is built by
+                                // DockerStatus.buildFolderUrl() from the RESOLVED configured
+                                // directory -- a file:// target, never a browser page and never a
+                                // raw configuration value.
+                                onClicked: Qt.openUrlExternally(fullRoot.downloadFolderUrl)
+
+                                PlasmaComponents3.ToolTip {
+                                    text: i18n("Open the download folder")
+                                }
                             }
                         }
 

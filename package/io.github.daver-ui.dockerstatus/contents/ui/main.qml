@@ -158,6 +158,15 @@ PlasmoidItem {
     property string downloadStdout: ""
     property string downloadStderr: ""
 
+    // Display and open-folder forms of the configured download directory. Both are pure
+    // helpers resolved HERE, because the representation never reads configuration: it
+    // receives the finished strings as plain properties, exactly like cookiesBrowser.
+    // downloadDirectoryDisplay is the tooltip's absolute path and downloadFolderUrl is the
+    // file:// URL behind the open-folder shortcut; both are "" until $HOME is known, which
+    // is what keeps the tooltip empty and the shortcut disabled instead of guessing.
+    readonly property string downloadDirectoryDisplay: DockerStatus.formatDownloadDirectory(Plasmoid.configuration.downloadDirectory, root.homeDirectory)
+    readonly property string downloadFolderUrl: DockerStatus.buildFolderUrl(Plasmoid.configuration.downloadDirectory, root.homeDirectory)
+
     // The countdown is widget-owned: these fields hold the local deadline the ticker
     // reads, while the configured setting only sizes it. shutdownFeedback is neutral
     // while the power-off is in flight and negative when it fails.
@@ -793,6 +802,8 @@ PlasmoidItem {
         downloadInFlight: root.downloadInFlight
         downloadFeedback: root.downloadFeedback
         downloadFeedbackSeverity: root.downloadFeedbackSeverity
+        downloadDirectoryDisplay: root.downloadDirectoryDisplay
+        downloadFolderUrl: root.downloadFolderUrl
         shutdownReady: root.shutdownReady
         shutdownMinutes: root.shutdownMinutes
         shutdownMinutesText: Plasmoid.configuration.shutdownCountdownMinutes

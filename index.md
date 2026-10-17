@@ -8,13 +8,13 @@ generator. The generated-file contract lives upstream:
 [documentation-onrails — guidelines/03-lifecycle-and-generated-files.md](https://github.com/DaveR-ui/documentation-onrails/blob/main/guidelines/03-lifecycle-and-generated-files.md) §2.
 
 <!-- BEGIN GENERATED: index -->
-<!-- snapshot: 2026-10-13 -->
+<!-- snapshot: 2026-10-17 -->
 ## Generated index
 
 ### Overview
 
-- Markdown files: 49
-- Context docs: 2 | Notes: 10 | Hubs: 6 | adrs: 19 | templates: 8 | protocols: 2
+- Markdown files: 50
+- Context docs: 2 | Notes: 10 | Hubs: 6 | adrs: 20 | templates: 8 | protocols: 2
 
 ### Tree
 
@@ -42,6 +42,7 @@ generator. The generated-file contract lives upstream:
   - adr-0018-onrails-v1-4-retrofit.md — adr, id: `adr-0018-onrails-v1-4-retrofit`
   - adr-0019-miscelanea-section-merge.md — adr, id: `adr-0019-miscelanea-section-merge`
   - adr-0020-footer-removal-and-pinned-popup-layout.md — adr, id: `adr-0020-footer-removal-and-pinned-popup-layout`
+  - adr-0021-download-folder-tooltip-and-open-folder-shortcut.md — adr, id: `adr-0021-download-folder-tooltip-and-open-folder-shortcut`
   - adr-index.md — hub, id: `adr-index`
 - docs/installer/
   - installer-index.md — hub, id: `installer-index`

@@ -4,7 +4,7 @@ category: status
 tags: [slice, generality, status, logic]
 aliases: [Status slice, Logic slice]
 related: [status-index, data-engine-contract, widget-slice]
-version: 1.0
+version: 1.2
 status: active
 ---
 
@@ -65,6 +65,8 @@ severity. The public surface, and what each function guarantees:
 | `shellQuote(value)` | wraps in single quotes; an embedded `'` becomes `'\''`; `null`/`undefined` → `''` |
 | `expandTilde(path, home)` | a leading `~/` (or a bare `~`) expands against home; a tilde elsewhere stays literal |
 | `resolveDownloadDirectory(cfg, home)` | absolute, `~`-expanded, trailing slashes trimmed; empty, relative or control-character value falls back to `<home>/Downloads` |
+| `formatDownloadDirectory(cfg, home)` | the display form of the same resolved directory, for the row's tooltip; `""` while `home` is empty (`$HOME` not reported yet) |
+| `buildFolderUrl(cfg, home)` | `file://` URL for the resolved directory, every segment `encodeURIComponent`-encoded (so `#`, `?` and spaces survive as data); `""` while `home` is empty or the resolved path is not absolute |
 | `resolveYtDlpBinary(cfg, home)` | a plain name or path matching `^(~/)?[A-Za-z0-9._/+-]+$`, else `yt-dlp` |
 | `resolvePodmanDesktopPath(cfg, home)` | a plain name or path matching `^(~/)?[A-Za-z0-9._/+-]+$`, a leading `~/` expanded against home; empty or malformed → `podman-desktop` (`PODMAN_DESKTOP_DEFAULT`) |
 | `resolveJsRuntime(cfg)` | a valid runtime name; empty opts out and returns `""` so the flag is omitted; garbage falls back to `node` |
@@ -110,9 +112,16 @@ and `compareVersions` all refuse a malformed segment at once rather than half-pa
 comparison is numeric and segment-wise on purpose (`"0.10"` is greater than `"0.9"`), and
 `isUpdateAvailable()` is conservative by construction: it is true only for a strictly-greater remote, so
 the widget structurally cannot show an update line that is wrong. `UPDATE_PAGE_URL` is the second fixed
-constant in this area: the update indicator's click opens it through the widget's single
-`Qt.openUrlExternally` call, so the browser-opening surface is exactly one call to exactly one constant,
-never configuration ([[adr-0015-update-indicator-opens-the-release-page]]).
+constant in this area: the update indicator's click opens it through one of the widget's two
+`Qt.openUrlExternally` calls — the other is the download row's open-folder shortcut, a `file://` URL
+built by `buildFolderUrl()` from the resolved configured directory
+([[adr-0021-download-folder-tooltip-and-open-folder-shortcut]]). Both are pinned by the Node suite as
+exact call-site text, so neither target can drift onto configuration and no third one can appear
+silently. `formatDownloadDirectory()` and `buildFolderUrl()` are the display and URL forms of the
+configured download directory: both resolve through `resolveDownloadDirectory()`, so the folder the
+tooltip names and the folder the shortcut opens are the same one the download command writes into, and
+both answer `""` while `$HOME` is unknown — the same condition that gates `downloadReady`
+([[adr-0021-download-folder-tooltip-and-open-folder-shortcut]]).
 
 The compose grouping and the Podman launch own a fourth boundary, and it is the second sanctioned
 command-building exception. The probe already carries the grouping identity: `parseContainers()` reads
