@@ -181,7 +181,9 @@ eyebrow and logo tile were removed at the human operator's request
 The container list is a `ListView` over the grouped model that forms the popup's scrollable middle
 region: it fills whatever height the pinned status card and Miscelánea card leave and scrolls its own
 content, so the list growing or shrinking never resizes the widget. Its height floor is one and a half
-container rows — `containerScrollFloor: containerRowHeight * 3 / 2` (52 × 1.5 = 78px) — so the bottom half
+container rows plus the collapse-all strip's own height — `containerScrollFloor: containerRowHeight * 3 / 2`
+plus `containerCollapseStripHeight` (52 × 1.5 + 32 = 110px;
+[[adr-0024-collapse-all-for-compose-groups]]) — so the bottom half
 of the next row always peeks in and the operator can see there is more below
 ([[adr-0020-footer-removal-and-pinned-popup-layout]]). Each group is one flat header row — the
 bundled `contents/icons/dockerstatus.svg` box glyph on a 28px tile (resolved with `Qt.resolvedUrl`, so
@@ -191,8 +193,13 @@ bucket), the running/total counter, and, for compose-backed groups only, small f
 The header row and its container rows share one left edge: both carry the same 8px horizontal inset
 inside the sunken card, so the group tile and the ± affordance sit clear of the card borders instead of
 hugging them.
-There is no section header above the list and no section collapse flag: a group's ± toggles only that
-group's local open/closed state. Every container row keeps its deterministic theme-icon tile
+Above the list a compact strip carries one flat "Collapse all" `ToolButton`, gated on the same condition as
+the list itself: it is an action, not a header, and it closes every group — the standalone "Other
+containers" bucket included — while each group's own ± still toggles only that group's local open/closed
+state. The control is repeatable: each press bumps a root generation counter that every not-yet-tapped
+group absorbs by closing, and the group's own ± re-absorbs the generation so it always wins
+([[adr-0024-collapse-all-for-compose-groups]]). There is no section header above the list and no section
+collapse flag. Every container row keeps its deterministic theme-icon tile
 (`containerIconFor(name)`, a cheap hash into a fixed list of generic theme names, so the same container
 always gets the same tile and a missing theme icon degrades to nothing), the container name, and a
 six-pixel severity dot beside the state. Inside the Miscelánea section the download sub-block appears
@@ -559,7 +566,7 @@ in [[adr-0011-fixed-dark-palette-from-mockup]]. The severity accents are consume
 | `Kirigami.Units.smallSpacing` | gaps inside every layout row |
 | `Kirigami.Units.largeSpacing` | section spacing, config-card margins |
 | `Kirigami.Units.gridUnit` | dot diameter (`/3`), the fixed popup width (`*34`, minimum `*30`), the reserved update-notice row (`*1`) |
-| `containerScrollFloor` (`containerRowHeight * 3 / 2` = 78px) | the container middle region's height floor (one and a half rows; `containerRowHeight` = 52) |
+| `containerScrollFloor` (`containerRowHeight * 3 / 2 + containerCollapseStripHeight` = 110px) | the container middle region's height floor (one and a half rows plus the 32px collapse-all strip; `containerRowHeight` = 52, `containerCollapseStripHeight` = 32) |
 | `Kirigami.Units.iconSizes.smallMedium` | the panel icon |
 | `Kirigami.Units.iconSizes.small` | the busy indicators |
 

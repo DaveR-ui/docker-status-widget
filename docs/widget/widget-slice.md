@@ -91,13 +91,19 @@ grouped: the popup draws one flat header row per project — the bundled Docker 
 the project name, the running/total counter and, for compose-backed groups only, small flat 28x28
 play/stop `ToolButton`s with muted glyphs — with the same +/- affordance the merged Miscelánea section
 header uses, and
-the standalone group keeps its header but carries no controls. There is no section header above the
+the standalone group keeps its header but carries no controls. There is still no section header above the
 list and no section-level collapse flag: each group carries its own open/closed state last, so
-per-group collapse is the surviving affordance
-([[adr-0016-containers-flat-rows-and-podman-section-removal]]). A play or stop click does not build a
-command in the representation: it emits a signal naming the project and the action, and `main.qml`
-assembles the command with `DockerStatus.buildComposeProjectCommand()` and runs it on the `composeAction`
-one-shot. The popup stays a pure consumer — everything crosses a property in and a signal out.
+per-group collapse stays the surviving affordance
+([[adr-0016-containers-flat-rows-and-podman-section-removal]]). Above the list sits a compact strip
+carrying one flat "Collapse all" action, gated on the same condition as the list itself: it is an action,
+not a header, and it closes every group — the standalone "Other containers" bucket included — at once,
+while each group's own ± keeps toggling only its group ([[adr-0024-collapse-all-for-compose-groups]]).
+The control is repeatable: each press bumps a root generation counter that every not-yet-tapped group
+absorbs by closing, so pressing it again re-closes the groups the human reopened in between. A play or
+stop click does not build a command in the representation: it emits a signal naming the project and the
+action, and `main.qml` assembles the command with `DockerStatus.buildComposeProjectCommand()` and runs it
+on the `composeAction` one-shot. The popup stays a pure consumer — everything crosses a property in and a
+signal out.
 
 The popup's one remaining section-level collapsible card is the merged "Miscelánea" section
 ([[adr-0019-miscelanea-section-merge]]): one header (the "Miscelánea" title and the ± glyph) over one body
@@ -120,11 +126,12 @@ entry, `cfg_*` alias, control id or tooltip changed; the page now renders six se
 The popup is a pinned column ([[adr-0020-footer-removal-and-pinned-popup-layout]]): the status card is its
 first region and the merged Miscelánea card is its last, neither inside a scroll region, and the container
 section between them is the scrollable middle region — `Layout.fillHeight: true`, its `ListView` uncapped
-and clipped, and a height floor of one and a half container rows
-(`containerScrollFloor: containerRowHeight * 3 / 2` = 78px) so the next row always peeks in and the widget
-never resizes as the list grows. The update notice sits in a reserved one-grid-unit row between the middle
-region and the pinned Miscelánea card, its text emptied rather than the label hidden, so it cannot grow the
-widget either. The footer and the configurable bottom text are removed; the palette's `footerText` token
+and clipped, and a height floor of one and a half container rows plus the collapse-all strip's own height
+(`containerScrollFloor: containerRowHeight * 3 / 2 + containerCollapseStripHeight` = 110px, the strip being
+32px) so the next row always peeks in and the widget never resizes as the list grows
+([[adr-0024-collapse-all-for-compose-groups]]). The update notice sits in a reserved one-grid-unit row
+between the middle region and the pinned Miscelánea card, its text emptied rather than the label hidden, so
+it cannot grow the widget either. The footer and the configurable bottom text are removed; the palette's `footerText` token
 stays in `DockerStatusPalette.qml` because the palette is the mockup's fixed set, not a list of tokens in
 use ([[adr-0020-footer-removal-and-pinned-popup-layout]]).
 
@@ -336,6 +343,10 @@ a running Plasma session.
 - The flat grouped container section is a QML surface like the rest: the grouping pipeline and the
   compose command boundary are pinned by the Node suite, but its layout and interaction are reviewed
   until they run in a session.
+- The collapse-all strip is card chrome the popup carries at all times: it grows the popup by a fixed
+  32px once, folded into `containerScrollFloor` so the one-and-a-half-row scroll peek is preserved
+  rather than shrunk, and it is a QML surface like the rest — reviewed, not tested
+  ([[adr-0024-collapse-all-for-compose-groups]]).
 - A compose stack that disappears between the last poll and the click makes `docker start`/`docker stop`
   exit non-zero with docker's own `requires at least 1 container argument`, surfaced verbatim on the
   feedback line rather than swallowed.

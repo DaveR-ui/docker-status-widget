@@ -13,8 +13,8 @@ generator. The generated-file contract lives upstream:
 
 ### Overview
 
-- Markdown files: 52
-- Context docs: 2 | Notes: 10 | Hubs: 6 | adrs: 22 | templates: 8 | protocols: 2
+- Markdown files: 53
+- Context docs: 2 | Notes: 10 | Hubs: 6 | adrs: 23 | templates: 8 | protocols: 2
 
 ### Tree
 
@@ -45,6 +45,7 @@ generator. The generated-file contract lives upstream:
   - adr-0021-download-folder-tooltip-and-open-folder-shortcut.md — adr, id: `adr-0021-download-folder-tooltip-and-open-folder-shortcut`
   - adr-0022-download-cancellation-and-partial-cleanup.md — adr, id: `adr-0022-download-cancellation-and-partial-cleanup`
   - adr-0023-qmllint-gate-contract-correction.md — adr, id: `adr-0023-qmllint-gate-contract-correction`
+  - adr-0024-collapse-all-for-compose-groups.md — adr, id: `adr-0024-collapse-all-for-compose-groups`
   - adr-index.md — hub, id: `adr-index`
 - docs/installer/
   - installer-index.md — hub, id: `installer-index`

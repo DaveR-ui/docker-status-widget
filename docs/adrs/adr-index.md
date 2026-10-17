@@ -142,6 +142,16 @@ re-litigated from the code alone does not need a record either — only the *why
   corpus imports and exits 255 over a clean corpus. The job is pinned to `ubuntu-24.04` on purpose, since
   its Qt is what all four legs were measured against. The job name and the three status-check contexts
   (`test`, `qmllint`, `docs`) are untouched.
+- [[adr-0024-collapse-all-for-compose-groups]] — the popup's container section gains a flat "Collapse
+  all" action on a compact strip above the list: it closes every compose group at once, the standalone
+  "Other containers" bucket included, while each group's own ± still toggles only its group. The request
+  is a generation counter on the root (`groupsCollapseEpoch`) that each not-yet-tapped group absorbs by
+  closing through its derived `groupBodyVisible`, so the control is repeatable and the ± always wins;
+  the strip's 32px height is folded into `containerScrollFloor` (`containerRowHeight * 3 / 2 +
+  containerCollapseStripHeight` = 110px) so the one-and-a-half-row scroll peek is preserved rather than
+  shrunk, at the honest cost of a fixed 32px taller popup. It supersedes nothing: ADR-0016's headerless
+  flat list, ADR-0020's pinned column, and the Miscelánea card's armed-state override
+  (ADR-0019/ADR-0022) all stand untouched.
 
 ## Elsewhere
 

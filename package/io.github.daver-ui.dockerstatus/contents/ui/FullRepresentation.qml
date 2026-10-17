@@ -138,6 +138,12 @@ Item {
     // collapsed, and its X dismisses the feedback.
     readonly property bool miscBodyVisible: fullRoot.miscSectionExpanded || fullRoot.shutdownPending || fullRoot.downloadInFlight
 
+    // The collapse-all request, as a generation counter. The control bumps it; a group that
+    // has not been tapped since absorbs it by closing. A counter rather than a bool because
+    // the control is repeatable: pressing it again must re-close the groups the human
+    // reopened in between.
+    property int groupsCollapseEpoch: 0
+
     // Update check. main.qml owns the whole check; this representation only renders the one
     // line it produces and can ask for a manual re-check. No severity here: the line reuses
     // the muted, centred line style the bottom text used to carry, so there is deliberately
@@ -235,12 +241,18 @@ Item {
     // number, so "one and a half rows" survives a type-scale change.
     readonly property int containerRowHeight: 52
 
+    // The collapse-all strip is card chrome, so its height is folded into the scroll floor:
+    // ADR-0020 sized that floor at one and a half container rows so the next row always
+    // peeks in, and letting the strip eat into it would quietly shrink the scroll area
+    // instead of growing the popup once.
+    readonly property int containerCollapseStripHeight: 32
+
     // The middle region never collapses below one and a half rows, so the bottom
     // half of the next row peeks in and the operator can tell there is more
     // below -- and that the region scrolls. The region also never drives the
     // widget's height (see the container section below), so a list that grows or
     // shrinks cannot resize the widget.
-    readonly property int containerScrollFloor: fullRoot.containerRowHeight * 3 / 2
+    readonly property int containerScrollFloor: fullRoot.containerRowHeight * 3 / 2 + fullRoot.containerCollapseStripHeight
 
     // Stopping is destructive, so the button never fires on one click: the first click
     // arms, a deliberate second click (after the dwell below) confirms. The arming expires
@@ -699,6 +711,35 @@ Item {
                 anchors.fill: parent
                 spacing: 0
 
+                // The collapse-all action, as a compact strip above the list. It is an
+                // ACTION, not a section header: adr-0016 removed the header row on purpose,
+                // so this strip carries no title and no state of its own. Its click bumps
+                // the root's generation counter; each group answers it by closing, and a
+                // group's own ± can still reopen just that one (see the delegate below).
+                Item {
+                    Layout.fillWidth: true
+                    implicitHeight: fullRoot.containerCollapseStripHeight
+                    visible: fullRoot.containers.length > 0
+
+                    PlasmaComponents3.ToolButton {
+                        id: collapseAllButton
+                        anchors.right: parent.right
+                        anchors.rightMargin: 8
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: i18n("Collapse all")
+                        display: PlasmaComponents3.AbstractButton.TextOnly
+                        flat: true
+                        font.family: paletteTokens.fontFamily
+                        font.pixelSize: paletteTokens.subtlePixelSize
+                        Kirigami.Theme.textColor: paletteTokens.muted
+                        onClicked: fullRoot.groupsCollapseEpoch += 1
+
+                        PlasmaComponents3.ToolTip {
+                            text: i18nc("@info", "Close every container group at once. Tap a group's ± to open just that one.")
+                        }
+                    }
+                }
+
                 // The grouped list: one collapsible group per compose project, the
                 // standalone bucket last, exactly as DockerStatus.groupContainersByComposeProject()
                 // returns them. The grouping is pure data prep done in the core, so this
@@ -722,10 +763,18 @@ Item {
                         id: containerGroup
                         required property var modelData
 
-                        // Per-group open/closed view state, the same rule the section
-                        // flags follow: local to this instantiated group, never persisted
-                        // and never signalled.
+                        // Per-group open/closed view state, the same rule the section flags
+                        // follow: local to this instantiated group, never persisted and never
+                        // signalled. groupEpoch records the collapse-all generation the group
+                        // last answered, so a group created after a collapse-all also starts
+                        // closed.
                         property bool groupOpen: true
+                        property int groupEpoch: 0
+                        // What the body and the ± glyph read: the group's own state, gated on
+                        // having answered every collapse-all so far. The group's own tap
+                        // re-absorbs the current generation, so the ± always wins over the
+                        // control.
+                        readonly property bool groupBodyVisible: groupOpen && groupEpoch === fullRoot.groupsCollapseEpoch
 
                         // The standalone bucket carries no project name, so it shows a
                         // translated label instead of the empty string.
@@ -752,7 +801,13 @@ Item {
 
                                 MouseArea {
                                     anchors.fill: parent
-                                    onClicked: containerGroup.groupOpen = !containerGroup.groupOpen
+                                    onClicked: {
+                                        // Invert what the body does right now and answer every
+                                        // collapse-all so far, so this tap owns the group from
+                                        // here on: the ± closes its own group and nothing else.
+                                        containerGroup.groupOpen = !containerGroup.groupBodyVisible
+                                        containerGroup.groupEpoch = fullRoot.groupsCollapseEpoch
+                                    }
                                 }
 
                                 RowLayout {
@@ -876,7 +931,7 @@ Item {
                                         Text {
                                             id: groupToggleGlow
                                             anchors.centerIn: parent
-                                            text: containerGroup.groupOpen ? "−" : "+"
+                                            text: containerGroup.groupBodyVisible ? "−" : "+"
                                             color: paletteTokens.toggleIndicator
                                             opacity: 0.3
                                             font.family: paletteTokens.fontFamily
@@ -895,11 +950,12 @@ Item {
                             }
 
                             // The group body: the container rows, unchanged from the old
-                            // flat list. Gated on the group's own flag alone: the section
-                            // itself has no collapse state left to AND in here.
+                            // flat list. Gated on the group's derived visibility alone: the
+                            // section itself has no collapse state left to AND in here, and
+                            // the derived flag folds in the collapse-all generation.
                             ColumnLayout {
                                 Layout.fillWidth: true
-                                visible: containerGroup.groupOpen
+                                visible: containerGroup.groupBodyVisible
                                 spacing: 0
 
                                 Repeater {

@@ -2935,9 +2935,21 @@ test("FullRepresentation.qml sizes the scroll floor to one and a half rows", () 
         fullQml.includes("readonly property int containerRowHeight: 52"),
         "the row height must be a named constant",
     );
+    // Revised by adr-0024: the collapse-all strip is card chrome, so its height is folded
+    // into the floor rather than eating into the one-and-a-half-row scroll area. The pin
+    // moved from the bare `containerRowHeight * 3 / 2` to that expression plus the strip,
+    // so a strip added without folding it in (or a floor regression to the bare product)
+    // fails here instead of silently shrinking the scroll area.
     assert.ok(
-        fullQml.includes("readonly property int containerScrollFloor: fullRoot.containerRowHeight * 3 / 2"),
-        "the floor must be one and a half rows, written against the row height",
+        fullQml.includes(
+            "readonly property int containerScrollFloor: "
+                + "fullRoot.containerRowHeight * 3 / 2 + fullRoot.containerCollapseStripHeight",
+        ),
+        "the floor must be one and a half rows PLUS the collapse-all strip's height",
+    );
+    assert.ok(
+        fullQml.includes("readonly property int containerCollapseStripHeight: 32"),
+        "the collapse-all strip must declare its height as a named constant",
     );
     assert.equal(52 * 3 / 2, 78, "one and a half rows must be 78px");
 });
@@ -3649,8 +3661,8 @@ test("the +/- indicator is a neon yellow token, bigger than body text, with a ha
         "the merged Miscelánea header must render the +/- glyph pair off effective visibility",
     );
     assert.ok(
-        fullQml.includes(`containerGroup.groupOpen ${glyph}`),
-        "the per-compose-group header must render the +/- glyph pair",
+        fullQml.includes(`containerGroup.groupBodyVisible ${glyph}`),
+        "the per-compose-group header must render the +/- glyph pair off its derived visibility",
     );
 
     assert.equal(
@@ -3727,26 +3739,127 @@ test("FullRepresentation.qml gives each compose group its own local collapse sta
         fullQml.includes("property bool groupOpen: true"),
         "each group delegate declares its own open/closed state, defaulting open",
     );
-    assert.ok(
-        fullQml.includes("onClicked: containerGroup.groupOpen = !containerGroup.groupOpen"),
-        "the group header's tap must flip its own state",
-    );
+
+    // Extended by adr-0024: the single-writer pin now also proves the collapse-all
+    // control never writes per-group state. The control only bumps the root generation
+    // counter; each group answers it through its derived flag. The group's own header is
+    // still the one and only writer of `containerGroup.groupOpen`.
     assert.equal(
         fullQml.split("containerGroup.groupOpen = ").length - 1,
         1,
-        "the group collapse state is assigned by its own header and nothing else",
+        "only the group's own header writes per-group state; the collapse-all control "
+            + "bumps the root counter and never touches a group flag directly",
     );
 
-    // The group's OWN flag is the only collapse state the body reads: the section
-    // flag it used to be ANDed with is gone with the header row (adr-0016), so a
-    // collapsed section can no longer hide a group body.
+    // The group body reads the DERIVED flag; the raw groupOpen is never a visible gate.
     assert.ok(
-        fullQml.includes("visible: containerGroup.groupOpen"),
-        "the group body must be gated on its own flag, with no section flag left to AND in",
+        fullQml.includes("visible: containerGroup.groupBodyVisible"),
+        "the group body must be gated on the derived flag, with no section flag left to AND in",
+    );
+    assert.ok(
+        !fullQml.includes("visible: containerGroup.groupOpen"),
+        "the raw groupOpen must not be read as a visible gate anywhere",
     );
     assert.ok(
         !fullQml.includes("visible: containerGroup.groupOpen && fullRoot.containerSectionExpanded"),
         "the removed section flag must not survive in the group body's gate",
+    );
+
+    // The derived expression itself: a group is open only while it has answered every
+    // collapse-all generation so far, so a group created after a collapse-all also starts
+    // closed.
+    assert.ok(
+        fullQml.includes(
+            "readonly property bool groupBodyVisible: "
+                + "groupOpen && groupEpoch === fullRoot.groupsCollapseEpoch",
+        ),
+        "groupBodyVisible must AND the group's own flag with having answered the current generation",
+    );
+
+    // The root carries the collapse-all request as a generation counter, defaulting to 0.
+    assert.ok(
+        fullQml.includes("property int groupsCollapseEpoch: 0"),
+        "the root must carry the collapse-all generation counter, defaulting to 0",
+    );
+    assert.ok(
+        fullQml.includes("property int groupEpoch: 0"),
+        "the group delegate must record the generation it last answered, defaulting to 0",
+    );
+
+    // The header's tap inverts what the body shows right now and re-absorbs the current
+    // generation, so the ± always wins over the control.
+    assert.ok(
+        fullQml.includes("containerGroup.groupOpen = !containerGroup.groupBodyVisible"),
+        "the header tap must invert the body's current visibility",
+    );
+    assert.ok(
+        fullQml.includes("containerGroup.groupEpoch = fullRoot.groupsCollapseEpoch"),
+        "the header tap must re-absorb the current collapse-all generation",
+    );
+
+    // The control: an English, correctly-spelled label, a single bump of the counter, and
+    // the same visible gate the list carries, so an empty container section shows neither.
+    const stripStart = fullQml.indexOf("implicitHeight: fullRoot.containerCollapseStripHeight");
+    assert.ok(stripStart >= 0, "the collapse-all strip must be present in the container card");
+    const strip = fullQml.slice(stripStart, fullQml.indexOf("// The grouped list:", stripStart));
+    assert.ok(
+        strip.includes('i18n("Collapse all")'),
+        'the control must be labelled i18n("Collapse all")',
+    );
+    assert.ok(
+        strip.includes("onClicked: fullRoot.groupsCollapseEpoch += 1"),
+        "the control must bump the root generation counter",
+    );
+    assert.ok(
+        strip.includes("visible: fullRoot.containers.length > 0"),
+        "the strip must be gated on the same condition as the list",
+    );
+
+    // The ± affordance reads the derived flag, not the raw bool.
+    assert.ok(
+        fullQml.includes('text: containerGroup.groupBodyVisible ? "\u2212" : "+"'),
+        "the ± glyph must read the derived flag so it cannot disagree with the body",
+    );
+});
+
+/*
+ * Why this test exists. adr-0020 defines the popup as a pinned column, and its scroll
+ * area is the container section between the pinned status card and the pinned
+ * Miscelánea card (adr-0020). adr-0024 folds the collapse-all strip's height into the
+ * middle region's floor so the strip cannot eat into the one-and-a-half-row scroll area,
+ * and -- the other half of the contract -- it leaves the Miscelánea card entirely alone.
+ * The Miscelánea card keeps its own ± and its armed-state override verbatim, so a live
+ * STOP or a pending shutdown still cannot be collapsed away, and nothing in the
+ * container section may reach for the Miscelánea collapse state.
+ */
+test("the collapse-all control leaves the Miscelánea card untouched", () => {
+    // The armed-state override survives verbatim, downloadInFlight operand included.
+    assert.ok(
+        fullQml.includes(
+            "readonly property bool miscBodyVisible: "
+                + "fullRoot.miscSectionExpanded || fullRoot.shutdownPending || fullRoot.downloadInFlight",
+        ),
+        "the Miscelánea body gate must keep its armed-state override verbatim",
+    );
+
+    // miscSectionExpanded still has exactly one writer: its own header's toggle.
+    assert.equal(
+        fullQml.split("miscSectionExpanded = ").length - 1,
+        1,
+        "miscSectionExpanded may only be assigned by the Miscelánea header's own toggle",
+    );
+
+    // The container section neither reads nor writes the Miscelánea collapse state.
+    const containerStart = fullQml.indexOf("--- Container section");
+    const updateStart = fullQml.indexOf("--- Update notice");
+    assert.ok(
+        containerStart >= 0 && updateStart > containerStart,
+        "the container section must sit before the update notice",
+    );
+    const containerBlock = fullQml.slice(containerStart, updateStart);
+    assert.ok(
+        !containerBlock.includes("miscBodyVisible") && !containerBlock.includes("miscSectionExpanded"),
+        "nothing in the container section may reference the Miscelánea collapse state",
     );
 });
 
