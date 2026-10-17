@@ -4,7 +4,7 @@ category: widget
 tags: [ui, inventory, widget, surfaces, qml]
 aliases: [UI Surfaces, Widget UI Inventory]
 related: [widget-index, widget-slice, troubleshooting]
-version: 1.2
+version: 1.3
 status: active
 ---
 
@@ -113,6 +113,7 @@ Takes `daemonState`, `containers`, `daemonRunning`, `containerListEnabled`, `act
 `actionKind`, `actionFeedback`, `composeActionInFlight`, `composeActionProject`, `composeActionKind`,
 `composeActionFeedback`, `composeActionFeedbackSeverity`, `podmanLaunchInFlight`, `podmanLaunchFeedback`,
 `podmanLaunchFeedbackSeverity`, `downloaderEnabled`, `cookiesBrowser`, `downloadReady`,
+`downloadDirectoryDisplay`, `downloadFolderUrl`,
 `downloadInFlight`, `downloadFeedback`, `downloadFeedbackSeverity`, `shutdownReady`, `shutdownMinutes`,
 `shutdownMinutesText`, `shutdownPending`, `shutdownInFlight`, `shutdownRemainingSeconds`, `shutdownFeedback`,
 `shutdownFeedbackSeverity`, `updateAvailable` and `updateFeedback`; emits `startRequested()`,
@@ -295,7 +296,8 @@ inside the merged "Miscelánea" section ([[adr-0019-miscelanea-section-merge]]).
 separate component file, and it exists only inside the full representation.
 
 #### Interface
-Reads `downloaderEnabled`, `downloadReady`, `downloadInFlight`, `downloadFeedback` and
+Reads `downloaderEnabled`, `downloadReady`, `downloadDirectoryDisplay`, `downloadFolderUrl`,
+`downloadInFlight`, `downloadFeedback` and
 `downloadFeedbackSeverity`; emits `downloadRequested(url)` with the raw field text. It builds no command
 and touches no `DataSource`.
 
@@ -312,7 +314,14 @@ flight, while the field is empty, or before `$HOME` is known. An unsupported pas
 the button — a click then reports why it was refused instead of the button looking dead — and an inline
 label warns "Only YouTube and X (Twitter) links are supported." while the paste is unsupported. The
 tooltip lives on the `ToolButton`, not the `TextField`: `PlasmaComponents3.ToolTip` renders only when its
-parent is an `AbstractButton`.
+parent is an `AbstractButton`. The title of the row ("YouTube or X URL") follows the same rule — it is a
+flat, visually-invisible `ToolButton` carrying a tooltip with the configured download folder, expanded
+(`~/Downloads` → `/home/<user>/Downloads`) — and the feedback row's right edge carries a flat icon-only
+`folder-open` `ToolButton` that opens the containing folder, visible only after a successful download; a
+failed download never offers it. Its display text and its URL come from `DockerStatus.formatDownloadDirectory()`
+and `DockerStatus.buildFolderUrl()`, both resolved through the same `resolveDownloadDirectory()` the
+command uses, so one explicit click hands a `file://` URL to the desktop — the file manager, never a
+browser page ([[adr-0021-download-folder-tooltip-and-open-folder-shortcut]]).
 
 #### Anti-Patterns
 Adding a free-form "extra yt-dlp arguments" setting — configuration supplies validated values, never

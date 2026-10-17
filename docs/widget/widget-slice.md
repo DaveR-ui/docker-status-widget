@@ -4,7 +4,7 @@ category: widget
 tags: [slice, generality, widget, qml]
 aliases: [Widget slice, QML surfaces slice]
 related: [widget-index, status-slice, ui-surfaces]
-version: 1.2
+version: 1.3
 status: active
 ---
 
@@ -180,10 +180,12 @@ line in a reserved row between the scroll region and the pinned Miscelánea card
 grows by a line when one appears —
 plus a small flat `emblem-important` `ToolButton` beside the daemon state in the status card, on the
 same `updateAvailable` gate. The line stays deliberately neither a button nor a `SeverityDot` nor a
-link, but the indicator is the widget's one sanctioned exception: its click opens the fixed
-`DockerStatus.UPDATE_PAGE_URL` release-page constant through the widget's single `Qt.openUrlExternally`
-call, and the URL is never configuration
-([[adr-0015-update-indicator-opens-the-release-page]]).
+link, but the indicator is the update feature's one sanctioned browser target: its click opens the fixed
+`DockerStatus.UPDATE_PAGE_URL` release-page constant through one of the widget's two
+`Qt.openUrlExternally` calls, and the URL is never configuration
+([[adr-0015-update-indicator-opens-the-release-page]]). The second call site opens no browser at all: it
+hands the configured download folder's `file://` URL to the desktop, which resolves it to the file
+manager ([[adr-0021-download-folder-tooltip-and-open-folder-shortcut]]).
 
 ## Conventions of this slice
 
@@ -211,9 +213,15 @@ call, and the URL is never configuration
 - The shutdown countdown is widget-owned and its command is a fixed constant (`powerOffCommand`). The
   configured minutes size a local `Date.now()` deadline and never reach a shell; the cancel path is purely
   local and needs no privilege ([[adr-0009-widget-owned-shutdown-countdown]]).
-- The download row lives only in the full representation. It is never rendered in the panel, and its
-  tooltip is attached to the `ToolButton`: `PlasmaComponents3.ToolTip` only renders when its parent is
-  an `AbstractButton`.
+- The download row lives only in the full representation. It is never rendered in the panel, and every
+  tooltip in it is attached to a `ToolButton` — the Import button's and the "YouTube or X URL" title's
+  alike: `PlasmaComponents3.ToolTip` only renders when its parent is an `AbstractButton`, so the title is
+  a flat, visually-invisible `ToolButton`, never a `Label` with a tooltip child. The feedback row's right
+  edge carries a flat `folder-open` `ToolButton` that opens the containing folder, visible only after a
+  successful download, and both its display text and its `file://` URL come from the pure
+  `DockerStatus.formatDownloadDirectory()` / `DockerStatus.buildFolderUrl()` helpers rather than from a
+  configured string interpolated into a URL
+  ([[adr-0021-download-folder-tooltip-and-open-folder-shortcut]]).
 - Every one-shot assignment goes through `DockerStatus.withRunToken()`; identical `connectedSources`
   strings are a no-op in the engine (see [data-engine-contract](../status/data-engine-contract.md)).
 - Representations receive properties and emit signals. They never reach for a `DataSource`, and a

@@ -6,10 +6,10 @@ edit. The generated-file contract lives upstream:
 [documentation-onrails — guidelines/03-lifecycle-and-generated-files.md](https://github.com/DaveR-ui/documentation-onrails/blob/main/guidelines/03-lifecycle-and-generated-files.md) §2.
 
 <!-- BEGIN GENERATED: tags -->
-<!-- snapshot: 2026-10-13 -->
+<!-- snapshot: 2026-10-17 -->
 ## Generated tag index
 
-- **adr** — adr-0001-corpus-location-and-entry-point, adr-0002-lowercase-naming-convention, adr-0003-slice-taxonomy, adr-0004-scoped-polkit-grant, adr-0005-doc-classes-and-body-shape-exceptions, adr-0006-video-downloader-command-boundary, adr-0007-stop-button-confirmation-and-narrow-grant, adr-0008-configurable-cookies-browser-and-bottom-text, adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation, adr-0011-fixed-dark-palette-from-mockup, adr-0013-widget-update-check-and-release-site, adr-0014-compose-grouping-and-podman-desktop-launch, adr-0015-update-indicator-opens-the-release-page, adr-0016-containers-flat-rows-and-podman-section-removal, adr-0017-podman-launch-button-and-topbar-removal, adr-0018-onrails-v1-4-retrofit, adr-0019-miscelanea-section-merge, adr-0020-footer-removal-and-pinned-popup-layout, adr-index, adr-template
+- **adr** — adr-0001-corpus-location-and-entry-point, adr-0002-lowercase-naming-convention, adr-0003-slice-taxonomy, adr-0004-scoped-polkit-grant, adr-0005-doc-classes-and-body-shape-exceptions, adr-0006-video-downloader-command-boundary, adr-0007-stop-button-confirmation-and-narrow-grant, adr-0008-configurable-cookies-browser-and-bottom-text, adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation, adr-0011-fixed-dark-palette-from-mockup, adr-0013-widget-update-check-and-release-site, adr-0014-compose-grouping-and-podman-desktop-launch, adr-0015-update-indicator-opens-the-release-page, adr-0016-containers-flat-rows-and-podman-section-removal, adr-0017-podman-launch-button-and-topbar-removal, adr-0018-onrails-v1-4-retrofit, adr-0019-miscelanea-section-merge, adr-0020-footer-removal-and-pinned-popup-layout, adr-0021-download-folder-tooltip-and-open-folder-shortcut, adr-index, adr-template
 - **bootstrap** — bootstrap-protocol
 - **brownfield** — adr-0003-slice-taxonomy, slice-generalities-template
 - **catalog** — interface-surface-template
@@ -28,9 +28,11 @@ edit. The generated-file contract lives upstream:
 - **dev-aids** — tools-readme
 - **doc-classes** — adr-0005-doc-classes-and-body-shape-exceptions
 - **documentation** — adr-0001-corpus-location-and-entry-point, adr-0018-onrails-v1-4-retrofit
+- **download** — adr-0021-download-folder-tooltip-and-open-folder-shortcut
 - **entry-point** — README, adr-0001-corpus-location-and-entry-point, project, project-md-template
 - **evidence** — render-preview, verification-index, verification-slice
 - **failures** — troubleshooting
+- **folder** — adr-0021-download-folder-tooltip-and-open-folder-shortcut
 - **generality** — installer-slice, privilege-slice, status-slice, verification-slice, widget-slice
 - **github-pages** — adr-0013-widget-update-check-and-release-site
 - **hub** — adr-index, hub-template, installer-index, privilege-index, status-index, verification-index, widget-index
@@ -75,8 +77,9 @@ edit. The generated-file contract lives upstream:
 - **tests** — verification-index, verification-slice
 - **theming** — adr-0011-fixed-dark-palette-from-mockup
 - **tooling** — adr-0002-lowercase-naming-convention, tools-readme
+- **tooltip** — adr-0021-download-folder-tooltip-and-open-folder-shortcut
 - **troubleshooting** — troubleshooting, troubleshooting-template
-- **ui** — adr-0007-stop-button-confirmation-and-narrow-grant, adr-0008-configurable-cookies-browser-and-bottom-text, adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation, adr-0011-fixed-dark-palette-from-mockup, adr-0015-update-indicator-opens-the-release-page, adr-0016-containers-flat-rows-and-podman-section-removal, adr-0017-podman-launch-button-and-topbar-removal, adr-0019-miscelanea-section-merge, adr-0020-footer-removal-and-pinned-popup-layout, ui-inventory-template, widget-ui-surfaces
+- **ui** — adr-0007-stop-button-confirmation-and-narrow-grant, adr-0008-configurable-cookies-browser-and-bottom-text, adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation, adr-0011-fixed-dark-palette-from-mockup, adr-0015-update-indicator-opens-the-release-page, adr-0016-containers-flat-rows-and-podman-section-removal, adr-0017-podman-launch-button-and-topbar-removal, adr-0019-miscelanea-section-merge, adr-0020-footer-removal-and-pinned-popup-layout, adr-0021-download-folder-tooltip-and-open-folder-shortcut, ui-inventory-template, widget-ui-surfaces
 - **update-check** — adr-0013-widget-update-check-and-release-site, adr-0015-update-indicator-opens-the-release-page
 - **validator** — adr-0002-lowercase-naming-convention
 - **verification** — tools-readme, troubleshooting, verification-index, verification-slice

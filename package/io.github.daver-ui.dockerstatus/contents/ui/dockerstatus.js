@@ -570,6 +570,60 @@ function resolveDownloadDirectory(configured, home) {
 }
 
 /**
+ * The DISPLAY form of the configured download directory, for the download row's tooltip.
+ *
+ * Resolves through resolveDownloadDirectory() -- so "~/Downloads" expands against home, an
+ * empty or relative value falls back to "$HOME/Downloads", trailing slashes are stripped and
+ * control characters are refused -- which means a raw "~" can never reach the tooltip.
+ *
+ * Returns "" while `home` is empty ($HOME not reported yet): the same condition that gates
+ * downloadReady, so the tooltip simply shows nothing until the one-shot has answered instead
+ * of claiming a directory nobody can compute.
+ */
+function formatDownloadDirectory(configured, home) {
+    if (normalizeOutput(home) === "") {
+        return "";
+    }
+
+    return resolveDownloadDirectory(configured, home);
+}
+
+/**
+ * The file:// URL behind the download row's open-folder shortcut.
+ *
+ * Resolves the configured directory exactly as the command builder does, then builds the URL
+ * with every path segment percent-encoded by hand: a global encodeURIComponent() would escape
+ * the "/" separators too, and encodeURI() leaves "#" and "?" dangerous (a directory named
+ * "My Videos#1" must become My%20Videos%231, not a URL fragment). encodeURIComponent() per
+ * segment is ES5, so it runs under the bare engine the tests use.
+ *
+ * Returns "" while `home` is empty ($HOME not reported yet, the same condition that gates
+ * downloadReady) and whenever the resolved path is empty or not absolute, so the caller
+ * disables the button instead of opening a bogus URL. The home gate is load-bearing on its
+ * own: with no base, a configured "~/Downloads" resolves to a bare "/Downloads", which is
+ * absolute but is not a directory anyone can open.
+ */
+function buildFolderUrl(directory, home) {
+    if (normalizeOutput(home) === "") {
+        return "";
+    }
+
+    var path = resolveDownloadDirectory(directory, home);
+
+    if (path === "" || path.charAt(0) !== "/") {
+        return "";
+    }
+
+    var segments = path.split("/");
+    var encoded = [];
+    for (var i = 0; i < segments.length; i += 1) {
+        encoded.push(encodeURIComponent(segments[i]));
+    }
+
+    return "file://" + encoded.join("/");
+}
+
+/**
  * Only a plain executable name or a path is accepted; anything with a space or a shell
  * metacharacter falls back to the plain name. A leading "~/" is expanded against home,
  * because `~/.local/bin/yt-dlp` is exactly where a user-installed yt-dlp lives.

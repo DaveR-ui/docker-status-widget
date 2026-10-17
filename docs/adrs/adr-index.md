@@ -73,7 +73,10 @@ re-litigated from the code alone does not need a record either — only the *why
 - [[adr-0015-update-indicator-opens-the-release-page]] — an exclamation-mark indicator beside the daemon
   status, shown only while an update exists, whose single click opens the widget's fixed Pages URL; it
   supersedes only [[adr-0013-widget-update-check-and-release-site]]'s "not a link / opens no browser"
-  clause, and the silence contract, the fixed-URL rule and every other clause still stand.
+  clause, and the silence contract, the fixed-URL rule and every other clause still stand. Its
+  single-`Qt.openUrlExternally`-call clause is superseded by
+  [[adr-0021-download-folder-tooltip-and-open-folder-shortcut]]; the constant-URL rule and the
+  `updateAvailable` gate still stand.
 - [[adr-0016-containers-flat-rows-and-podman-section-removal]] — the Containers header row and its
   `containerSectionExpanded` flag are deleted, group rows go flat with the bundled box glyph and small flat
   play/stop controls, and the Podman Desktop section is removed while its builders, kcfg entry and tests are
@@ -108,6 +111,16 @@ re-litigated from the code alone does not need a record either — only the *why
   reserved one-grid-unit row between the middle region and Miscelánea. It supersedes only
   [[adr-0008-configurable-cookies-browser-and-bottom-text]]'s bottom-text clause; the cookies clause and
   the rest of that record still stand.
+- [[adr-0021-download-folder-tooltip-and-open-folder-shortcut]] — the download row's "YouTube or X URL"
+  title carries a tooltip with the configured download folder, expanded (`~/Downloads` →
+  `/home/<user>/Downloads`), and the download feedback row's right edge carries a flat `folder-open`
+  ToolButton that opens the containing folder, visible only after a successful download; because
+  `PlasmaComponents3.ToolTip` renders only when its parent is an `AbstractButton`, the title becomes a
+  flat, visually-invisible `ToolButton`, and the folder URL is built by a pure, unit-tested helper with
+  per-segment percent-encoding — never a browser URL and never a configured string interpolated into a
+  URL. It supersedes only [[adr-0015-update-indicator-opens-the-release-page]]'s single-`Qt.openUrlExternally`
+  clause: the widget now has two call sites, pinned by a deliberately strict `count == 2` assertion that
+  names both, while ADR-0013's silence contract and ADR-0015's constant-URL rule still stand.
 
 ## Elsewhere
 

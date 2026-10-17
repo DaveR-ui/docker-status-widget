@@ -82,6 +82,8 @@ const {
     shellQuote,
     expandTilde,
     resolveDownloadDirectory,
+    formatDownloadDirectory,
+    buildFolderUrl,
     resolveYtDlpBinary,
     resolveCookiesBrowser,
     resolveJsRuntime,
@@ -1000,6 +1002,54 @@ test("resolveDownloadDirectory refuses a relative or unquotable path", () => {
     assert.equal(resolveDownloadDirectory("~/a\nb", "/home/x"), "/home/x/Downloads");
     assert.equal(resolveDownloadDirectory("/mnt/media/", "/home/x"), "/mnt/media");
     assert.equal(resolveDownloadDirectory("/", "/home/x"), "/");
+});
+
+/*
+ * The download row shows the configured folder on hover and offers a shortcut to it after a
+ * successful download. Both surfaces read these two pure helpers, so the display form can
+ * never disagree with the directory the command actually writes into: they both resolve
+ * through resolveDownloadDirectory().
+ */
+test("formatDownloadDirectory shows the resolved folder and never a raw tilde", () => {
+    assert.equal(formatDownloadDirectory("~/Downloads", "/home/x"), "/home/x/Downloads");
+    assert.equal(formatDownloadDirectory("~/videos", "/home/x"), "/home/x/videos");
+    assert.equal(formatDownloadDirectory("/mnt/media/", "/home/x"), "/mnt/media");
+});
+
+test("formatDownloadDirectory falls back for an empty or unusable value", () => {
+    assert.equal(formatDownloadDirectory("", "/home/x"), "/home/x/Downloads");
+    assert.equal(formatDownloadDirectory(undefined, "/home/x"), "/home/x/Downloads");
+    assert.equal(formatDownloadDirectory("   ", "/home/x"), "/home/x/Downloads");
+    // A relative path would resolve against plasmashell's cwd, and a control character is
+    // never a real directory: both fall back, exactly as the command builder does.
+    assert.equal(formatDownloadDirectory("videos", "/home/x"), "/home/x/Downloads");
+    assert.equal(formatDownloadDirectory("~/a\nb", "/home/x"), "/home/x/Downloads");
+});
+
+test("formatDownloadDirectory is empty until $HOME is known", () => {
+    // The same condition that gates downloadReady: with no home there is no absolute path to
+    // show, so the tooltip stays empty instead of rendering a bare "~" or "Downloads".
+    assert.equal(formatDownloadDirectory("~/Downloads", ""), "");
+    assert.equal(formatDownloadDirectory("/mnt/media", ""), "");
+    assert.equal(formatDownloadDirectory("", undefined), "");
+});
+
+test("buildFolderUrl percent-encodes every path segment", () => {
+    assert.equal(buildFolderUrl("~/Downloads", "/home/x"), "file:///home/x/Downloads");
+    // A space and a "#" must survive as data: encodeURI would leave the "#" as a fragment
+    // separator, and a global encodeURIComponent would escape the "/" separators too.
+    assert.equal(
+        buildFolderUrl("/home/x/My Videos#1", "/home/x"),
+        "file:///home/x/My%20Videos%231",
+    );
+    assert.equal(buildFolderUrl("/mnt/my folder/videos", "/home/x"), "file:///mnt/my%20folder/videos");
+});
+
+test("buildFolderUrl refuses to build a URL without an absolute path", () => {
+    // No home means resolveDownloadDirectory would answer a relative "Downloads", which is not
+    // a file:// URL the file manager could open; the caller disables the button on "".
+    assert.equal(buildFolderUrl("~/Downloads", ""), "");
+    assert.equal(buildFolderUrl("/mnt/media", undefined), "");
 });
 
 test("resolveYtDlpBinary accepts a path and refuses anything shell-shaped", () => {
@@ -3381,23 +3431,91 @@ test("FullRepresentation.qml carries the reserved update line and its signal", (
     );
     assert.ok(!lineBody.includes("onClicked"), "the update line must not be a button");
 
+    // adr-0015 authorised exactly ONE browser-opening call, to the fixed release-page
+    // constant. The human-approved open-folder shortcut adds a SECOND call site: a click on
+    // the download row's folder button. That URL is not a browser page and is never raw
+    // configuration -- it is built by DockerStatus.buildFolderUrl() from the resolved download
+    // directory -- so the two are pinned by their exact argument text and by set equality,
+    // not by a mere count that could silently accept a third, different target.
+    const code = stripQmlComments(fullQml);
+
     assert.ok(
-        fullQml.includes("onClicked: Qt.openUrlExternally(DockerStatus.UPDATE_PAGE_URL)"),
+        code.includes("onClicked: Qt.openUrlExternally(DockerStatus.UPDATE_PAGE_URL)"),
         "the indicator must open the fixed release-page constant",
     );
-    assert.equal(
-        fullQml.split("Qt.openUrlExternally(").length - 1,
-        1,
-        "exactly one browser-opening call exists in the popup",
-    );
     assert.ok(
-        !/Qt\.openUrlExternally\((?!DockerStatus\.UPDATE_PAGE_URL)/.test(fullQml),
-        "no URL other than the fixed constant may be opened",
+        code.includes("onClicked: Qt.openUrlExternally(fullRoot.downloadFolderUrl)"),
+        "the folder shortcut must open the URL the pure builder produced",
     );
+
+    const openArgs = [...code.matchAll(/Qt\.openUrlExternally\(([^)]*)\)/g)]
+        .map((match) => match[1].trim())
+        .sort();
+    assert.deepEqual(
+        openArgs,
+        ["DockerStatus.UPDATE_PAGE_URL", "fullRoot.downloadFolderUrl"].sort(),
+        "the popup opens exactly these two targets and no other URL",
+    );
+
     assert.equal(
         fullQml.split("visible: fullRoot.updateAvailable").length - 1,
         1,
         "only the indicator keeps the silence gate; the line's reserved row stays blank instead",
+    );
+});
+
+test("the download row shows the configured folder and offers the open-folder shortcut", () => {
+    // main.qml reads configuration and resolves both strings; the representation only renders
+    // them, asserted as text exactly like the other forwarded properties.
+    const blockStart = mainQml.indexOf("fullRepresentation: FullRepresentation {");
+    assert.ok(blockStart >= 0, "main.qml must define the full representation");
+    const block = mainQml.slice(blockStart);
+
+    assert.ok(
+        block.includes("downloadDirectoryDisplay: root.downloadDirectoryDisplay"),
+        "the resolved folder must reach the tooltip",
+    );
+    assert.ok(
+        block.includes("downloadFolderUrl: root.downloadFolderUrl"),
+        "the built file:// URL must reach the folder shortcut",
+    );
+
+    // The title is a ToolButton purely so its ToolTip renders: a PlasmaComponents3.ToolTip
+    // only shows when its parent is an AbstractButton. The text names the resolved folder, or
+    // stays empty until $HOME is known -- and an empty text is what hides the ToolTip.
+    const titleBlock = fullQml
+        .split("PlasmaComponents3.ToolButton {")
+        .find((candidate) => candidate.includes("id: downloadDirectoryTitle"));
+    assert.ok(titleBlock, "the title must be the ToolTip's legal AbstractButton parent");
+    assert.ok(
+        titleBlock.includes(
+            'i18nc("@info:tooltip", "Download folder: %1", fullRoot.downloadDirectoryDisplay)',
+        ),
+        "the tooltip must name the resolved download folder",
+    );
+    assert.ok(
+        titleBlock.includes('text: fullRoot.downloadDirectoryDisplay !== ""'),
+        "an unknown $HOME must leave the tooltip empty (an empty text hides it)",
+    );
+
+    // The shortcut rides the post-download feedback row and only appears on a POSITIVE result:
+    // a failed download must never offer a folder, and neither must an in-flight/neutral state.
+    const folderBlock = fullQml
+        .split("PlasmaComponents3.ToolButton {")
+        .find((candidate) => candidate.includes('icon.name: "folder-open"'));
+    assert.ok(folderBlock, "the feedback row must carry the open-folder button");
+    const folderCode = stripQmlComments(folderBlock);
+    assert.ok(
+        folderCode.includes("fullRoot.downloadFeedbackSeverity === DockerStatus.SEVERITY_POSITIVE"),
+        "only a successful download may offer the folder",
+    );
+    assert.ok(
+        folderCode.includes('fullRoot.downloadFolderUrl !== ""'),
+        "the button must guard on a usable URL as well as the success severity",
+    );
+    assert.ok(
+        folderCode.includes("onClicked: Qt.openUrlExternally(fullRoot.downloadFolderUrl)"),
+        "the click opens the URL the pure builder produced",
     );
 });
 
