@@ -4,7 +4,7 @@ category: adrs
 tags: [hub, index, adr, decisions]
 aliases: [ADR Index, Decision Records]
 related: [adr-0001-corpus-location-and-entry-point]
-version: 1.3
+version: 1.5
 status: active
 ---
 
@@ -33,7 +33,8 @@ re-litigated from the code alone does not need a record either — only the *why
   explicit body-shape exception and mode-by-tag membership.
 - [[adr-0006-video-downloader-command-boundary]] — the video-download row is the one sanctioned
   exception to the fixed-command rule; a second exception needs a new ADR. Its browser-constancy clause is
-  superseded by [[adr-0008-configurable-cookies-browser-and-bottom-text]]; the rest still stands.
+  superseded by [[adr-0008-configurable-cookies-browser-and-bottom-text]] and its exact-command-shape
+  clause by [[adr-0022-download-cancellation-and-partial-cleanup]]; the rest still stands.
 - [[adr-0007-stop-button-confirmation-and-narrow-grant]] — a stop button that confirms on a second
   click, with the polkit grant deliberately left at `["start"]` so stop prompts while start does not.
 - [[adr-0008-configurable-cookies-browser-and-bottom-text]] — the cookies browser becomes a validated
@@ -121,6 +122,26 @@ re-litigated from the code alone does not need a record either — only the *why
   URL. It supersedes only [[adr-0015-update-indicator-opens-the-release-page]]'s single-`Qt.openUrlExternally`
   clause: the widget now has two call sites, pinned by a deliberately strict `count == 2` assertion that
   names both, while ADR-0013's silence contract and ADR-0015's constant-URL rule still stand.
+- [[adr-0022-download-cancellation-and-partial-cleanup]] — the download row gains a real cancel: the
+  download command carries a fixed prefix that writes the downloader's own pid (the prefix `exec`s the
+  downloader, so the pid in the file is yt-dlp's), a second one-shot (`downloadStopAction`) signals only a
+  pid that run wrote for itself and that `kill -0` accepts — a predicate that even passes a zombie — and
+  then sweeps the documented partial suffixes anchored on the video id recovered from the
+  already-allow-listed URL; the run's stamp carries a per-instance nonce and its URL, directory and token
+  are captured at start, so a second instance or an edited folder cannot make STOP kill or sweep in the
+  wrong place; and the row moves its busy indicator into the feedback row so the row carries a
+  STOP while a download is in flight and offers the dismiss X only when nothing is in flight. It supersedes
+  only [[adr-0006-video-downloader-command-boundary]]'s exact-command-shape clause — the stop command is the
+  second built command of the same exception, not a third exception — and it refuses outright to call
+  `connectedSources = []` a cancel, because that stops the events, not the download.
+- [[adr-0023-qmllint-gate-contract-correction]] — the CI `qmllint` gate keeps its intent and repairs its
+  implementation: a pass now fails on `Error:`-severity diagnostics, on a parse failure named by the
+  parser's **message text** as well as by its category (the runner's Qt prints one and not the other), and
+  on `Failed to open file` diagnostics, and on a non-zero exit status only when that pass resolved every
+  import — because a module-less `ubuntu-24.04` runner cannot resolve the five `org.kde.*` modules the
+  corpus imports and exits 255 over a clean corpus. The job is pinned to `ubuntu-24.04` on purpose, since
+  its Qt is what all four legs were measured against. The job name and the three status-check contexts
+  (`test`, `qmllint`, `docs`) are untouched.
 
 ## Elsewhere
 

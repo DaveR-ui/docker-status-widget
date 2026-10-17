@@ -523,6 +523,81 @@ function classifyVideoUrl(rawUrl) {
     return VIDEO_KIND_BY_HOST[host];
 }
 
+/*
+ * yt-dlp substitutes %(id)s with the HOST-SPECIFIC id, and that id is what every partial
+ * file of a run carries immediately before its extension, because the output template is
+ * "%(title)s [%(id)s].%(ext)s". It is therefore the only anchor a sweep can safely use:
+ * a suffix-only "*.part" glob would also delete an unrelated partial sitting in the
+ * default ~/Downloads -- Firefox writes its own .part files there -- which is collateral
+ * damage on a live browser download.
+ *
+ * The charset is load-bearing for the same reason: an id that matches /^[A-Za-z0-9_-]+$/
+ * cannot contain a glob metacharacter, so it cannot widen the `find` pattern that carries
+ * it. The length bound is 32 -- a YouTube id is 11 characters and an X status id is a
+ * snowflake currently 19 digits with room to grow, so 32 sits well above both while
+ * keeping the emitted pattern short and bounded. Anything longer, anything outside the
+ * charset, a host that is not allow-listed and a path shape that names no single video
+ * (a playlist link) all answer "".
+ *
+ * classifyVideoUrl() IS the allow-list and is not re-implemented here: this function only
+ * picks the id out of a URL that already passed it.
+ */
+var VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+var VIDEO_ID_MAX_LENGTH = 32;
+
+var YOUTUBE_PATH_ID_PATTERN = /^\/(?:shorts|live)\/([^\/?#]+)/;
+var YOUTUBE_WATCH_ID_PATTERN = /[?&]v=([^&#]+)/;
+var YOUTUBE_BARE_ID_PATTERN = /^\/([^\/?#]+)/;
+var TWITTER_STATUS_ID_PATTERN = /\/status\/([^\/?#]+)/;
+
+/**
+ * The id yt-dlp would substitute for %(id)s in the output template, or "".
+ *
+ * Refuses everything classifyVideoUrl() refuses (it calls it, so a non-allow-listed host,
+ * a non-https URL and a paste carrying quotes or control characters never get this far),
+ * plus a playlist-only link, an empty or oversized id and any id outside the charset
+ * above.
+ */
+function extractVideoId(rawUrl) {
+    var text = normalizeOutput(rawUrl);
+    var kind = classifyVideoUrl(text);
+
+    if (kind === null) {
+        return "";
+    }
+
+    /*
+     * Splitting a URL classifyVideoUrl() already accepted is parsing validated data, not
+     * a second host check: the authority ends at the first "/", "?" or "#", exactly the
+     * tail separator that function's own regex uses. The youtu.be test below is a ROUTING
+     * decision between the two YouTube URL shapes -- the short host's first path segment
+     * is the id, youtube.com's is a verb like "watch" -- and grants nothing; the
+     * allow-list has already run.
+     */
+    var rest = text.substring("https://".length);
+    var tailStart = rest.search(/[\/?#]/);
+    var host = (tailStart < 0 ? rest : rest.substring(0, tailStart)).toLowerCase();
+    var tail = tailStart < 0 ? "" : rest.substring(tailStart);
+
+    var match = null;
+    if (kind === VIDEO_KIND_TWITTER) {
+        match = TWITTER_STATUS_ID_PATTERN.exec(tail);
+    } else if (host === "youtu.be" || host === "www.youtu.be") {
+        match = YOUTUBE_BARE_ID_PATTERN.exec(tail);
+    } else {
+        match = YOUTUBE_PATH_ID_PATTERN.exec(tail) || YOUTUBE_WATCH_ID_PATTERN.exec(tail);
+    }
+
+    var candidate = match === null ? "" : match[1];
+
+    if (candidate === "" || candidate.length > VIDEO_ID_MAX_LENGTH
+            || !VIDEO_ID_PATTERN.test(candidate)) {
+        return "";
+    }
+
+    return candidate;
+}
+
 /**
  * Wraps a value in single quotes for /bin/sh. An embedded single quote is closed,
  * escaped and reopened ('it'\''s') so the value can never end the quoting itself.
@@ -623,6 +698,91 @@ function buildFolderUrl(directory, home) {
     return "file://" + encoded.join("/");
 }
 
+/*
+ * Download cancellation: the pid file.
+ *
+ * The engine hands out no handle on a running command. `connectedSources = []`
+ * disconnects the source without killing the child, and a one-shot delivers exactly one
+ * `onNewData`, at process exit, so a download that runs for minutes looks identical to a
+ * download that never started. Stopping one therefore needs a SECOND one-shot that
+ * signals the process, and that one-shot can only find the process if the first one
+ * published its pid -- which is why buildVideoDownloadCommand() now opens with
+ * `mkdir -p ... ; echo $$ > ... ; exec yt-dlp`. `exec` is load-bearing there: it
+ * replaces the very process the engine spawned, so the pid `$$` wrote IS yt-dlp's pid
+ * and a SIGTERM to it kills the download instead of orphaning it behind a shell.
+ *
+ * The file lives under XDG's state home, ~/.local/state/docker-status, rather than in
+ * the download folder: it is widget state, not user content, and a user who points the
+ * download at a folder they clean by hand must not have a pid file linger there.
+ */
+
+var DOWNLOAD_STATE_DIRECTORY = "/.local/state/docker-status";
+
+/*
+ * Both halves of the file name are gated by the same shape rule as JS_RUNTIME_PATTERN,
+ * and for the same reason: a stamp or a token carrying whitespace or shell syntax would
+ * produce a path the download command cannot write and the stop command cannot read.
+ * shellQuote() still wraps every path that reaches a shell, so this is a shape gate that
+ * keeps the name sane, never the protection.
+ */
+var DOWNLOAD_STOP_NAME_PATTERN = /^[A-Za-z0-9._-]+$/;
+
+/**
+ * The per-user directory the pid files live in, or "" when there is no home to build it
+ * from.
+ *
+ * The gate deliberately mirrors resolveDownloadDirectory() instead of growing a third
+ * copy of the rule: normalizeOutput() does the trimming, and an empty, relative or
+ * control-character-tainted home is refused outright. The difference is the answer on
+ * refusal -- the download directory has a safe fallback, "where do I find my own pid
+ * file" does not, and a wrong guess would make the stop command signal a stranger's
+ * process. expandTilde() has nothing to expand here on purpose: $HOME is absolute, and a
+ * "~"-bearing home is exactly the not-absolute case this refuses.
+ */
+function resolveDownloadStopDirectory(home) {
+    var base = normalizeOutput(home);
+
+    if (base === "" || base.charAt(0) !== "/" || /[\x00-\x1f\x7f]/.test(base)) {
+        return "";
+    }
+
+    while (base.length > 1 && base.charAt(base.length - 1) === "/") {
+        base = base.substring(0, base.length - 1);
+    }
+
+    return base + DOWNLOAD_STATE_DIRECTORY;
+}
+
+/**
+ * The pid file of ONE download run, or "" when it cannot be resolved.
+ *
+ * The name carries the widget instance's session stamp AND the run token. The stamp is
+ * the part that is easy to think is redundant and is not: a reloaded widget's run-token
+ * counter restarts at 0, so a token-only name would collide with a previous instance's
+ * still-running download, and STOP would kill that orphan while reporting a success the
+ * user never asked for. The stamp makes every instance's file names unique, so the worst
+ * a reload can do is leave an orphan no stop command will ever find.
+ *
+ * `token` is the DOWNLOAD's run token -- the same value buildVideoDownloadCommand()
+ * wrote into the name -- not the stop command's own token.
+ */
+function resolveDownloadStopFile(home, sessionStamp, token) {
+    var directory = resolveDownloadStopDirectory(home);
+
+    if (directory === "") {
+        return "";
+    }
+
+    var stamp = normalizeOutput(sessionStamp);
+    var runToken = normalizeOutput(token);
+
+    if (!DOWNLOAD_STOP_NAME_PATTERN.test(stamp) || !DOWNLOAD_STOP_NAME_PATTERN.test(runToken)) {
+        return "";
+    }
+
+    return directory + "/download-" + stamp + "-" + runToken + ".pid";
+}
+
 /**
  * Only a plain executable name or a path is accepted; anything with a space or a shell
  * metacharacter falls back to the plain name. A leading "~/" is expanded against home,
@@ -677,6 +837,24 @@ function resolveJsRuntime(configured) {
  * instead of a progress bar. The user's own yt-dlp configuration is respected (no
  * --ignore-config), so a PO-token plugin or a format preference still applies.
  *
+ * The command now OPENS with the pid hand-off, because a one-shot the engine cannot stop
+ * needs a second one-shot to stop it and that one needs a pid:
+ *
+ *   mkdir -p '<stateDir>' ; echo $$ > '<stopFile>' ; exec 'yt-dlp' ...
+ *
+ * `exec` is what makes the published pid the right one: it replaces the very process the
+ * engine spawned, so `$$` names yt-dlp itself and a SIGTERM to it kills the download.
+ * Without `exec` the pid would name a shell that outlives the download, and signalling it
+ * would orphan yt-dlp with nobody left to kill it. The separators are ` ; ` on purpose
+ * (fail-open): a read-only state directory, or a $HOME that does not exist yet, must
+ * degrade to "this download cannot be cancelled" rather than break the download outright,
+ * and the stop side reports the missing pid file honestly instead of guessing.
+ *
+ * `token` keeps its existing meaning -- the run token, appended by withRunToken() so a
+ * repeated paste re-runs -- and now serves a second purpose: together with the new
+ * `sessionStamp` it NAMES the stop file. That is why a download with no token has nothing
+ * to be found by and returns "": the refusal contract below.
+ *
  * `token` makes the command a distinct source for the executable engine even when the
  * same URL is pasted twice; it is appended by withRunToken() and must therefore be a
  * command this file built itself.
@@ -686,7 +864,19 @@ function buildVideoDownloadCommand(options) {
     var jsRuntime = resolveJsRuntime(opts.jsRuntime);
     var cookiesBrowser = resolveCookiesBrowser(opts.cookiesBrowser);
 
-    var command = shellQuote(resolveYtDlpBinary(opts.binary, opts.home));
+    var stopDirectory = resolveDownloadStopDirectory(opts.home);
+    var stopFile = resolveDownloadStopFile(opts.home, opts.sessionStamp, opts.token);
+
+    // No home, or a stamp/token that is not a plain name, means no stop file, which means
+    // no way to cancel this run. Refusing the command mirrors buildComposeProjectCommand()'s
+    // empty-command contract: main.qml refuses "" before it reaches the engine.
+    if (stopFile === "") {
+        return "";
+    }
+
+    var command = "mkdir -p " + shellQuote(stopDirectory)
+        + " ; echo $$ > " + shellQuote(stopFile)
+        + " ; exec " + shellQuote(resolveYtDlpBinary(opts.binary, opts.home));
 
     if (cookiesBrowser !== "") {
         command += " --cookies-from-browser " + shellQuote(cookiesBrowser);
@@ -774,6 +964,149 @@ function extractErrorLine(output) {
     }
 
     return chosen;
+}
+
+/*
+ * The four outcomes of a stop run, plus the empty string for "this run told us nothing".
+ *
+ * They travel on STDOUT behind a fixed prefix so that stderr stays the operating system's
+ * error channel, and parseDownloadStopResult() is the only thing that reads them.
+ * DOWNLOAD_STOP_KILLED_UNSWEPT is the honest half of the pair: "killed" claims the
+ * partials are gone, "killed no-sweep" says the process died but the leftovers may still
+ * be there, which is what the row must show when there was no id to anchor a sweep on.
+ * DOWNLOAD_STOP_UNKNOWN is "" so a run that failed to say anything -- a kill that could
+ * not be delivered, a `find` that could not read the directory -- is never mistaken for a
+ * clean cancel.
+ */
+var DOWNLOAD_STOP_MARKER_PREFIX = "docker-status: ";
+var DOWNLOAD_STOP_KILLED = "killed";
+var DOWNLOAD_STOP_KILLED_UNSWEPT = "killed no-sweep";
+var DOWNLOAD_STOP_NOT_RUNNING = "not-running";
+var DOWNLOAD_STOP_UNKNOWN = "";
+
+/**
+ * Builds the one-shot that cancels ONE running download, or "" when the pid file cannot
+ * be resolved (an unusable home, or a stamp/token that is not a plain name).
+ *
+ * `runToken` locates the pid file -- it is the DOWNLOAD's run token, the same value
+ * buildVideoDownloadCommand() folded into the file name. `token` is this stop command's
+ * OWN trailing run token, and the two are different numbers on purpose: the engine treats
+ * connectedSources as a set, so a second STOP click has to be a distinct source or it
+ * would be a no-op.
+ *
+ * The emitted program, in order:
+ *
+ *   1. Poll for the run's pid file for about a second (5 x 0.2s), accepting only a pid
+ *      that is ALIVE (`kill -0`). The live-pid requirement is the anti-lie guard: a
+ *      download that already ended, leaving its pid file behind, must never be reported
+ *      as cancelled, and a download that started a moment ago may not have written the
+ *      file yet.
+ *   2. `kill -TERM` the live pid. A failed kill writes a stderr marker and exits 1
+ *      WITHOUT sweeping: the partials of a process that is still running are not ours to
+ *      delete.
+ *   3. Wait about a second for it to die, then `kill -KILL` if it is still there.
+ *   4. `rm -f` the pid file.
+ *   5. Run the sweep, but only when the URL resolved an id to anchor on.
+ *   6. Print the stdout marker.
+ *
+ * The sweep is LAST on purpose, so its exit status is the run's: an existing-but-
+ * unreadable directory makes `find` fail on stderr and the whole command exit non-zero,
+ * which the caller surfaces like any other failed one-shot. A MISSING directory skips the
+ * sweep and still exits 0 -- no partial can exist where yt-dlp never created the output
+ * folder -- and that case reports the plain "killed" marker.
+ *
+ * Every interpolated value goes through shellQuote(). Both windows are fixed rather than
+ * parameterised: how long a click waits is the behaviour of a click, not a preference.
+ */
+function buildDownloadStopCommand(options) {
+    var opts = options || {};
+
+    var stopFile = resolveDownloadStopFile(opts.home, opts.sessionStamp, opts.runToken);
+    if (stopFile === "") {
+        return "";
+    }
+
+    var quotedStopFile = shellQuote(stopFile);
+    var videoId = extractVideoId(opts.url);
+    var directory = resolveDownloadDirectory(opts.directory, opts.home);
+
+    var command = "pid=''; n=0"
+        + "; while [ \"$n\" -lt 5 ]"
+        + "; do if [ -f " + quotedStopFile + " ]"
+        + "; then p=$(cat " + quotedStopFile + " 2>/dev/null)"
+        + "; case \"$p\" in ''|*[!0-9]*) ;; *) kill -0 \"$p\" 2>/dev/null"
+        + " && { pid=\"$p\"; break; } ;; esac; fi"
+        + "; sleep 0.2; n=$((n+1)); done";
+
+    command += "; if [ -n \"$pid\" ]"
+        + "; then kill -TERM \"$pid\" 2>/dev/null"
+        + " || { printf " + shellQuote(DOWNLOAD_STOP_MARKER_PREFIX + "kill failed for pid %s\\n")
+        + " \"$pid\" 1>&2; exit 1; }"
+        + "; n=0; while [ \"$n\" -lt 5 ]"
+        + "; do kill -0 \"$pid\" 2>/dev/null || break; sleep 0.2; n=$((n+1)); done"
+        + "; kill -0 \"$pid\" 2>/dev/null && kill -KILL \"$pid\" 2>/dev/null"
+        + "; rm -f " + quotedStopFile
+        + "; printf " + shellQuote(DOWNLOAD_STOP_MARKER_PREFIX
+            + (videoId === "" ? DOWNLOAD_STOP_KILLED_UNSWEPT : DOWNLOAD_STOP_KILLED)
+            + "\\n");
+
+    /*
+     * The sweep. `[[]` and `[]]` are bracket expressions matching a literal "[" and "]", so
+     * the pattern means `* [<id>]*` -- every partial of THIS run carries " [<id>]"
+     * immediately before the extension. The directory is one shell-quoted literal,
+     * `-maxdepth 1` prevents descent, `-type f` with no `-L` refuses symlinked entries, and
+     * no other value reaches the pattern, so the sweep's reach is exactly the download's
+     * reach: a configured directory bearing ".." resolves to the same folder yt-dlp wrote
+     * into, which is no new reach at all.
+     */
+    if (videoId !== "") {
+        command += "; if [ -d " + shellQuote(directory) + " ]"
+            + "; then find " + shellQuote(directory)
+            + " -maxdepth 1 -type f \\( -name '*.part' -o -name '*.part-Frag*'"
+            + " -o -name '*.ytdl' \\) -name " + shellQuote("* [[]" + videoId + "[]]*")
+            + " -delete; fi";
+    }
+
+    command += "; else rm -f " + quotedStopFile
+        + "; printf " + shellQuote(DOWNLOAD_STOP_MARKER_PREFIX + DOWNLOAD_STOP_NOT_RUNNING + "\\n")
+        + "; fi";
+
+    if (opts.token === undefined || opts.token === null) {
+        return command;
+    }
+
+    return withRunToken(command, opts.token);
+}
+
+/**
+ * Reads a stop run's outcome out of its stdout, or DOWNLOAD_STOP_UNKNOWN.
+ *
+ * The FIRST "docker-status: "-prefixed line decides, and it has to match one of the three
+ * markers exactly: "killed" and "killed no-sweep" are two different claims, so a line
+ * that matches neither -- a future marker this build does not know, or a stderr marker
+ * that arrived in the wrong stream -- degrades to "" instead of being read as a clean
+ * cancel. stderr is never consulted here; it is the caller's error channel.
+ */
+function parseDownloadStopResult(rawOutput) {
+    var lines = normalizeOutput(rawOutput).split("\n");
+
+    for (var i = 0; i < lines.length; i += 1) {
+        var line = lines[i].trim();
+        if (line.indexOf(DOWNLOAD_STOP_MARKER_PREFIX) !== 0) {
+            continue;
+        }
+
+        var value = line.substring(DOWNLOAD_STOP_MARKER_PREFIX.length);
+        if (value === DOWNLOAD_STOP_KILLED
+                || value === DOWNLOAD_STOP_KILLED_UNSWEPT
+                || value === DOWNLOAD_STOP_NOT_RUNNING) {
+            return value;
+        }
+
+        return DOWNLOAD_STOP_UNKNOWN;
+    }
+
+    return DOWNLOAD_STOP_UNKNOWN;
 }
 
 /*

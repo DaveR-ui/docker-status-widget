@@ -8,7 +8,7 @@ grabs the window with grabToImage() -- an offline render that does not need the
 widget to be installed, a session to be running, or the panel to be visible.
 
 Usage:
-    python3 tools/render_preview.py                 # all three states, offscreen
+    python3 tools/render_preview.py                 # all five states, offscreen
     python3 tools/render_preview.py --state active  # one state
     python3 tools/render_preview.py --platform wayland --out ./shots
     QT_QPA_PLATFORM=offscreen python3 tools/render_preview.py
@@ -37,8 +37,11 @@ ACTIVE_CONTAINERS = [
     {"name": "portainer", "state": "running", "project": ""},
 ]
 
-# Three named preview states. Each one drives the SAME properties
+# Five named preview states. Each one drives the SAME properties
 # main.qml would push at runtime, so the render is the real consumer code path.
+# Every state drives the download row completely: the four previewDownload* keys below are
+# what make the row's leading spinner, its live STOP and its dismiss X renderable at all --
+# the in-flight row and the settled failure row are the two new states (adr-0022).
 STATES = {
     "active": dict(
         previewDaemonState="active", previewDaemonRunning=True,
@@ -47,6 +50,8 @@ STATES = {
         previewActionFeedback="", previewDownloaderEnabled=True,
         previewShutdownPending=False, previewShutdownRemainingSeconds=0,
         previewUpdateAvailable=False, previewUpdateFeedback="",
+        previewDownloadInFlight=False, previewDownloadFeedback="",
+        previewDownloadFeedbackSeverity="muted", previewDownloadFolderUrl="",
     ),
     "inactive_armed": dict(
         previewDaemonState="inactive", previewDaemonRunning=False,
@@ -55,6 +60,8 @@ STATES = {
         previewActionFeedback="Permission denied", previewDownloaderEnabled=True,
         previewShutdownPending=True, previewShutdownRemainingSeconds=754,
         previewUpdateAvailable=False, previewUpdateFeedback="",
+        previewDownloadInFlight=False, previewDownloadFeedback="",
+        previewDownloadFeedbackSeverity="muted", previewDownloadFolderUrl="",
     ),
     "unknown_update": dict(
         previewDaemonState="unknown", previewDaemonRunning=False,
@@ -63,6 +70,36 @@ STATES = {
         previewActionFeedback="", previewDownloaderEnabled=False,
         previewShutdownPending=False, previewShutdownRemainingSeconds=0,
         previewUpdateAvailable=True, previewUpdateFeedback="Version 0.6.0 is available",
+        previewDownloadInFlight=False, previewDownloadFeedback="",
+        previewDownloadFeedbackSeverity="muted", previewDownloadFolderUrl="",
+    ),
+    # The in-flight download row: the leading slot carries the busy spinner, the right edge
+    # carries the live STOP, and neither the dismiss X nor the folder-open icon renders.
+    # The severity stays neutral in flight, so SeverityDot stays the only colour mapping.
+    "downloading": dict(
+        previewDaemonState="active", previewDaemonRunning=True,
+        previewContainers=ACTIVE_CONTAINERS, previewContainerListEnabled=True,
+        previewActionInFlight=False, previewActionKind="", previewStopArmed=False,
+        previewActionFeedback="", previewDownloaderEnabled=True,
+        previewShutdownPending=False, previewShutdownRemainingSeconds=0,
+        previewUpdateAvailable=False, previewUpdateFeedback="",
+        previewDownloadInFlight=True,
+        previewDownloadFeedback="Downloading the video from YouTube…",
+        previewDownloadFeedbackSeverity="neutral", previewDownloadFolderUrl="",
+    ),
+    # The settled failure row: a negative SeverityDot, no spinner, no STOP, no folder icon,
+    # and the dismiss X on the far right edge -- the mutually exclusive state adr-0022 asks
+    # for, so an X can never act on an in-progress download.
+    "download_failed": dict(
+        previewDaemonState="active", previewDaemonRunning=True,
+        previewContainers=ACTIVE_CONTAINERS, previewContainerListEnabled=True,
+        previewActionInFlight=False, previewActionKind="", previewStopArmed=False,
+        previewActionFeedback="", previewDownloaderEnabled=True,
+        previewShutdownPending=False, previewShutdownRemainingSeconds=0,
+        previewUpdateAvailable=False, previewUpdateFeedback="",
+        previewDownloadInFlight=False,
+        previewDownloadFeedback="ERROR: [youtube] dQw4w9WgXcQ: Video unavailable",
+        previewDownloadFeedbackSeverity="negative", previewDownloadFolderUrl="",
     ),
 }
 

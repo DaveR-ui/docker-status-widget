@@ -4,7 +4,7 @@ category: verification
 tags: [slice, generality, verification, tests, evidence]
 aliases: [Verification slice, Evidence slice]
 related: [verification-index, troubleshooting, status-slice]
-version: 1.2
+version: 1.4
 status: active
 ---
 
@@ -62,9 +62,9 @@ The evidence layers, and which of them can be re-run:
 
 | Layer | How it is verified | Re-runnable |
 |---|---|---|
-| Node unit suite | 171 unit tests under `node --test`, over the shipped bytes: parsing, severity, the run token, the download helpers, the update-check helpers (the constants, the fixed command they assemble, the marker split, the version parsers and the strictly-greater comparison), the shutdown countdown helpers (`resolveShutdownMinutes`, `shutdownRemainingSeconds`, `formatCountdown` and the two constants), the two action identities and their exact QML `actionKind` expressions, both fixed privileged commands, and the polkit rule as text plus a default-deny predicate matrix over its whole decision surface; also the surfaces a runtime test cannot reach — the removed footer and bottom-text surfaces (`taglineText`, `cfg_taglineText`, `Persiguiendo la singularidad` and a `footerText` read absent from the shipped code), the pinned-column assertions (the status → container → update → Miscelánea order, the container section as the scrollable middle region, and the `containerScrollFloor`), the `firefox` cookies default, the cookies combo's seed-and-mute arrangement, the shutdown kcfg entry and its config control, the fixed `powerOffCommand` literal and the countdown state machine in `main.qml`, the full-representation shutdown bindings, the inline shutdown-minutes field's wiring (inbound property, edit signal, validation through the single resolver, seed/sync guards, the focus-loss mirror that re-syncs a valid field value without clobbering the user's error text, disabled-while-pending) and the single-writer rule (only `main.qml` writes the entry; an unresolvable value is never persisted), and the stop button's fixed width | yes |
-| Download command boundary | unit tests run the assembled command through a real `/bin/sh` with a stub `yt-dlp` on `PATH` and assert the argv arrives intact, including the real YouTube URL with its `&list=` and a quote-injection URL; a separate test pins the `withRunToken()` newline case an adversarial pass found | yes |
-| CI (GitHub Actions) | `.github/workflows/ci.yml`, on `pull_request` into `master`: `node --test tests/*.mjs`; the Qt6 `qmllint` — the job installs `qt6-declarative-dev-tools` and runs `/usr/lib/qt6/bin/qmllint` over both QML roots, read as a **diagnostic stream**, not an exit code, because Qt6 exits 0 unless `--max-warnings` is set, so a real defect is an `Error:`-severity diagnostic in the captured output **or** a non-zero qmllint exit status (a file it cannot parse exits 255); and `node validate.js` in check mode only, run from the repo root — plus one more step inside the `test` job:
+| Node unit suite | 196 unit tests under `node --test`, over the shipped bytes: parsing, severity, the run token, the download helpers, the download-stop helpers (the video-id recovery, the pid-file resolvers, the stop-command assembly, the marker parser and the shell-level kill/sweep rehearsals against a real `/bin/sh`), the update-check helpers (the constants, the fixed command they assemble, the marker split, the version parsers and the strictly-greater comparison), the shutdown countdown helpers (`resolveShutdownMinutes`, `shutdownRemainingSeconds`, `formatCountdown` and the two constants), the two action identities and their exact QML `actionKind` expressions, both fixed privileged commands, and the polkit rule as text plus a default-deny predicate matrix over its whole decision surface; also the surfaces a runtime test cannot reach — the removed footer and bottom-text surfaces (`taglineText`, `cfg_taglineText`, `Persiguiendo la singularidad` and a `footerText` read absent from the shipped code), the pinned-column assertions (the status → container → update → Miscelánea order, the container section as the scrollable middle region, and the `containerScrollFloor`), the `firefox` cookies default, the cookies combo's seed-and-mute arrangement, the shutdown kcfg entry and its config control, the fixed `powerOffCommand` literal and the countdown state machine in `main.qml`, the full-representation shutdown bindings, the inline shutdown-minutes field's wiring (inbound property, edit signal, validation through the single resolver, seed/sync guards, the focus-loss mirror that re-syncs a valid field value without clobbering the user's error text, disabled-while-pending) and the single-writer rule (only `main.qml` writes the entry; an unresolvable value is never persisted), and the stop button's fixed width | yes |
+| Download command boundary | unit tests run the assembled command through a real `/bin/sh` with a stub `yt-dlp` on `PATH` and assert the argv arrives intact, including the real YouTube URL with its `&list=` and a quote-injection URL; a separate test pins the `withRunToken()` newline case an adversarial pass found. The stop half is exercised the same way, with a stub that stays alive so a real `kill -TERM` is delivered and the sweep is observed | yes |
+| CI (GitHub Actions) | `.github/workflows/ci.yml`, on `pull_request` into `master`: `node --test tests/*.mjs`; the Qt6 `qmllint` — the job installs `qt6-declarative-dev-tools` and runs `/usr/lib/qt6/bin/qmllint` over both QML roots, gating on **four legs**: an `Error:`-severity diagnostic; a parse failure — the `[syntax]` category **or** the parser's untagged message text (`Syntax error` / `Expected token` / `Unexpected token`, because the runner's Qt 6.4.2 prints parse failures with no category at all — measured, see the Known gaps); a `Failed to open file` diagnostic (the file could not be read); and the exit status — the last **only when that pass resolved every import** (no `Failed to import` line), because a module-less `ubuntu-24.04` runner cannot resolve the five `org.kde.*` modules the corpus imports and exits 255 over the clean corpus with ZERO error diagnostics (CI runs `39055120672` and `38177079659`: 11 `Failed to import` over 8 distinct modules, 253 `was not found`, no parse failure, 0 `Failed to open file`). Warnings and infos are not gating, and the whole diagnostic stream is still printed in full ([[adr-0023-qmllint-gate-contract-correction]]); and `node validate.js` in check mode only, run from the repo root — plus one more step inside the `test` job:
   `.github/scripts/sync-manifest.mjs --check`, which fails the pull request when the committed
   `site/latest.json` no longer matches `metadata.json`. It is a step, not a job, so it adds no fourth
   status context. Three status-check contexts: `test`, `qmllint`, `docs`. | yes — this is the merge gate |
@@ -72,7 +72,7 @@ The evidence layers, and which of them can be re-run:
 | Data engine contract | probe QML against live plasma5support 6.7.4, re-measured on 6.7.5 for the long one-shot row: payload keys, set semantics, interval quantisation, and the finding that a two-second silence produces no event at all | no — probe |
 | Full pipeline against live Docker | a probe harness parsed the real three-container stack | no — probe |
 | End-to-end download | the exact assembled command for an X link exited 0 and wrote a 10,365,309-byte mp4, with yt-dlp reporting cookies extracted from Firefox; a YouTube `--simulate` run reported `--no-playlist`, node solving JS challenges and format 401+251; without `--js-runtimes` the same URL failed with "The page needs to be reloaded", and without cookies with "Sign in to confirm you're not a bot" | no — probe |
-| All QML files | two binaries measured. The `qmllint` on `PATH` is Qt5 (`qt5-declarative 5.15.19`): exit 0 and no output, and a deliberate `property int x: "boom"` probe also exited 0 — syntax-only. The matching `/usr/lib/qt6/bin/qmllint` (`qt6-declarative 6.11.2`, the tool for a Plasma 6 target) reports semantics: on `contents/ui/*.qml` exit 0 with **0 errors, 75 warnings all `[unqualified]`, 43 infos of which 2 are `[unused-imports]`**; on `contents/ui/config/*.qml` exit 0 with **0 errors, 22 warnings all `[unqualified]`, 6 infos of which 1 is `[unused-imports]`** — and no `[missing-property]`, `[incompatible-type]`, `[unresolved-type]` or `[import]` diagnostic. Exit code is not the evidence: Qt6 exits 0 unless `--max-warnings` is set, so the diagnostic stream is. These counts predate the update-check addition (two data sources, one action, one config section) and should be re-measured | yes, re-run to confirm |
+| All QML files | two binaries measured. The `qmllint` on `PATH` is Qt5 (`qt5-declarative 5.15.19`): exit 0 and no output, and a deliberate `property int x: "boom"` probe also exited 0 — syntax-only. The matching `/usr/lib/qt6/bin/qmllint` (`qt6-declarative 6.11.2`, the tool for a Plasma 6 target) reports semantics: on `contents/ui/*.qml` exit 0 with **0 errors, 75 warnings all `[unqualified]`, 43 infos of which 2 are `[unused-imports]`**; on `contents/ui/config/*.qml` exit 0 with **0 errors, 22 warnings all `[unqualified]`, 6 infos of which 1 is `[unused-imports]`** — and no `[missing-property]`, `[incompatible-type]`, `[unresolved-type]` or `[import]` diagnostic. Exit code is not the evidence **on this machine** — and this machine is the premise: it has Plasma installed and every import resolves, so Qt6 exits 0 unless `--max-warnings` is set and the diagnostic stream carries the whole meaning. The same clean corpus on a module-less runner exits **255** with zero error diagnostics (see the CI row), which is what makes the gate read the status only where the imports resolved; and the runner's own Qt, 6.4.2 in the pinned `ubuntu-24.04` job (`6.4.2+dfsg-4build3`), prints a parse failure **untagged and unprefixed** (`…/FullRepresentation.qml:1730:1: Syntax error`) where this machine's newer Qt tags the same failure `[syntax]` — so the gate's parse leg keys on the message text as well ([[adr-0023-qmllint-gate-contract-correction]]). These counts predate the update-check addition (two data sources, one action, one config section) and should be re-measured | yes, re-run to confirm |
 | Shutdown countdown (QML) | the play/stop timing, the inline field's interaction, the wall-clock deadline and the effective passwordless power-off live in QML that cannot be instantiated outside plasmashell; only the resolver, the formatting helpers and the field's wiring (pinned as static text) are covered by the suite | impossible here — review only |
 | `main.qml` as a `PlasmoidItem` | **not executable outside plasmashell** — the attached-properties factory fails with `PlasmaQuick::PlasmoidAttached`; the representations are previewable headless ([[render-preview]]) | wrapper: impossible outside a session; representation: yes (manual probe) |
 
@@ -94,9 +94,12 @@ still applying.
   quoting claim needs a real shell behind it: a regex assertion about the command string is not
   evidence that a shell parses it that way.
 - The three CI job names **are** the required status-check contexts (`test`, `qmllint`, `docs`); renaming a
-  job renames the required check, so that is a branch-protection change, not a cosmetic one. Keep `qmllint`
-  read as a diagnostic stream, never an exit code — Qt6 exits 0 with warnings unless `--max-warnings` is
-  set.
+  job renames the required check, so that is a branch-protection change, not a cosmetic one. `qmllint` is
+  read as a diagnostic stream first — warnings and infos are never gating — and its exit status is read
+  **conditionally**: it fails a pass only when that pass resolved every import, because with imports
+  unresolved the status measures the runner's package set, not the code. A parse failure is named by the
+  parser's **message text** as well as by its category, because the runner's Qt prints one and not the
+  other ([[adr-0023-qmllint-gate-contract-correction]]).
 
 ## Dependencies
 
@@ -123,6 +126,22 @@ claim this corpus makes about the widget rests on these layers.
   JavaScript runs, so the no-JavaScript fallback is the path that will silently go stale.
 - **Playwright is deliberately non-gating**, so the site cannot block a merge. Promoting it is a separate
   decision, not a default.
+- **The runner's Qt labels, now measured — and the leg-2 residual.** The `qmllint` job is pinned to
+  `ubuntu-24.04`, whose `qt6-declarative-dev-tools` is `6.4.2+dfsg-4build3`; on that Qt a parse failure
+  prints **untagged and with no severity prefix** (`…/FullRepresentation.qml:1730:1: Syntax error`), where
+  this machine's newer Qt tags it `[syntax]`. The gate's parse leg therefore anchors on the parser's
+  message text (`Syntax error`, `Expected token`, `Unexpected token`) as well as on the category, and the
+  first version of that leg — anchored on `[syntax]` alone — was inert on the runner. The residual caveat:
+  the pattern is case-sensitive and matched **0** lines of the clean stream on both Qt families, but if QML
+  source ever carries one of those phrases verbatim the leg fires on it — a spurious FAIL, to be fixed by
+  rewording the string, never by weakening the leg. The exit-status leg is **not** the hedge here: the pass
+  that carries a parse failure also prints failed imports, which disables it
+  ([[adr-0023-qmllint-gate-contract-correction]]).
+- **The render harness does not yet state-cover every control it can render.** Tier 1's five states inject
+  `downloadFolderUrl = ""` throughout, so the adr-0021 folder-open success icon is never pixel-reviewed,
+  and the harness hardcodes `downloadStopInFlight = false`, so the STOP button's settling look is not
+  previewable either. Both are candidates for a future state — an absence, not achieved evidence
+  ([[render-preview]]).
 - **The update check inside plasmashell is unreachable by any test.** Its control flow — offline, no `curl`,
   an unreadable `metadata.json`, an unparseable manifest — is review-and-lint only; the Node suite pins the
   pure helpers and the wiring as static text, which proves the arrangement, not the running behaviour
@@ -145,4 +164,4 @@ claim this corpus makes about the widget rests on these layers.
 - The representations can be previewed outside plasmashell — headless for the full
   representation, live for the rest ([[render-preview]]); this machine has a live
   Plasma 6 session, a CI runner does not. What still cannot be instantiated outside
-  a running plasmashell is the `main.qml` wrapper and the panel integ
+  a running plasmashell is the `main.qml` wrapper and the panel integration.

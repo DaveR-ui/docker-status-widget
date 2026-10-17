@@ -4,7 +4,7 @@ category: widget
 tags: [slice, generality, widget, qml]
 aliases: [Widget slice, QML surfaces slice]
 related: [widget-index, status-slice, ui-surfaces]
-version: 1.3
+version: 1.5
 status: active
 ---
 
@@ -20,8 +20,8 @@ config page. The form matters —
 
 ## Boundaries
 
-**In:** representation selection and layout; the eleven `P5Support.DataSource` instances and their wiring
-(five for the Docker side, one for the Podman Desktop launch, two for the download row, one for the power-off, two for the update check);
+**In:** representation selection and layout; the twelve `P5Support.DataSource` instances and their wiring
+(five for the Docker side, one for the Podman Desktop launch, three for the download row, one for the power-off, two for the update check);
 the grouped compose containers section and its per-group play/stop controls;
 `Plasmoid.contextualActions` and the start/stop/refresh/update handlers; the download handler and its
 observable state; the shutdown
@@ -52,7 +52,7 @@ assembly lives in the [status slice](../status/status-slice.md) and whose bounda
 ## How it works
 
 `PlasmoidItem` is the root. `preferredRepresentation` is the full representation on a planar
-(desktop) form factor and null in a panel, which falls back to the compact one. Eleven `DataSource`
+(desktop) form factor and null in a panel, which falls back to the compact one. Twelve `DataSource`
 instances with the `executable` engine carry every command:
 
 | id | connectedSources | interval | role |
@@ -63,7 +63,8 @@ instances with the `executable` engine carry every command:
 | `daemonAction` | assigned on demand | `0` | the privileged action, `systemctl start docker` or `systemctl stop docker`; one source serves both because only one action can be in flight |
 | `composeAction` | assigned on demand | `0` | the unprivileged `docker start`/`docker stop` for one compose project, built by `DockerStatus.buildComposeProjectCommand()`; one-shot whose exit code and `stderr` are surfaced like `daemonAction`'s |
 | `homeSource` | `printf %s "$HOME"` (a constant) | `0` | one-shot at load: the shell expands `$HOME`; the result is validated before it is used |
-| `downloadAction` | the assembled yt-dlp command, assigned on demand | `0` | one-shot video download; the single event at exit closes the run, and the consumer still guards and accumulates in case a future engine streams |
+| `downloadAction` | the assembled yt-dlp command, assigned on demand | `0` | one-shot video download; the command carries the fixed pid prefix that writes the run's **own** pid before `exec` hands the process to the downloader, and the single event at exit closes the run, the consumer still guarding and accumulating in case a future engine streams |
+| `downloadStopAction` | the assembled stop-and-sweep program, assigned on demand | `0` | one-shot cancel for the download row's run, built by `DockerStatus.buildDownloadStopCommand()`: it accepts only a **live** pid, signals the writer before sweeping the partials, and answers `killed` / `killed no-sweep` / `not-running` on stdout ([[adr-0022-download-cancellation-and-partial-cleanup]]) |
 | `podmanLaunch` | the shell-quoted resolved Podman Desktop path, assigned on demand | `0` | one-shot Podman Desktop launch behind the status card's square button, built by `DockerStatus.buildPodmanDesktopCommand()`; stays in flight for as long as the app runs — the engine delivers exactly one event, at exit — so the flag is released when it closes and a wrong path fails immediately with the binary's own message |
 | `powerAction` | the fixed `systemctl poweroff`, assigned on demand | `0` | one-shot at countdown expiry; clears `shutdownInFlight` and surfaces the exit code and `stderr`; can stay alive while `systemctl` waits for the shutdown job |
 | `updateCheckSource` | the fixed `updateCheckCommand` while `updateCheckIntervalHours > 0`, `[]` otherwise | `updateCheckIntervalMs` | the polled update check; the engine runs it once on connect, so the load-time check is free, and the `connectedSources` binding disconnects it (`[]`) when the interval is `0` |
@@ -104,9 +105,12 @@ holding both the video-download sub-block (gated on the `showVideoDownloader` se
 was) and the "Countdown to Extinction" sub-block (its inner title and its 35x35 timer tile moved inside the
 body), each keeping its own inner title. One flag replaces the two the blocks used to carry:
 `miscSectionExpanded` (local view state, default true, never persisted and never signalled) collapses both
-together, and the derived `miscBodyVisible` (`miscSectionExpanded || shutdownPending`) gates the body — the
-same adr-0009 semantics as the old `countdownBodyVisible`, so an armed countdown comes back whatever the
-section bool says and can never be collapsed away. The renamed state stays entirely inside
+together, and the derived `miscBodyVisible`
+(`miscSectionExpanded || shutdownPending || downloadInFlight`) gates the body — the
+same adr-0009 semantics as the old `countdownBodyVisible`: an armed countdown, and since adr-0022 the
+row's live STOP, come back whatever the section bool says and can never be collapsed away. The ± glyph
+reads that same derived property, so the two cannot disagree: every operand added to the body's gate
+extends the glyph with it. The renamed state stays entirely inside
 `FullRepresentation.qml`: like `downloadSectionExpanded` and `countdownSectionExpanded` before it, it never
 crosses into `main.qml`, and the popup remains a pure consumer. The config page merges its two cards the
 same way: one "Miscelánea" card (after Podman Desktop, before Updates) whose single nested
@@ -129,8 +133,9 @@ as a square 28x28 `ToolButton` beside the daemon-status label in the status card
 emits `podmanLaunchRequested()` and `main.qml` answers with `launchPodmanDesktop()`, running
 `DockerStatus.buildPodmanDesktopCommand()` on the restored `podmanLaunch` one-shot — one source, one in-flight
 flag, exit code 0 clears the feedback and anything else surfaces stderr verbatim (or a generic fallback naming
-the exit code), with the button disabled while the app runs. The data-source count is eleven again
-([[adr-0017-podman-launch-button-and-topbar-removal]]). The backing logic —
+the exit code), with the button disabled while the app runs. The data-source count is twelve
+([[adr-0017-podman-launch-button-and-topbar-removal]]), the twelfth being the download row's stop
+one-shot ([[adr-0022-download-cancellation-and-partial-cleanup]]). The backing logic —
 `DockerStatus.buildPodmanDesktopCommand()`, `DockerStatus.resolvePodmanDesktopPath()`, the `podmanDesktopPath`
 kcfg entry and the `ConfigGeneral` setting — is the retained adr-0014 boundary and has a QML caller again.
 
@@ -138,9 +143,30 @@ kcfg entry and the `ConfigGeneral` setting — is the retained adr-0014 boundary
 `DockerStatus.classifyVideoUrl()` before a command exists; a refused paste sets `downloadFeedback` and
 never reaches the engine. Otherwise it sets `downloadInFlight`, clears the captured output, and assigns
 `downloadAction.connectedSources` with the command from `DockerStatus.buildVideoDownloadCommand()`,
-which shell-quotes every value. `homeSource` exists only to feed `homeDirectory` into that builder: a
+which shell-quotes every value and now carries the fixed pid prefix that writes the run's own pid.
+`homeSource` exists only to feed `homeDirectory` into that builder: a
 configured `~/Downloads` must be expanded to an absolute path before it is quoted. When the run ends,
 `downloadFeedbackSeverity` drives the same `SeverityDot` the header uses.
+
+The row's cancel is a second handler, reached from the row's STOP, and it is deliberately **not** a
+disconnect: it assigns `downloadStopAction.connectedSources` with
+`DockerStatus.buildDownloadStopCommand()`, whose one-line shell program accepts only a **live** pid
+written by the download run itself, `kill -TERM`s (and, if needed, `kill -KILL`s) the writer, then sweeps
+the documented partial suffixes under the resolved directory anchored on the video id, and reports
+`killed` / `killed no-sweep` / `not-running`. The download's own run token names the pid file, and the URL
+and the directory the run resolved against are captured beside it at start — never re-read from
+configuration at click time, so a folder edited mid-run cannot send the sweep somewhere the partial is not;
+the stop command carries its **own** token, so a second STOP click is a distinct source for the engine
+instead of a silent set no-op. `not-running` is what an already-finished run answers, so a click that lands
+as the run ends is a visible no-op rather than a false cancel; `connectedSources = []` is never used to stop
+a download, because it ends the events, not the process
+([[adr-0022-download-cancellation-and-partial-cleanup]]). Both builders refuse with `""` when no usable
+home or no plain-named stamp/token can name the pid file, so an uncancellable run is never started — the
+handler drops the empty command before it reaches the engine, the same contract the compose builder has.
+The dismiss X appears only while no download is
+in flight — an X that silently cancelled-and-deleted would risk an in-progress download — and
+`miscBodyVisible` gains `|| downloadInFlight`, so a live STOP can never be collapsed away, the same rule
+ADR-0009 set for an armed countdown.
 
 The shutdown countdown is the other stateful handler, and it is widget-owned.
 `startShutdownCountdown()` arms it by setting `shutdownDeadlineMs` to `Date.now()` plus
@@ -190,10 +216,14 @@ manager ([[adr-0021-download-folder-tooltip-and-open-folder-shortcut]]).
 ## Conventions of this slice
 
 - Commands are `readonly` constants in `main.qml`, with **two** recorded command-building exceptions:
-  the video-download command, assembled by `DockerStatus.buildVideoDownloadCommand()` from a validated
-  URL and validated configuration values with every interpolated value shell-quoted
-  ([[adr-0006-video-downloader-command-boundary]]), and the compose project play/stop plus the Podman
-  Desktop launch, assembled by `DockerStatus.buildComposeProjectCommand()` /
+  the video-download row, which builds **two** commands inside its single exception — the download,
+  assembled by `DockerStatus.buildVideoDownloadCommand()` from a validated URL and validated
+  configuration values with every interpolated value shell-quoted
+  ([[adr-0006-video-downloader-command-boundary]]), and its stop-and-sweep companion, assembled by
+  `DockerStatus.buildDownloadStopCommand()` from the same validated directory and home plus the
+  project-owned state path and the video id recovered from the same already-validated URL
+  ([[adr-0022-download-cancellation-and-partial-cleanup]]) — and the compose project play/stop plus the
+  Podman Desktop launch, assembled by `DockerStatus.buildComposeProjectCommand()` /
   `DockerStatus.buildPodmanDesktopCommand()` ([[adr-0014-compose-grouping-and-podman-desktop-launch]]).
   The compose builder is called by `main.qml`; the Podman Desktop builder is called by `main.qml` again
   too, from the relocated status-card button
@@ -278,6 +308,16 @@ a running Plasma session.
 - The download row's layout is previewable headless through the render harness ([[render-preview]]),
   but only its command boundary is unit tested, so its enable/disable behaviour is reviewed until it
   runs in a session.
+- A reload mid-download drops the row, and the run is left strictly alone: the process keeps running, any
+  partial stays on disk, and `~/.local/state/docker-status/` keeps one small pid file per non-cancelled
+  run. The widget deliberately kills nothing at load, because it cannot verify that a pid found in a
+  leftover file is its own ([[adr-0022-download-cancellation-and-partial-cleanup]]).
+- Mid-merge `*.fNNN.*` intermediates survive a cancel: the sweep is narrowed on purpose to the documented
+  partial suffixes (`.part`, `.part-Frag*`, `.ytdl`) anchored on the video id, rather than a pattern
+  loose enough to catch unrelated media in the same folder.
+- A user `~/.config/yt-dlp/config` carrying its own `--paths temp:` defeats the sweep, because the partial
+  then lands somewhere the widget cannot name; ADR-0006 keeps that file authoritative on purpose
+  ([[adr-0006-video-downloader-command-boundary]]).
 - The update check's QML surface — the two sources, the silent handler and the muted line — is
   review-and-lint only, exactly like every other QML wrapper here. The Node suite pins its pure helpers and
   its wiring as static text, which proves the arrangement, not the running behaviour.

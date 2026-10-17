@@ -3,8 +3,8 @@ id: render-preview
 category: verification
 tags: [probe, preview, qml, render, evidence]
 aliases: [Render Preview, Widget Render Harness, Visual Preview]
-related: [verification-slice, troubleshooting, widget-slice]
-version: 1.1
+related: [verification-slice, troubleshooting, widget-slice, adr-0021-download-folder-tooltip-and-open-folder-shortcut, adr-0022-download-cancellation-and-partial-cleanup]
+version: 1.3
 status: active
 ---
 
@@ -32,17 +32,23 @@ installed widget and no visible panel; the last ones show the real integration.
 `FullRepresentation.qml` — the real file, resolved from the checkout by
 `file://` URL, never a copy — into a Qt6 `Window` harness
 (`tools/render_preview.qml`), sets the same properties `main.qml` would push for
-a given state (`daemonState`, `containers`, `actionInFlight`, `shutdownPending`,
+a given state (`daemonState`, `containers`, `actionInFlight`, `downloadInFlight`,
+`downloadFeedback`, `downloadFeedbackSeverity`, `shutdownPending`,
 `updateAvailable`, …), and grabs the window with `grabToImage()`. It renders
 fully offline with `QT_QPA_PLATFORM=offscreen`, so it works with no display and
 no installed package, and it is re-runnable at will, which a session screenshot
-is not. This works **only for `FullRepresentation.qml`**, because that file is a
+is not. Five states are named, two of them added to pixel-review the download
+row's two new controls — the in-flight row's STOP and the settled failure row's
+dismiss X — which no QML-level test can reach, so the render is their only
+evidence ([[verification-slice]],
+[[adr-0022-download-cancellation-and-partial-cleanup]]). This works **only for
+`FullRepresentation.qml`**, because that file is a
 pure consumer (properties in, signals out). `main.qml` and
 `CompactRepresentation.qml` read `Plasmoid.configuration` / are a
 `PlasmoidItem` and still need plasmashell.
 
 ```sh
-python3 tools/render_preview.py                     # all three preview states
+python3 tools/render_preview.py                     # all five preview states
 python3 tools/render_preview.py --state active      # one state
 python3 tools/render_preview.py --platform wayland   # visible window instead of offscreen
 ```
@@ -99,10 +105,16 @@ Measured on this machine (Plasma 6.7.5, Qt 6.12.0, plasmashell live under
 the merged Miscelánea section — download and countdown),
 `render_inactive_armed.png` (OFFLINE, armed stop, denied feedback, and an armed
 countdown reading "Shutting down…" with Cancel enabled and "Powering off in
-12:34") and `render_unknown_update.png` (muted unknown state, busy
+12:34"), `render_unknown_update.png` (muted unknown state, busy
 "Starting…", update indicator and its line, and the downloader-off state
 `previewDownloaderEnabled=False`, where Miscelánea holds ONLY the countdown and
-renders no dangling hairline; [[adr-0019-miscelanea-section-merge]]). Tier 2 grabbed the real installed
+renders no dangling hairline; [[adr-0019-miscelanea-section-merge]]),
+`render_downloading.png` (the in-flight row: the leading spinner in place of the
+severity dot, the live STOP on the right edge, and no dismiss X and no
+folder-open icon) and `render_download_failed.png` (the settled failure row: the
+negative dot carrying the real yt-dlp error text, the dismiss X on the far right,
+and no spinner, no STOP and no folder-open icon;
+[[adr-0022-download-cancellation-and-partial-cleanup]]). Tier 2 grabbed the real installed
 desktop widget from behind a covering browser window.
 `plasmoidviewer -a io.github.daver-ui.dockerstatus -f planar` opens the packaged
 applet in a simulated desktop containment (the full representation, live state
@@ -123,6 +135,21 @@ representation. Both were exercised after installing `plasma-sdk`.
 - Editing files under `package/io.github.daver-ui.dockerstatus/contents/` to
   make a preview "work": the KPackage is the shipped artifact and the harness
   deliberately loads it read-only.
+
+## Known gaps & accepted debt
+
+- **The folder-open success icon has no state of its own.** All five states inject
+  `previewDownloadFolderUrl = ""`, and the adr-0021 shortcut is gated on a positive
+  `downloadFeedbackSeverity` **and** a non-empty `downloadFolderUrl` — so the one control this harness
+  cannot currently show is the one that proves adr-0021 renders. A sixth state (a positive `Saved to …`
+  feedback carrying a real `file://` URL) is the candidate; until then that icon is reviewed in a session
+  or not at all ([[adr-0021-download-folder-tooltip-and-open-folder-shortcut]]).
+- **The STOP button's settling look is not previewable.** `tools/render_preview.qml` hardcodes
+  `item.downloadStopInFlight = false`, so the harness renders STOP at rest but never in the inert/settling
+  variant it takes while a stop is in flight. Promoting that value to a per-state preview property is the
+  candidate for a future state ([[adr-0022-download-cancellation-and-partial-cleanup]]).
+- Neither absence is achieved evidence: the states that exist are the five listed above, and a control with
+  no state has been neither rendered nor compared.
 
 ## References
 

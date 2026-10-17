@@ -4,7 +4,7 @@ category: verification
 tags: [troubleshooting, symptoms, verification, failures]
 aliases: [Troubleshooting, Symptom Write-ups]
 related: [verification-index, data-engine-contract, privilege-slice, installer-slice, widget-slice, status-slice]
-version: 1.0
+version: 1.2
 status: active
 ---
 
@@ -326,3 +326,111 @@ the `podman-desktop` default.
 [../adrs/adr-0016-containers-flat-rows-and-podman-section-removal.md](../adrs/adr-0016-containers-flat-rows-and-podman-section-removal.md)
 — the removal; [../adrs/adr-0014-compose-grouping-and-podman-desktop-launch.md](../adrs/adr-0014-compose-grouping-and-podman-desktop-launch.md)
 — the Podman Desktop path boundary.
+
+## the stop button says the download could not be stopped
+
+**Context:** the full representation, a download in flight; pressing STOP ends with a failure line instead
+of a clean "cancelled".
+**Root cause:** expected behaviour in one specific case. The stop program signals the pid the run wrote
+for itself, and it refuses to sweep after a kill that was **not accepted**: when `kill -TERM` returns
+non-zero it writes `docker-status: kill failed for pid <N>` to stderr, exits 1 and deletes nothing.
+Deleting a partial whose writer could not be signalled is a race against a process the widget failed to
+stop, so the widget would rather leave the file than take it
+([[adr-0022-download-cancellation-and-partial-cleanup]]). The other honest answer is `killed no-sweep`:
+the process died, but there was no video id to anchor a sweep on, so the partial may well still be there.
+**Fix:** read it as "not stopped, nothing deleted". Check the writer by hand — `kill -0 <pid>` against the
+pid in the run's `~/.local/state/docker-status/download-<sessionStamp>-<runToken>.pid` file — and finish
+the job yourself if it survived. Do **not** "fix" this by making the stop sweep unconditionally: the
+refusal is the safeguard. If the signal keeps being refused for a process you know is a yt-dlp run, check
+whether another tool already reaped it; an exited process answers `not-running` instead.
+**Reference:** [../status/status-slice.md](../status/status-slice.md) — `buildDownloadStopCommand` and
+the stop outcomes `DOWNLOAD_STOP_KILLED`, `DOWNLOAD_STOP_KILLED_UNSWEPT` and `DOWNLOAD_STOP_NOT_RUNNING`.
+
+## the partial file is still in the download folder after cancelling
+
+**Context:** STOP reported a cancel, but `.part` files — or a `*.ytdl` or a `*.part-Frag*` file — are
+still in the configured download folder.
+**Root cause:** one of five, all deliberate. The cancel answered `killed no-sweep`: the process died but
+`extractVideoId()` could not recover an id from the URL, and the widget never sweeps without an anchor.
+The kill was refused, so nothing was swept at all (see the sibling symptom above). The partials are not
+under the configured directory at all: a user `~/.config/yt-dlp/config` carrying its own `--paths temp:`
+writes them somewhere the widget cannot name, and ADR-0006 keeps that file authoritative on purpose. The
+configured directory exists but cannot be read, so the `find` fails — the sweep is the last program in the
+run on purpose, which makes that failure the run's exit status rather than a silent skip. Or they are
+mid-merge `*.fNNN.*` intermediates, which sit outside the suffixes the sweep targets and are kept rather
+than risk unrelated media ([[adr-0022-download-cancellation-and-partial-cleanup]]).
+**Fix:** look for `*.part`, `*.part-Frag*` and `*.ytdl` beside the finished file first. If the run
+reported a clean `killed`, check `~/.config/yt-dlp/config` for a `--paths temp:` line and re-run the
+sweep by hand once you are sure no writer is alive; if it reported an error, fix the directory's
+permissions and cancel again. The sweep is deliberately narrow: it anchors on the video id, stays at the
+configured directory's first level, never follows symlinks, and emits only when the id resolved — so
+anything it did not delete was either unnamed or unanchored, not missed.
+**Reference:** [status-slice.md](../status/status-slice.md) — `extractVideoId` and the sweep contract;
+[the download finished but no file appeared](#the-download-finished-but-no-file-appeared) for the
+adjacent case.
+
+## the download notification cannot be dismissed
+
+**Context:** the download row shows a live run (or a result) and there is no X on its right edge.
+**Root cause:** two different things, neither a fault. The widget raises **no system notification** — by
+design, so there is nothing waiting in the notification area to dismiss
+([[adr-0013-widget-update-check-and-release-site]]); the in-widget feedback row *is* the notification.
+And on that row the dismiss X is shown **only when no download is in flight**: while a run is live the
+right edge carries STOP instead, because an X that silently cancelled-and-deleted would risk the
+in-progress download ([[adr-0022-download-cancellation-and-partial-cleanup]]).
+**Fix:** wait for the run to end — the X appears with the result — or press STOP and let the stop finish.
+The row also cannot be collapsed away while a download is in flight, so a live STOP is always reachable.
+**Reference:** [../widget/ui-surfaces.md](../widget/ui-surfaces.md) — the video download row's usage
+pattern.
+
+## the stop button refuses to cancel a download that already finished
+
+**Context:** the run ends in the same instant STOP is pressed: the stop answers `not-running`, the run's
+own result then lands on the row, and the row keeps it. This is a race, not a click on a settled row — a
+row that already shows `Saved to …` (or a failure) has no STOP at all, because the button is
+`visible: downloadInFlight` and the very handler that renders the result clears that flag.
+**Root cause:** deliberate, and it is the point of the design. The stop program requires a **live** pid in
+the run's pid file; a process that already exited answers `not-running`, so the row keeps the download's
+own success or failure rather than overwriting it with a cancel it cannot prove. The click is visibly a
+no-op — never a false "cancelled" ([[adr-0022-download-cancellation-and-partial-cleanup]]).
+**Fix:** none — read the result. The race is inherent: the engine delivers exactly one event per one-shot,
+at process exit ([data-engine-contract.md](../status/data-engine-contract.md)), so the stop's own event can
+always arrive after the run's. When the stop does catch a live process, it signals the writer first and
+sweeps the partials second; when it does not, it changes nothing. The stop side cannot tell the two apart
+by itself — its own predicate even accepts a **zombie** pid — which is why the run's outcome is latched and
+a `killed` answer arriving after the run closed is discarded ([[adr-0022-download-cancellation-and-partial-cleanup]]).
+If instead the run really is still alive and nothing happens, that is the sibling symptom above
+([the stop button says the download could not be stopped](#the-stop-button-says-the-download-could-not-be-stopped)):
+an unwritable state directory leaves no pid file to find.
+**Reference:** [../status/status-slice.md](../status/status-slice.md) — `parseDownloadStopResult` and the
+`not-running` outcome.
+
+## the CI qmllint check fails on a clean widget
+
+**Context:** a pull request into `master` fails the `qmllint` status check with
+`qmllint error diagnostics: 0; unparseable/unopenable passes: 2`, while `qmllint` on the development
+machine reports the corpus clean.
+**Root cause:** the runner cannot resolve the five `org.kde.*` modules this corpus imports — and it
+installs none of the QtQuick modules it could resolve either. `ubuntu-24.04` (noble) offers candidates for
+`qml6-module-qtquick`, `-controls` and `-layouts` (Qt 6.4.2), but the job's install line passes
+`--no-install-recommends` and `qt6-declarative-dev-tools` does not pull them, while `org.kde.kirigami`,
+`libplasma6`, `qml6-module-org-kde-plasma` and `libkf6plasma5support6` have no candidate at all; so the
+linter emits 11 `Failed to import` (eight distinct modules), 253 `was not found` warnings and exits **255**
+over a corpus with zero error diagnostics and no parse-failure or `Failed to open file` diagnostic — CI
+runs `39055120672` (PR #5) and `38177079659`, same signature. The old gate read the bare exit status as a
+defect signal, so it was measuring the runner's package set instead of the code
+([[adr-0023-qmllint-gate-contract-correction]]).
+**Fix:** the gate now fails a pass on four legs — an `Error:`-severity diagnostic, a parse failure (the
+`[syntax]` category **or** the parser's untagged message text `Syntax error` / `Expected token` /
+`Unexpected token`, because the runner's Qt 6.4.2 prints parse failures with no category at all), a
+`Failed to open file` diagnostic, or a non-zero exit status **from a pass that resolved every import** —
+and the whole diagnostic stream is still printed. So if the check still fails, read the stream: a
+parse-failure line is a genuine parse error and an `Error:` line a genuine defect; fix those rather than
+silencing the job. Do **not** try to install the KDE modules on the runner: no such apt package exists on
+`ubuntu-24.04`, which is exactly why the gate is written the way it is. The job is pinned to
+`ubuntu-24.04` on purpose — its Qt is what all four legs were measured against, and `ubuntu-latest`
+migrates to Ubuntu 26 on 2026-10-19 ([[adr-0023-qmllint-gate-contract-correction]]).
+**Reference:** [verification-slice.md](verification-slice.md) — the CI evidence row and the
+diagnostic-stream convention;
+[../adrs/adr-0023-qmllint-gate-contract-correction.md](../adrs/adr-0023-qmllint-gate-contract-correction.md)
+— the measurement and the four legs.

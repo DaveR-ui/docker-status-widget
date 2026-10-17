@@ -43,8 +43,16 @@ Window {
             item.actionFeedback = previewActionFeedback
             item.downloaderEnabled = previewDownloaderEnabled
             item.downloadReady = true
-            item.downloadInFlight = false
-            item.downloadFeedback = ""
+            // The download row's live state, injected per state exactly like every value
+            // above: the in-flight flag drives the row's leading spinner and its STOP, and
+            // the feedback trio drives the label, the SeverityDot and the dismiss X. Without
+            // these the row could only ever render at rest, so neither new control would be
+            // pixel-reviewable (adr-0022).
+            item.downloadInFlight = previewDownloadInFlight
+            item.downloadStopInFlight = false
+            item.downloadFeedback = previewDownloadFeedback
+            item.downloadFeedbackSeverity = previewDownloadFeedbackSeverity
+            item.downloadFolderUrl = previewDownloadFolderUrl
             item.shutdownReady = true
             item.shutdownMinutes = 15
             item.shutdownMinutesText = "15"

@@ -1,17 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import {
     chmodSync,
     existsSync,
     mkdirSync,
     mkdtempSync,
     readFileSync,
+    readdirSync,
     rmSync,
+    symlinkSync,
     writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { createContext, runInContext } from "node:vm";
 
 /*
@@ -38,6 +40,13 @@ runInContext(source, createContext(sandbox));
  * through JSON moves them into this realm so the comparison is meaningful.
  */
 const plain = (value) => JSON.parse(JSON.stringify(value));
+
+/*
+ * root ignores every permission bit, so the one test that depends on an unreadable
+ * directory (the sweep surfacing find's own complaint) has nothing left to prove when the
+ * suite runs as root -- it would pass for the wrong reason and hide the real behaviour.
+ */
+const runningAsRoot = typeof process.getuid === "function" && process.getuid() === 0;
 
 const {
     DAEMON_ACTIVE,
@@ -84,12 +93,22 @@ const {
     resolveDownloadDirectory,
     formatDownloadDirectory,
     buildFolderUrl,
+    resolveDownloadStopDirectory,
+    resolveDownloadStopFile,
+    extractVideoId,
     resolveYtDlpBinary,
     resolveCookiesBrowser,
     resolveJsRuntime,
     buildVideoDownloadCommand,
     parseDownloadedFile,
     extractErrorLine,
+    DOWNLOAD_STOP_MARKER_PREFIX,
+    DOWNLOAD_STOP_KILLED,
+    DOWNLOAD_STOP_KILLED_UNSWEPT,
+    DOWNLOAD_STOP_NOT_RUNNING,
+    DOWNLOAD_STOP_UNKNOWN,
+    buildDownloadStopCommand,
+    parseDownloadStopResult,
     SHUTDOWN_MINUTES_DEFAULT,
     SHUTDOWN_MINUTES_MINIMUM,
     resolveShutdownMinutes,
@@ -873,6 +892,13 @@ const YOUTUBE_URL =
     "https://www.youtube.com/watch?v=ucRulNQsuYQ&list=RDucRulNQsuYQ&start_radio=1";
 const TWITTER_URL = "https://x.com/vinoypastillas/status/2098437080359502066";
 
+/*
+ * A widget-instance stamp, the value main.qml mints once per widget load. It is the half
+ * of the pid file's name that keeps a reloaded widget's restarted run-token counter from
+ * colliding with a previous instance's still-running download.
+ */
+const SESSION_STAMP = "20261017-101530";
+
 test("classifyVideoUrl accepts the two URL shapes this widget promises", () => {
     assert.equal(classifyVideoUrl(YOUTUBE_URL), VIDEO_KIND_YOUTUBE);
     assert.equal(classifyVideoUrl(TWITTER_URL), VIDEO_KIND_TWITTER);
@@ -1092,6 +1118,8 @@ test("buildVideoDownloadCommand still reads Firefox cookies when no browser is c
     const command = buildVideoDownloadCommand({
         directory: "/home/x/Downloads",
         home: "/home/x",
+        sessionStamp: SESSION_STAMP,
+        token: 1,
         url: TWITTER_URL,
     });
 
@@ -1103,6 +1131,8 @@ test("buildVideoDownloadCommand uses the configured cookies browser", () => {
         directory: "/home/x/Downloads",
         home: "/home/x",
         cookiesBrowser: "chrome:Default",
+        sessionStamp: SESSION_STAMP,
+        token: 1,
         url: TWITTER_URL,
     });
 
@@ -1114,6 +1144,8 @@ test("buildVideoDownloadCommand omits the cookies flag when it is opted out", ()
         directory: "/home/x/Downloads",
         home: "/home/x",
         cookiesBrowser: "",
+        sessionStamp: SESSION_STAMP,
+        token: 1,
         url: TWITTER_URL,
     });
 
@@ -1125,6 +1157,8 @@ test("buildVideoDownloadCommand ignores a shell-shaped cookies browser", () => {
         directory: "/home/x/Downloads",
         home: "/home/x",
         cookiesBrowser: "firefox; rm -rf ~",
+        sessionStamp: SESSION_STAMP,
+        token: 1,
         url: TWITTER_URL,
     });
 
@@ -1151,11 +1185,23 @@ test("buildVideoDownloadCommand assembles the documented option set", () => {
         binary: "yt-dlp",
         directory: "~/Downloads",
         home: "/home/x",
+        sessionStamp: SESSION_STAMP,
         url: YOUTUBE_URL,
         token: 4,
     });
 
-    assert.ok(command.startsWith("'yt-dlp'"), command);
+    // The pid hand-off is the whole reason the download can be cancelled at all: it is the
+    // one handle the engine refuses to expose, and `exec` is what makes the published pid
+    // yt-dlp's own rather than a shell's.
+    assert.ok(
+        command.startsWith(
+            "mkdir -p '/home/x/.local/state/docker-status'"
+                + " ; echo $$ > '/home/x/.local/state/docker-status/"
+                + "download-" + SESSION_STAMP + "-4.pid'"
+                + " ; exec 'yt-dlp'",
+        ),
+        command,
+    );
     assert.ok(command.includes("--cookies-from-browser 'firefox'"), command);
     assert.ok(command.includes("--js-runtimes 'node'"), command);
     assert.ok(command.includes("--no-playlist"), command);
@@ -1167,11 +1213,74 @@ test("buildVideoDownloadCommand assembles the documented option set", () => {
     assert.ok(!command.includes("\n"), "the engine gets a single shell line");
 });
 
+test("buildVideoDownloadCommand refuses a run nobody could ever cancel", () => {
+    // No home means no state directory, no state directory means no pid file, and no pid
+    // file means STOP can never find this download. The empty command is that refusal,
+    // and main.qml drops it before it reaches the engine -- the same contract
+    // buildComposeProjectCommand() states for the standalone bucket.
+    assert.equal(
+        buildVideoDownloadCommand({
+            directory: "~/Downloads",
+            sessionStamp: SESSION_STAMP,
+            token: 4,
+            url: YOUTUBE_URL,
+        }),
+        "",
+    );
+    assert.equal(
+        buildVideoDownloadCommand({
+            directory: "~/Downloads",
+            home: "relative/home",
+            sessionStamp: SESSION_STAMP,
+            token: 4,
+            url: YOUTUBE_URL,
+        }),
+        "",
+    );
+    // A control character INSIDE the value is what normalizeOutput() cannot trim away;
+    // trailing whitespace is trimmed, exactly like every other resolver in this file.
+    assert.equal(
+        buildVideoDownloadCommand({
+            directory: "~/Downloads",
+            home: "/ho\nme/x",
+            sessionStamp: SESSION_STAMP,
+            token: 4,
+            url: YOUTUBE_URL,
+        }),
+        "",
+    );
+
+    // The stop file's NAME is built from the stamp and the token, so a token that is not a
+    // plain name is a refusal too -- and a download with no token has nothing to be found
+    // by, which is the same contract stated from the other side.
+    assert.equal(
+        buildVideoDownloadCommand({
+            directory: "~/Downloads",
+            home: "/home/x",
+            sessionStamp: "bad stamp",
+            token: 4,
+            url: YOUTUBE_URL,
+        }),
+        "",
+    );
+    assert.equal(
+        buildVideoDownloadCommand({
+            directory: "~/Downloads",
+            home: "/home/x",
+            sessionStamp: SESSION_STAMP,
+            url: YOUTUBE_URL,
+        }),
+        "",
+    );
+});
+
 test("buildVideoDownloadCommand omits the runtime flag when it is opted out", () => {
     const command = buildVideoDownloadCommand({
         directory: "/home/x/Downloads",
         home: "/home/x",
         jsRuntime: "",
+        sessionStamp: SESSION_STAMP,
+        token: 5,
         url: TWITTER_URL,
     });
 
@@ -1184,15 +1293,25 @@ test("buildVideoDownloadCommand falls back on unquotable configuration", () => {
         directory: "relative/dir",
         home: "/home/x",
         jsRuntime: "node; rm -rf ~",
+        sessionStamp: SESSION_STAMP,
+        token: 6,
         url: TWITTER_URL,
     });
 
-    assert.ok(command.startsWith("'yt-dlp'"), command);
+    assert.ok(
+        command.startsWith(
+            "mkdir -p '/home/x/.local/state/docker-status'"
+                + " ; echo $$ > '/home/x/.local/state/docker-status/"
+                + "download-" + SESSION_STAMP + "-6.pid'"
+                + " ; exec 'yt-dlp'",
+        ),
+        command,
+    );
     assert.ok(command.includes("--cookies-from-browser 'firefox'"), command);
     assert.ok(command.includes("--js-runtimes 'node'"), command);
     assert.ok(command.includes("-P '/home/x/Downloads'"), command);
     assert.ok(!command.includes("rm -rf"), command);
-    assert.ok(!command.endsWith("# plasma-run-undefined"), "no token means no comment");
+    assert.ok(command.endsWith("# plasma-run-6"), command);
 });
 
 /*
@@ -1234,6 +1353,8 @@ test("the assembled command reaches yt-dlp as separate, intact arguments", () =>
         buildVideoDownloadCommand({
             directory: "~/Downloads",
             home: "/home/x",
+            sessionStamp: SESSION_STAMP,
+            token: 1,
                 url: TWITTER_URL,
         }),
     );
@@ -1260,6 +1381,8 @@ test("a URL carrying shell syntax stays one inert argument", () => {
         return buildVideoDownloadCommand({
             directory: "/home/x/Downloads",
             home: "/home/x",
+            sessionStamp: SESSION_STAMP,
+            token: 1,
                 url: hostile,
         });
     });
@@ -1276,6 +1399,8 @@ test("the real YouTube URL with its &list= stays one argument", () => {
         buildVideoDownloadCommand({
             directory: "/home/x/Downloads",
             home: "/home/x",
+            sessionStamp: SESSION_STAMP,
+            token: 1,
                 url: YOUTUBE_URL,
         }),
     );
@@ -1291,6 +1416,8 @@ test("a URL containing a quote cannot break out of the argument", () => {
         return buildVideoDownloadCommand({
             directory: "/home/x/Downloads",
             home: "/home/x",
+            sessionStamp: SESSION_STAMP,
+            token: 1,
                 url: hostile,
         });
     });
@@ -1350,6 +1477,754 @@ test("extractErrorLine falls back to the last line and stays bounded", () => {
     assert.ok(extracted.length <= 240, `expected a bounded message, got ${extracted.length}`);
     assert.ok(extracted.startsWith("ERROR: xxx"), extracted);
     assert.ok(extracted.endsWith("\u2026"), extracted);
+});
+
+/*
+ * ---------------------------------------------------------------------------
+ * Download cancellation
+ * ---------------------------------------------------------------------------
+ * The engine hands out no handle on a running command, so cancelling a download
+ * means a SECOND one-shot that signals a pid the FIRST one published. These
+ * tests therefore split in two, and both halves matter:
+ *
+ *   - the pure half, where the pid file's name, the id the sweep anchors on and
+ *     the marker the reply carries are decided. A wrong name makes STOP signal a
+ *     stranger; a wrong id makes the sweep delete a live browser's partials; a
+ *     wrong marker makes the row claim a cancel that never happened.
+ *   - the shell half, where the assembled programs run through a real /bin/sh.
+ *     A regex assertion about a command string is not evidence that a shell
+ *     parses it that way, and `$$` + `exec`, a `case` guard on a hand-editable
+ *     pid file and a bracket-expression glob are exactly the things a regex
+ *     would get wrong.
+ *
+ * Every fixture lives under its own temp HOME: nothing here writes to the real
+ * /home, and the two negative paths deliberately pay about a second each for a
+ * command that cannot be parameterised.
+ */
+
+test("the download-stop markers are stable, distinct and honest", () => {
+    assert.equal(DOWNLOAD_STOP_MARKER_PREFIX, "docker-status: ");
+    assert.equal(DOWNLOAD_STOP_KILLED, "killed");
+    assert.equal(DOWNLOAD_STOP_KILLED_UNSWEPT, "killed no-sweep");
+    assert.equal(DOWNLOAD_STOP_NOT_RUNNING, "not-running");
+    // "" is the "this run told us nothing" answer, so a failed kill can never be
+    // mistaken for a clean cancel.
+    assert.equal(DOWNLOAD_STOP_UNKNOWN, "");
+
+    const markers = [
+        DOWNLOAD_STOP_KILLED,
+        DOWNLOAD_STOP_KILLED_UNSWEPT,
+        DOWNLOAD_STOP_NOT_RUNNING,
+        DOWNLOAD_STOP_UNKNOWN,
+    ];
+    assert.equal(new Set(markers).size, markers.length, "the four answers must stay distinct");
+});
+
+test("resolveDownloadStopDirectory builds the XDG state path and refuses an unusable home", () => {
+    assert.equal(resolveDownloadStopDirectory("/home/x"), "/home/x/.local/state/docker-status");
+    // A trailing slash is trimmed, so the state path never carries a double separator.
+    assert.equal(resolveDownloadStopDirectory("/home/x/"), "/home/x/.local/state/docker-status");
+
+    // Unlike the download directory there is no safe fallback here: "where do I find
+    // my own pid file" has no default, and a wrong guess would signal a stranger.
+    assert.equal(resolveDownloadStopDirectory(""), "");
+    assert.equal(resolveDownloadStopDirectory(undefined), "");
+    assert.equal(resolveDownloadStopDirectory("relative/home"), "");
+    assert.equal(resolveDownloadStopDirectory("~/x"), "");
+    assert.equal(resolveDownloadStopDirectory("/ho\tme/x"), "");
+    assert.equal(resolveDownloadStopDirectory("/ho\nme/x"), "");
+});
+
+test("resolveDownloadStopFile names one download run and refuses a malformed name", () => {
+    const expected =
+        "/home/x/.local/state/docker-status/download-" + SESSION_STAMP + "-7.pid";
+
+    assert.equal(resolveDownloadStopFile("/home/x", SESSION_STAMP, 7), expected);
+    assert.equal(
+        resolveDownloadStopFile("/home/x", SESSION_STAMP, "7"),
+        expected,
+        "a numeric token and its string form must name the same file",
+    );
+    // Deterministic: identical inputs, identical bytes.
+    assert.equal(
+        resolveDownloadStopFile("/home/x", SESSION_STAMP, 7),
+        resolveDownloadStopFile("/home/x", SESSION_STAMP, 7),
+    );
+
+    // The stamp is the anti-collision half: a reloaded widget's token counter restarts
+    // at 0, so a token-only name could point at a previous instance's live download.
+    assert.notEqual(
+        resolveDownloadStopFile("/home/x", SESSION_STAMP, 0),
+        resolveDownloadStopFile("/home/x", "20261017-101531", 0),
+    );
+
+    // Refusals: no home, a home that is not absolute, a control character, and a stamp or
+    // token that is not a plain name.
+    assert.equal(resolveDownloadStopFile("", SESSION_STAMP, 7), "");
+    assert.equal(resolveDownloadStopFile("relative/home", SESSION_STAMP, 7), "");
+    assert.equal(resolveDownloadStopFile("/ho\nme/x", SESSION_STAMP, 7), "");
+    assert.equal(resolveDownloadStopFile("/home/x", "", 7), "");
+    assert.equal(resolveDownloadStopFile("/home/x", undefined, 7), "");
+    assert.equal(resolveDownloadStopFile("/home/x", "2026-10-17 10:15:30", 7), "");
+    assert.equal(resolveDownloadStopFile("/home/x", "../../etc/cron.d/x", 7), "");
+    assert.equal(resolveDownloadStopFile("/home/x", SESSION_STAMP, ""), "");
+    assert.equal(resolveDownloadStopFile("/home/x", SESSION_STAMP, "../../x"), "");
+    assert.equal(resolveDownloadStopFile("/home/x", SESSION_STAMP, "7; rm -rf ~"), "");
+});
+
+test("extractVideoId reads every allowed-host shape", () => {
+    // YouTube: the watch page's v= parameter, the two path shapes, and youtu.be.
+    assert.equal(extractVideoId(YOUTUBE_URL), "ucRulNQsuYQ");
+    assert.equal(extractVideoId("https://www.youtube.com/watch?v=ucRulNQsuYQ"), "ucRulNQsuYQ");
+    assert.equal(
+        extractVideoId("https://www.youtube.com/watch?app=desktop&v=ucRulNQsuYQ&t=30s"),
+        "ucRulNQsuYQ",
+        "the v= parameter is matched by name, not by position",
+    );
+    assert.equal(extractVideoId("https://m.youtube.com/watch?v=abc123"), "abc123");
+    assert.equal(extractVideoId("https://music.youtube.com/watch?v=abc123"), "abc123");
+    assert.equal(extractVideoId("https://www.youtube.com/shorts/abc123"), "abc123");
+    assert.equal(extractVideoId("https://www.youtube.com/live/abc123?si=x"), "abc123");
+    assert.equal(extractVideoId("https://youtu.be/abc123"), "abc123");
+    assert.equal(extractVideoId("https://youtu.be/abc123?t=30"), "abc123");
+    assert.equal(extractVideoId("https://www.youtu.be/abc123"), "abc123");
+
+    // X / Twitter: the /status/<id> shape, on every allow-listed host.
+    assert.equal(extractVideoId(TWITTER_URL), "2098437080359502066");
+    assert.equal(extractVideoId("https://twitter.com/foo/status/1234567890"), "1234567890");
+    assert.equal(extractVideoId("https://www.twitter.com/foo/status/1234567890"), "1234567890");
+    assert.equal(extractVideoId("https://mobile.twitter.com/foo/status/1234567890"), "1234567890");
+    assert.equal(extractVideoId("https://www.x.com/foo/status/1234567890"), "1234567890");
+});
+
+test("extractVideoId refuses anything that is not one allow-listed video", () => {
+    // Non-allow-listed hosts, and the allow-list is classifyVideoUrl's, not a copy of it.
+    assert.equal(extractVideoId("https://vimeo.com/123"), "");
+    assert.equal(extractVideoId("https://youtube.com.evil.tld/watch?v=abc"), "");
+    assert.equal(extractVideoId("https://notyoutube.com/shorts/abc"), "");
+    assert.equal(extractVideoId("https://x.com.evil.tld/foo/status/123"), "");
+
+    // Playlist-only and parameter-less links name no single video.
+    assert.equal(extractVideoId("https://www.youtube.com/playlist?list=PLabcdef"), "");
+    assert.equal(extractVideoId("https://www.youtube.com/watch?list=PLabcdef"), "");
+    assert.equal(extractVideoId("https://www.youtube.com/watch?v="), "");
+    assert.equal(extractVideoId("https://www.youtube.com/"), "");
+    assert.equal(extractVideoId("https://youtu.be"), "");
+
+    // Garbage and shapes classifyVideoUrl refuses before the id is ever read.
+    assert.equal(extractVideoId(""), "");
+    assert.equal(extractVideoId(undefined), "");
+    assert.equal(extractVideoId(null), "");
+    assert.equal(extractVideoId("not a url"), "");
+    assert.equal(extractVideoId("http://www.youtube.com/watch?v=abc"), "");
+    assert.equal(extractVideoId("https://www.youtube.com/watch?v=1'; rm -rf ~; echo '"), "");
+});
+
+test("extractVideoId's charset is what keeps the id out of a glob pattern", () => {
+    // A `$(id)`-shaped id, a `*`, a `[` and a newline are all outside the charset. That
+    // is load-bearing, not cosmetic: the id is interpolated into a `find -name` pattern,
+    // and a glob metacharacter there would widen the sweep beyond this run's partials.
+    for (const hostile of [
+        "https://youtu.be/$(id)",
+        "https://youtu.be/`id`",
+        "https://youtu.be/abc*",
+        "https://youtu.be/abc[",
+        "https://youtu.be/abc]",
+        "https://youtu.be/a b",
+        "https://youtu.be/a;b",
+        "https://youtu.be/a\\b",
+        "https://youtu.be/a\nb",
+        "https://x.com/foo/status/12$(id)",
+    ]) {
+        assert.equal(extractVideoId(hostile), "", hostile);
+    }
+
+    // A "?" and a "#" end the id rather than extending it, and what comes back still
+    // carries no glob metacharacter.
+    assert.equal(extractVideoId("https://youtu.be/abc?"), "abc");
+    assert.equal(extractVideoId("https://youtu.be/abc#t=30"), "abc");
+
+    // The bound: 32 is above YouTube's 11-character id and above an X snowflake's 19
+    // digits, and below any length that could matter to a pattern.
+    assert.equal(extractVideoId("https://youtu.be/" + "a".repeat(32)), "a".repeat(32));
+    assert.equal(extractVideoId("https://youtu.be/" + "a".repeat(33)), "");
+
+    // Whatever comes back is always safe to put in a bracket-free glob pattern.
+    for (const url of [YOUTUBE_URL, TWITTER_URL, "https://youtu.be/abc_1-2"]) {
+        const id = extractVideoId(url);
+        assert.ok(/^[A-Za-z0-9_-]+$/.test(id), `${id} must match the id charset`);
+        assert.ok(id.length <= 32, `${id} must stay within the bound`);
+    }
+});
+
+test("buildDownloadStopCommand refuses when the pid file cannot be resolved", () => {
+    const base = {
+        directory: "/home/x/Downloads",
+        home: "/home/x",
+        url: YOUTUBE_URL,
+        sessionStamp: SESSION_STAMP,
+        runToken: 1,
+        token: 2,
+    };
+
+    assert.equal(buildDownloadStopCommand({ ...base, home: "" }), "");
+    assert.equal(buildDownloadStopCommand({ ...base, home: "relative/home" }), "");
+    assert.equal(buildDownloadStopCommand({ ...base, sessionStamp: "" }), "");
+    assert.equal(buildDownloadStopCommand({ ...base, sessionStamp: "bad stamp" }), "");
+    assert.equal(buildDownloadStopCommand({ ...base, runToken: undefined }), "");
+    assert.equal(buildDownloadStopCommand({ ...base, runToken: "1; rm -rf ~" }), "");
+    assert.equal(buildDownloadStopCommand(undefined), "");
+});
+
+test("buildDownloadStopCommand is one shell line that ends with its own run token", () => {
+    const command = buildDownloadStopCommand({
+        directory: "/home/x/Downloads",
+        home: "/home/x",
+        url: YOUTUBE_URL,
+        sessionStamp: SESSION_STAMP,
+        runToken: 1,
+        token: 2,
+    });
+
+    // `runToken` locates the pid file; `token` is this command's own trailing token, and
+    // they are different numbers on purpose -- the engine treats the assignment as a set,
+    // so a second STOP click must be a distinct source.
+    assert.ok(
+        command.includes(
+            "/home/x/.local/state/docker-status/download-" + SESSION_STAMP + "-1.pid",
+        ),
+        command,
+    );
+    assert.ok(!command.includes("download-" + SESSION_STAMP + "-2.pid"), command);
+    assert.ok(command.endsWith("# plasma-run-2"), command);
+    assert.ok(!command.includes("\n"), "the engine gets a single shell line");
+    assert.ok(!command.includes("$HOME"), "the paths are resolved here, never by the shell");
+
+    // The anti-lie guard: the pid is only accepted while it is alive.
+    assert.ok(command.includes("kill -0 \"$p\""), command);
+    assert.ok(command.includes("kill -TERM \"$pid\""), command);
+    assert.ok(command.includes("kill -KILL \"$pid\""), command);
+    assert.ok(command.includes("rm -f " + shellQuote(resolveDownloadStopFile(
+        "/home/x",
+        SESSION_STAMP,
+        1,
+    ))), command);
+
+    // A kill that cannot be delivered must write its marker to STDERR and exit BEFORE the
+    // sweep: deleting the partials of a process that is still running is worse than
+    // leaving them. This is pinned as command shape rather than driven through a live
+    // shell, because making `kill -TERM` fail needs a process the suite's uid cannot
+    // signal, and pointing a fixture at one is not something to automate.
+    assert.ok(command.includes("kill failed for pid %s"), command);
+    assert.ok(command.indexOf("exit 1") < command.indexOf("find"), command);
+    assert.ok(
+        command.indexOf("kill failed") < command.indexOf("find"),
+        "the failure marker must precede the sweep it refuses to run",
+    );
+});
+
+test("buildDownloadStopCommand anchors the sweep on the id and drops it when there is none", () => {
+    const base = {
+        directory: "/home/x/Downloads",
+        home: "/home/x",
+        sessionStamp: SESSION_STAMP,
+        runToken: 1,
+        token: 2,
+    };
+
+    const withId = buildDownloadStopCommand({ ...base, url: YOUTUBE_URL });
+    // `[[]` and `[]]` are bracket expressions matching a literal "[" and "]", so the
+    // pattern means `* [ucRulNQsuYQ]*`: every partial of THIS run carries " [<id>]"
+    // immediately before the extension.
+    assert.ok(
+        withId.includes(
+            "find '/home/x/Downloads' -maxdepth 1 -type f \\( -name '*.part'"
+                + " -o -name '*.part-Frag*' -o -name '*.ytdl' \\)"
+                + " -name '* [[]ucRulNQsuYQ[]]*' -delete",
+        ),
+        withId,
+    );
+    assert.ok(withId.includes("printf 'docker-status: killed\\n'"), withId);
+    assert.ok(!withId.includes("killed no-sweep"), withId);
+
+    const withoutId = buildDownloadStopCommand({
+        ...base,
+        url: "https://www.youtube.com/playlist?list=PLabcdef",
+    });
+    assert.ok(!withoutId.includes("find"), withoutId);
+    assert.ok(!withoutId.includes("-delete"), withoutId);
+    // The honest marker: the process died, but the leftovers may still be there.
+    assert.ok(withoutId.includes("printf 'docker-status: killed no-sweep\\n'"), withoutId);
+
+    const noUrl = buildDownloadStopCommand({ ...base });
+    assert.ok(!noUrl.includes("find"), noUrl);
+    assert.ok(noUrl.includes("printf 'docker-status: killed no-sweep\\n'"), noUrl);
+});
+
+test("buildDownloadStopCommand appends a run token only when one is given", () => {
+    const bare = buildDownloadStopCommand({
+        directory: "/home/x/Downloads",
+        home: "/home/x",
+        url: YOUTUBE_URL,
+        sessionStamp: SESSION_STAMP,
+        runToken: 1,
+    });
+
+    assert.ok(!bare.endsWith("# plasma-run-undefined"), bare);
+    assert.ok(!bare.endsWith("# plasma-run-null"), bare);
+    assert.equal(
+        buildDownloadStopCommand({
+            directory: "/home/x/Downloads",
+            home: "/home/x",
+            url: YOUTUBE_URL,
+            sessionStamp: SESSION_STAMP,
+            runToken: 1,
+            token: null,
+        }),
+        bare,
+    );
+});
+
+test("parseDownloadStopResult reads the first marker and nothing else", () => {
+    assert.equal(
+        parseDownloadStopResult("docker-status: killed\n"),
+        DOWNLOAD_STOP_KILLED,
+    );
+    assert.equal(
+        parseDownloadStopResult("docker-status: killed no-sweep\n"),
+        DOWNLOAD_STOP_KILLED_UNSWEPT,
+    );
+    assert.equal(
+        parseDownloadStopResult("docker-status: not-running\n"),
+        DOWNLOAD_STOP_NOT_RUNNING,
+    );
+
+    // "killed" and "killed no-sweep" are two different claims, so a partial prefix must
+    // never be read as the shorter one.
+    assert.equal(parseDownloadStopResult("docker-status: killed no-sweep"), DOWNLOAD_STOP_KILLED_UNSWEPT);
+    assert.notEqual(
+        parseDownloadStopResult("docker-status: killed no-sweep"),
+        DOWNLOAD_STOP_KILLED,
+    );
+
+    // Garbage, an unknown marker and a marker in the wrong stream all degrade to "".
+    assert.equal(parseDownloadStopResult(""), DOWNLOAD_STOP_UNKNOWN);
+    assert.equal(parseDownloadStopResult(undefined), DOWNLOAD_STOP_UNKNOWN);
+    assert.equal(parseDownloadStopResult(null), DOWNLOAD_STOP_UNKNOWN);
+    assert.equal(parseDownloadStopResult("killed"), DOWNLOAD_STOP_UNKNOWN);
+    assert.equal(parseDownloadStopResult("KILLED"), DOWNLOAD_STOP_UNKNOWN);
+    assert.equal(parseDownloadStopResult("docker-status: KILLED"), DOWNLOAD_STOP_UNKNOWN);
+    assert.equal(parseDownloadStopResult("docker-status: cancelled"), DOWNLOAD_STOP_UNKNOWN);
+    assert.equal(parseDownloadStopResult("docker-status: "), DOWNLOAD_STOP_UNKNOWN);
+    assert.equal(
+        parseDownloadStopResult("find: '/x': Permission denied\ndocker-status: killed"),
+        DOWNLOAD_STOP_KILLED,
+        "an un-prefixed line is skipped, not mistaken for a marker",
+    );
+    assert.equal(
+        parseDownloadStopResult("docker-status: find: '/x': Permission denied"),
+        DOWNLOAD_STOP_UNKNOWN,
+        "a prefixed line that names no marker is not a cancellation",
+    );
+
+    // The FIRST marker decides, and a marker that matches nothing ends the scan rather
+    // than letting a later, better-looking line win.
+    assert.equal(
+        parseDownloadStopResult("docker-status: not-running\ndocker-status: killed"),
+        DOWNLOAD_STOP_NOT_RUNNING,
+    );
+    assert.equal(
+        parseDownloadStopResult("docker-status: bogus\ndocker-status: killed"),
+        DOWNLOAD_STOP_UNKNOWN,
+    );
+    assert.equal(
+        parseDownloadStopResult("noise\ndocker-status: killed\nmore noise"),
+        DOWNLOAD_STOP_KILLED,
+    );
+    assert.equal(
+        parseDownloadStopResult("docker-status: killed\r\n"),
+        DOWNLOAD_STOP_KILLED,
+        "CRLF arrives raw from the engine; normalizeOutput collapses it",
+    );
+});
+
+/*
+ * The shell half. Everything below runs the REAL assembled programs through /bin/sh,
+ * against a temp HOME and, where a pid is needed, a real child process.
+ */
+
+/** Runs one command through /bin/sh and never throws, so a non-zero exit is data. */
+function runShellProgram(command) {
+    try {
+        const stdout = execFileSync("/bin/sh", ["-c", command], {
+            encoding: "utf8",
+            stdio: ["ignore", "pipe", "pipe"],
+        });
+        return { stdout, stderr: "", code: 0 };
+    } catch (error) {
+        return {
+            stdout: error.stdout === undefined ? "" : String(error.stdout),
+            stderr: error.stderr === undefined ? "" : String(error.stderr),
+            code: error.status === undefined || error.status === null ? -1 : error.status,
+        };
+    }
+}
+
+/** Waits for a child to exit, or gives up: a failed kill must not hang the suite. */
+function waitForExit(child, timeoutMs) {
+    if (child.exitCode !== null || child.signalCode !== null) {
+        return Promise.resolve();
+    }
+    return Promise.race([
+        new Promise((resolve) => {
+            child.once("exit", resolve);
+        }),
+        new Promise((resolve) => {
+            setTimeout(resolve, timeoutMs);
+        }),
+    ]);
+}
+
+/**
+ * A stop run against the pid file the download command would have written.
+ *
+ * `contents` is what that file holds: any string is written verbatim, and null means the
+ * run never wrote one at all. Returns the shell's answer plus the file's path, so a test
+ * can assert both the marker and the cleanup.
+ */
+function runStopWithPidFile({ contents, directory, home, runToken, token, url }) {
+    const stopFile = resolveDownloadStopFile(home, SESSION_STAMP, runToken);
+
+    if (contents !== null) {
+        mkdirSync(dirname(stopFile), { recursive: true });
+        writeFileSync(stopFile, String(contents) + "\n", "utf8");
+    }
+
+    const result = runShellProgram(
+        buildDownloadStopCommand({
+            directory,
+            home,
+            url,
+            sessionStamp: SESSION_STAMP,
+            runToken,
+            token,
+        }),
+    );
+
+    return { result, stopFile };
+}
+
+/**
+ * Runs `body` with a REAL live pid in the run's pid file.
+ *
+ * The process has to be real, because the stop command's whole claim is that it signals a
+ * live pid and reports only what it actually achieved. The finally block guarantees a
+ * failed kill can never hang the suite.
+ */
+async function withLivePid(body) {
+    const dummy = spawn("sleep", ["120"], { detached: true, stdio: "ignore" });
+
+    try {
+        return await body(dummy.pid);
+    } finally {
+        await waitForExit(dummy, 5000);
+        try {
+            dummy.kill("SIGKILL");
+        } catch {
+            // Already gone, which is the outcome the test wants.
+        }
+    }
+}
+
+test("$$ plus exec publishes yt-dlp's own pid and the stop command kills it", async () => {
+    // The proof the whole design rests on, on a real shell: the download command's stub
+    // `exec`s `sleep`, so the pid `$$` wrote is the sleep's, and the only way the stop
+    // command can make that pid disappear is by signalling exactly that process. Without
+    // `exec` the pid would name a shell that outlives the download and yt-dlp would be
+    // orphaned with nobody left to kill it.
+    const home = mkdtempSync(join(tmpdir(), "dockerstatus-home-"));
+    const stubDir = mkdtempSync(join(tmpdir(), "dockerstatus-stub-"));
+    const stub = join(stubDir, "yt-dlp");
+    writeFileSync(stub, "#!/bin/sh\nexec sleep 30\n", "utf8");
+    chmodSync(stub, 0o755);
+
+    const url = YOUTUBE_URL;
+    const download = buildVideoDownloadCommand({
+        directory: home + "/Downloads",
+        home,
+        sessionStamp: SESSION_STAMP,
+        token: 1,
+        url,
+    });
+    const stop = buildDownloadStopCommand({
+        directory: home + "/Downloads",
+        home,
+        sessionStamp: SESSION_STAMP,
+        runToken: 1,
+        token: 2,
+        url,
+    });
+
+    const child = spawn("/bin/sh", ["-c", download], {
+        detached: true,
+        stdio: "ignore",
+        env: { ...process.env, PATH: `${stubDir}:${process.env.PATH}` },
+    });
+
+    const stopFile = resolveDownloadStopFile(home, SESSION_STAMP, 1);
+    let published = 0;
+    try {
+        for (let attempt = 0; attempt < 200 && published === 0; attempt += 1) {
+            if (existsSync(stopFile)) {
+                published = Number(readFileSync(stopFile, "utf8").trim());
+            }
+            if (published === 0) {
+                await new Promise((resolve) => {
+                    setTimeout(resolve, 20);
+                });
+            }
+        }
+        assert.ok(published > 0, "the download command must publish a pid");
+        assert.equal(published, child.pid, "$$ must be the process that became yt-dlp");
+
+        const { stdout, code } = runShellProgram(stop);
+        assert.equal(code, 0);
+        assert.equal(parseDownloadStopResult(stdout), DOWNLOAD_STOP_KILLED);
+
+        await waitForExit(child, 10000);
+        assert.throws(() => process.kill(published, 0), "the published pid must be gone");
+        assert.equal(existsSync(stopFile), false, "the pid file must be cleaned up");
+    } finally {
+        try {
+            child.kill("SIGKILL");
+        } catch {
+            // Already gone.
+        }
+        rmSync(home, { recursive: true, force: true });
+        rmSync(stubDir, { recursive: true, force: true });
+    }
+});
+
+test("the sweep deletes this run's partials and nothing else", async () => {
+    // The decoys are the point: a suffix-only "*.part" glob would take an unrelated
+    // browser's partial out of the default ~/Downloads, which is collateral damage on a
+    // live download. Anchoring on the id is what makes the sweep precise.
+    const home = mkdtempSync(join(tmpdir(), "dockerstatus-home-"));
+    const directory = join(home, "Downloads");
+    mkdirSync(directory, { recursive: true });
+
+    const keep = [
+        "Video [zzz999].mp4.part",
+        "notes.part",
+        "Video [ucRulNQsuYQ].mp4",
+    ];
+    const sweep = [
+        "Video [ucRulNQsuYQ].mp4.part",
+        "Video [ucRulNQsuYQ].webm.part-Frag3",
+        "Video [ucRulNQsuYQ].mp4.ytdl",
+        // The frozen pattern is `*.part-Frag*`, so a fragment's sidecar goes with it. That
+        // is right rather than incidental: a .info.json whose fragment is gone is orphaned.
+        "Video [ucRulNQsuYQ].mp4.part-Frag9.info.json",
+    ];
+    for (const name of keep.concat(sweep)) {
+        writeFileSync(join(directory, name), "partial", "utf8");
+    }
+
+    try {
+        const { result } = await withLivePid((pid) =>
+            runStopWithPidFile({
+                contents: pid,
+                directory,
+                home,
+                runToken: 1,
+                token: 2,
+                url: YOUTUBE_URL,
+            }),
+        );
+
+        assert.equal(result.code, 0, result.stderr);
+        assert.equal(parseDownloadStopResult(result.stdout), DOWNLOAD_STOP_KILLED);
+
+        const remaining = readdirSync(directory).sort();
+        assert.deepEqual(remaining, keep.sort(), "only this run's partials may be deleted");
+        for (const name of sweep) {
+            assert.equal(existsSync(join(directory, name)), false, `${name} must be gone`);
+        }
+    } finally {
+        rmSync(home, { recursive: true, force: true });
+    }
+});
+
+test("the sweep reaches only the configured directory, never deeper", async () => {
+    // -maxdepth 1 and -type f are what make a subdirectory's contents and a symlink
+    // out of reach: the sweep's reach must equal the download's reach, and yt-dlp writes
+    // flat files into -P's directory.
+    const home = mkdtempSync(join(tmpdir(), "dockerstatus-home-"));
+    const directory = join(home, "Downloads");
+    mkdirSync(join(directory, "sub"), { recursive: true });
+    writeFileSync(join(directory, "sub", "Video [ucRulNQsuYQ].mp4.part"), "x", "utf8");
+    writeFileSync(join(directory, "Video [ucRulNQsuYQ].mp4.part"), "x", "utf8");
+    writeFileSync(join(directory, "target.part"), "x", "utf8");
+    // A symlink named like a partial of this run: -type f with no -L must refuse it.
+    symlinkSync(join(directory, "target.part"), join(directory, "Video [ucRulNQsuYQ].mp4.ytdl"));
+
+    try {
+        const { result } = await withLivePid((pid) =>
+            runStopWithPidFile({
+                contents: pid,
+                directory,
+                home,
+                runToken: 1,
+                token: 2,
+                url: YOUTUBE_URL,
+            }),
+        );
+
+        assert.equal(result.code, 0, result.stderr);
+        assert.equal(parseDownloadStopResult(result.stdout), DOWNLOAD_STOP_KILLED);
+        assert.deepEqual(readdirSync(directory).sort(), [
+            "Video [ucRulNQsuYQ].mp4.ytdl",
+            "sub",
+            "target.part",
+        ]);
+        assert.equal(
+            existsSync(join(directory, "sub", "Video [ucRulNQsuYQ].mp4.part")),
+            true,
+            "the sweep must not descend",
+        );
+        assert.equal(existsSync(join(directory, "target.part")), true, "the symlink target must survive");
+    } finally {
+        rmSync(home, { recursive: true, force: true });
+    }
+});
+
+test("a missing download directory is a clean cancel, not a failure", async () => {
+    // No partial can exist where yt-dlp never created the output folder, so a missing
+    // directory skips the sweep, stays silent on stderr and still exits 0.
+    const home = mkdtempSync(join(tmpdir(), "dockerstatus-home-"));
+    const directory = join(home, "Downloads");
+
+    try {
+        const { result } = await withLivePid((pid) =>
+            runStopWithPidFile({
+                contents: pid,
+                directory,
+                home,
+                runToken: 1,
+                token: 2,
+                url: YOUTUBE_URL,
+            }),
+        );
+
+        assert.equal(result.code, 0, result.stderr);
+        assert.equal(result.stderr, "", "a missing directory is not an error");
+        assert.equal(parseDownloadStopResult(result.stdout), DOWNLOAD_STOP_KILLED);
+    } finally {
+        rmSync(home, { recursive: true, force: true });
+    }
+});
+
+test("an unreadable download directory surfaces on stderr and exits non-zero", {
+    skip: runningAsRoot ? "find reads a 0000 directory when the suite runs as root" : false,
+}, async () => {
+    // An existing-but-unreadable directory is the opposite case: the sweep was owed and
+    // could not run, so `find`'s own complaint goes to stderr and the run exits non-zero
+    // for the caller to surface, exactly like any other failed one-shot.
+    const home = mkdtempSync(join(tmpdir(), "dockerstatus-home-"));
+    const directory = join(home, "Downloads");
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(join(directory, "Video [ucRulNQsuYQ].mp4.part"), "x", "utf8");
+    chmodSync(directory, 0o000);
+
+    try {
+        const { result } = await withLivePid((pid) =>
+            runStopWithPidFile({
+                contents: pid,
+                directory,
+                home,
+                runToken: 1,
+                token: 2,
+                url: YOUTUBE_URL,
+            }),
+        );
+
+        assert.notEqual(result.code, 0, "an owed sweep that could not run must not look clean");
+        assert.ok(result.stderr !== "", "find's own complaint must reach the caller");
+        assert.ok(/[Pp]ermission denied/.test(result.stderr), result.stderr);
+    } finally {
+        chmodSync(directory, 0o755);
+        rmSync(home, { recursive: true, force: true });
+    }
+});
+
+test("no live pid means not-running, never a false cancellation", async () => {
+    // The anti-lie guard from the other side. A pid file left behind by a download that
+    // already ended, and a stop click for a run that never wrote one, must both report
+    // that there was nothing to cancel.
+    const home = mkdtempSync(join(tmpdir(), "dockerstatus-home-"));
+    const directory = join(home, "Downloads");
+    mkdirSync(directory, { recursive: true });
+
+    try {
+        // No pid file at all: a run that never published one, or whose file was already
+        // cleaned up.
+        const none = runStopWithPidFile({
+            contents: null,
+            directory,
+            home,
+            runToken: 41,
+            token: 42,
+            url: YOUTUBE_URL,
+        });
+        assert.equal(none.result.code, 0, none.result.stderr);
+        assert.equal(none.result.stderr, "");
+        assert.equal(
+            parseDownloadStopResult(none.result.stdout),
+            DOWNLOAD_STOP_NOT_RUNNING,
+        );
+        assert.equal(existsSync(none.stopFile), false);
+
+        // A stale pid file: present, numeric, and pointing at nothing.
+        const stale = runStopWithPidFile({
+            contents: "999999999",
+            directory,
+            home,
+            runToken: 43,
+            token: 44,
+            url: YOUTUBE_URL,
+        });
+        assert.equal(stale.result.code, 0, stale.result.stderr);
+        assert.equal(stale.result.stderr, "");
+        assert.equal(
+            parseDownloadStopResult(stale.result.stdout),
+            DOWNLOAD_STOP_NOT_RUNNING,
+        );
+        assert.equal(existsSync(stale.stopFile), false, "the stale file must still be cleaned up");
+
+        // A hand-edited pid file carrying shell syntax must never become a command: the
+        // case guard refuses it, and the run reports that nothing was running.
+        const hostile = runStopWithPidFile({
+            contents: "1; touch " + join(home, "injected"),
+            directory,
+            home,
+            runToken: 45,
+            token: 46,
+            url: YOUTUBE_URL,
+        });
+        assert.equal(hostile.result.code, 0, hostile.result.stderr);
+        assert.equal(hostile.result.stderr, "");
+        assert.equal(
+            parseDownloadStopResult(hostile.result.stdout),
+            DOWNLOAD_STOP_NOT_RUNNING,
+        );
+        assert.equal(
+            existsSync(join(home, "injected")),
+            false,
+            "the pid file's contents must never be executed",
+        );
+    } finally {
+        rmSync(home, { recursive: true, force: true });
+    }
 });
 
 /*
@@ -3223,16 +4098,17 @@ test("main.qml's source-count comment stays consistent with the new sources", ()
         mainQml.indexOf("P5Support.DataSource {", commentStart),
     );
 
-    assert.ok(comment.includes("tenth and eleventh"), comment);
-    assert.ok(comment.includes("nine before them"), comment);
+    assert.ok(comment.includes("eleventh and twelfth"), comment);
+    assert.ok(comment.includes("ten before them"), comment);
     assert.ok(comment.includes("composeAction"), comment);
     assert.ok(comment.includes("podmanLaunch"), "the restored launch source must be counted");
+    assert.ok(comment.includes("downloadStopAction"), "the new stop source must be counted");
 
-    // The comment is only honest if the file really declares eleven sources.
+    // The comment is only honest if the file really declares twelve sources.
     assert.equal(
         mainQml.split("P5Support.DataSource {").length - 1,
-        11,
-        "main.qml must declare eleven data sources, as its own comment says",
+        12,
+        "main.qml must declare twelve data sources, as its own comment says",
     );
 });
 

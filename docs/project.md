@@ -1,9 +1,9 @@
 ---
-last_updated: 2026-10-13
+last_updated: 2026-10-17
 status: active
 description: Agent-facing entry point for the Docker Status plasmoid — stack, slices, commands, conventions, vocabulary and symptom routing.
 tags: [project, entry-point, routing, slices]
-version: 1.2
+version: 1.3
 doc_language: en
 ---
 
@@ -43,10 +43,14 @@ is polled, not streamed); no network beyond the one update check — no service 
 no POST, and no URL taken from configuration, because the manifest address is a fixed constant
 ([[adr-0013-widget-update-check-and-release-site]]); no command string taken from configuration — with
 **two** recorded exceptions instead of one: the video-download row, where configuration supplies only
-validated values inside a command the widget builds
-([[adr-0006-video-downloader-command-boundary]]), and the Podman Desktop launch, where the one
+validated values inside a command the widget builds — since
+[[adr-0022-download-cancellation-and-partial-cleanup]] that row builds **two** commands inside its one
+exception, the download and its stop-and-sweep, and neither gains an input it did not already have
+([[adr-0006-video-downloader-command-boundary]]) — and the Podman Desktop launch, where the one
 configuration-supplied value is a validated executable path that is itself the quoted command
-([[adr-0014-compose-grouping-and-podman-desktop-launch]]); the per-group compose play/stop adds a new
+([[adr-0014-compose-grouping-and-podman-desktop-launch]]); no unverifiable kill: the cancel signals only
+the pid the run wrote for itself, never a pid found in a leftover file, and `connectedSources = []` is
+never used as a stop — it ends the events, not the process; the per-group compose play/stop adds a new
 `docker` mutation built from a docker-reported project label, not from configuration, and both new
 mutations run unprivileged, so the polkit grant is not widened for them — hence no `docker compose`
 plugin dependency, no `docker exec`, no restart or remove action, no second Podman path, and no flag
@@ -163,6 +167,14 @@ README.md                             the single human entry point, with the cor
   fixed constants, so it is deliberately not a third boundary
   ([[adr-0013-widget-update-check-and-release-site]]). The run-token trick
   appends a shell comment, which is safe only for strings this project builds itself.
+- The download row's cancel is a real kill, not a disconnect. The download command writes its own pid
+  (`exec` replaces the shell the engine runs, so the pid in the file is yt-dlp's) and the second built
+  command, `downloadStopAction`, runs one single-line shell program that accepts only a **live** pid,
+  signals the writer before sweeping, and answers `killed` / `killed no-sweep` / `not-running`. The sweep
+  is anchored on the video id recovered from the already-validated URL, at `-maxdepth 1` under the
+  resolved directory, and a kill that was not accepted never sweeps. The row shows STOP only while a
+  download is in flight and its dismiss X only while none is, so neither control can act on a run the user
+  did not mean to touch ([[adr-0022-download-cancellation-and-partial-cleanup]]).
 - Every one-shot assignment goes through `withRunToken()`: the `executable` engine treats
   `connectedSources` as a **set**, so an identical command string is not re-executed.
 - `dockerstatus.js` carries no QML types and no side effects; keep it ES5-style. The test harness
@@ -206,8 +218,15 @@ README.md                             the single human entry point, with the cor
   or control character.
 - **Video kind** — `youtube` or `twitter`, decided by the link's host; it drives the in-progress
   message and nothing else.
+- **Video id** — the id yt-dlp substitutes for `%(id)s`, recovered from the already-allow-listed URL by
+  `extractVideoId()` and accepted only when it matches `^[A-Za-z0-9_-]+$`; that charset is what makes it
+  safe as a `find` filename pattern, and it is the anchor the partial sweep is built on
+  ([[adr-0022-download-cancellation-and-partial-cleanup]]).
 - **Download job** — one `downloadAction` one-shot: a yt-dlp command whose `stdout`/`stderr` accumulate
-  across events until the event carrying `exit code` closes it.
+  across events until the event carrying `exit code` closes it. It is cancellable through the
+  `downloadStopAction` one-shot, which signals the pid the run wrote for itself and then sweeps the
+  documented partials; a run that already ended answers `not-running`, so the row never claims a cancel it
+  cannot prove ([[adr-0022-download-cancellation-and-partial-cleanup]]).
 - **Shutdown countdown** — widget-owned state: a `Date.now()` wall-clock deadline plus a one-second
   ticker, armed by play and cancelled locally by stop (no privilege). The configured minutes size the
   deadline only and never reach the fixed `systemctl poweroff` command.
@@ -278,3 +297,13 @@ README.md                             the single human entry point, with the cor
   [troubleshooting.md](verification/troubleshooting.md#the-machine-powers-off-without-asking-for-a-password)
 - "the widget never says an update is available" →
   [troubleshooting.md](verification/troubleshooting.md#the-widget-never-says-an-update-is-available)
+- "the stop button says the download could not be stopped" →
+  [troubleshooting.md](verification/troubleshooting.md#the-stop-button-says-the-download-could-not-be-stopped)
+- "the partial file is still in the download folder after cancelling" →
+  [troubleshooting.md](verification/troubleshooting.md#the-partial-file-is-still-in-the-download-folder-after-cancelling)
+- "the download notification cannot be dismissed" →
+  [troubleshooting.md](verification/troubleshooting.md#the-download-notification-cannot-be-dismissed)
+- "the stop button refuses to cancel a download that already finished" →
+  [troubleshooting.md](verification/troubleshooting.md#the-stop-button-refuses-to-cancel-a-download-that-already-finished)
+- "the CI qmllint check fails on a clean widget" →
+  [troubleshooting.md](verification/troubleshooting.md#the-ci-qmllint-check-fails-on-a-clean-widget)

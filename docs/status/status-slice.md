@@ -4,7 +4,7 @@ category: status
 tags: [slice, generality, status, logic]
 aliases: [Status slice, Logic slice]
 related: [status-index, data-engine-contract, widget-slice]
-version: 1.2
+version: 1.3
 status: active
 ---
 
@@ -28,7 +28,9 @@ is testable without a network.
 container objects and their grouping by compose project; counting and the compact badge; severity
 mapping for both daemon and containers; the run-token helper; video-link classification; shell quoting;
 download-directory, binary, runtime
-and runtime resolution; download-command assembly; the Podman Desktop path resolver and the compose
+and runtime resolution; download-command assembly; the video-id recovery, the download-stop pid-file
+resolvers, the download-stop command assembly and the stop-outcome parser; the Podman Desktop path
+resolver and the compose
 and Podman command builders; download-result parsing; the shutdown-duration
 resolver and the countdown formatting helpers; the update-check command builder, the marker split, the
 version parsers and the version comparison.
@@ -71,7 +73,13 @@ severity. The public surface, and what each function guarantees:
 | `resolvePodmanDesktopPath(cfg, home)` | a plain name or path matching `^(~/)?[A-Za-z0-9._/+-]+$`, a leading `~/` expanded against home; empty or malformed → `podman-desktop` (`PODMAN_DESKTOP_DEFAULT`) |
 | `resolveJsRuntime(cfg)` | a valid runtime name; empty opts out and returns `""` so the flag is omitted; garbage falls back to `node` |
 | `resolveCookiesBrowser(cfg)` | a valid `BROWSER[+KEYRING][:PROFILE]` token matching `^[A-Za-z0-9._+:,-]+$`; empty opts out and returns `""` so the flag is omitted; garbage falls back to `firefox` |
-| `buildVideoDownloadCommand(opts)` | the assembled yt-dlp command, with `--cookies-from-browser` taken from the validated browser value (omitted when that value is `""`); omits `--js-runtimes` when the runtime is `""`; appends `withRunToken()` when a token is given |
+| `buildVideoDownloadCommand(opts)` | the assembled yt-dlp command, with `--cookies-from-browser` taken from the validated browser value (omitted when that value is `""`); omits `--js-runtimes` when the runtime is `""`; appends `withRunToken()` when a token is given; carries the fixed pid prefix — `mkdir -p '<stateDir>' ; echo $$ > '<stopFile>' ; exec 'yt-dlp' …` — so the run writes its **own** pid before `exec` turns the shell into the downloader. Returns `""` when no stop file can be resolved (no usable home, or a stamp/token that is not a plain name): a run that cannot be cancelled is not started ([[adr-0022-download-cancellation-and-partial-cleanup]]) |
+| `extractVideoId(rawUrl)` | the `%(id)s` value yt-dlp substitutes, recovered from an already-classified URL (it calls `classifyVideoUrl()` first, so a refused paste never reaches this far); `""` for a playlist-only link, an empty id, an id longer than 32 characters, or any id outside `^[A-Za-z0-9_-]+$` — so the no-glob-metacharacter guarantee is enforced here rather than trusted at the sweep |
+| `resolveDownloadStopDirectory(home)` | the project-owned state directory `<home>/.local/state/docker-status`; `""` when home is empty, not absolute or control-character-tainted — a wrong guess here would point the stop at a stranger's process, so there is no fallback |
+| `resolveDownloadStopFile(home, sessionStamp, token)` | the per-run pid file `<dir>/download-<sessionStamp>-<token>.pid`, resolved through `resolveDownloadStopDirectory()`; `""` when either half is not a plain `^[A-Za-z0-9._-]+$` name. `token` is the **download's** run token — the value `buildVideoDownloadCommand()` folded into the name — not the stop run's own token |
+| `buildDownloadStopCommand(opts)` | `""` when the stop file cannot be resolved; otherwise the single one-line shell program: poll ~1 s (5 × 0.2 s) for a **live** pid (`kill -0`); `kill -TERM`; a refused kill writes `docker-status: kill failed for pid N` to **stderr** and exits 1 **without sweeping** (never delete a partial whose writer was not signalled); wait ~1 s, `kill -KILL` if still alive, `rm -f` the pid file, print the outcome marker, then run the sweep **last** — only when `extractVideoId()` resolved, anchored on that id at `-maxdepth 1`, `-type f`, no `-L` — so the sweep's exit status is the run's; no live pid means `rm -f` plus the `not-running` marker |
+| `DOWNLOAD_STOP_MARKER_PREFIX`, `DOWNLOAD_STOP_KILLED`, `DOWNLOAD_STOP_KILLED_UNSWEPT`, `DOWNLOAD_STOP_NOT_RUNNING`, `DOWNLOAD_STOP_UNKNOWN` | the stop protocol's constants: the stdout prefix `docker-status: `, the three outcome strings `killed` / `killed no-sweep` / `not-running`, and `""` for a run that said nothing at all |
+| `parseDownloadStopResult(rawOutput)` | the outcome parsed out of the stop one-shot's stdout; the **first** prefixed line decides and must match one of the three markers exactly, so an absent, unknown or wrong-stream marker answers `DOWNLOAD_STOP_UNKNOWN` (`""`) instead of being read as a cancel; stderr is never consulted |
 | `COMPOSE_PROJECT_STANDALONE`, `COMPOSE_ACTION_START`, `COMPOSE_ACTION_STOP`, `PODMAN_DESKTOP_DEFAULT` | the compose/Podman constants: the no-project bucket (`""`), the two actions `buildComposeProjectCommand()` accepts, and the fallback executable name (`podman-desktop`) |
 | `buildComposeProjectCommand(opts)` | the assembled `docker start\|stop $(docker ps -aq --filter 'label=com.docker.compose.project=<project>')`, the project name one shell-quoted argument; returns `""` for the standalone bucket or an action outside `COMPOSE_ACTION_START`/`COMPOSE_ACTION_STOP`; appends `withRunToken()` when a token is given |
 | `buildPodmanDesktopCommand(opts)` | the quoted resolved path plus the run token and nothing else — no flag channel, no free-form arguments; appends `withRunToken()` when a token is given |
@@ -95,6 +103,23 @@ helpers own the whole safety argument for the one command that is not a fixed co
 classified before a command exists, and every value interpolated into the command — URL and
 configuration alike — goes through `shellQuote()`. The boundary itself is recorded in
 [../adrs/adr-0006-video-downloader-command-boundary.md](../adrs/adr-0006-video-downloader-command-boundary.md).
+
+The download row now builds **two** commands inside its one exception, and they share the same validated
+inputs. `buildVideoDownloadCommand()` writes the run's own pid from a fixed prefix — `exec` replaces the
+shell, so the pid in the file is the downloader's, not a wrapper's — and refuses outright (`""`) when no
+usable home or no plain-named stamp/token can name that file, because a run that cannot be located is a
+run that cannot be cancelled; the ` ; ` separators are deliberate fail-open, so an unwritable state
+directory degrades the download to "not cancellable" instead of breaking it. `buildDownloadStopCommand()`
+is the single one-line shell program that polls that file, accepts only a **live** pid (`kill -0`),
+`kill -TERM`s and, if needed, `kill -KILL`s the writer, prints the outcome marker, and sweeps **last**
+(and only when the id resolved) so the sweep's exit status is the run's: one command, one shell process,
+a guaranteed kill-before-sweep order. A refused kill exits 1 without sweeping, ever; a run whose pid is
+already gone answers `not-running`, so an ended download is never relabelled as cancelled; and a kill that
+succeeded with no id to anchor a sweep answers `killed no-sweep` rather than claiming the partials are
+gone. The second command's inputs are the same validated directory and home, the project-owned state path,
+and the id recovered by `extractVideoId()` from the already-allow-listed URL — which is why it is the
+second built command of the same exception rather than a third exception
+([[adr-0022-download-cancellation-and-partial-cleanup]]).
 
 The shutdown helpers own a different boundary: the configured minutes are a validated *duration*, not a
 command fragment, so `resolveShutdownMinutes` decides whether a countdown can be armed at all while the
@@ -183,3 +208,11 @@ exact bytes; the data engine contract documents the set semantics that make `wit
   segment (`01`) is refused everywhere at once, so an unusual release-version scheme would read as "no
   version" and therefore as "no update" rather than as an error. Accepted: a false negative is a silent
   non-event, a false positive is a wrong line the user reads.
+- The stop path's process handling is only partly testable here: the resolvers, the command text and the
+  marker parser are pure and pinned, and the kill itself is rehearsed through a real `/bin/sh` against a
+  stub that stays alive — but whether plasma5support really runs the command through a shell — the `$$`,
+  the `exec` and the run token all ride on that — is an assumption shared with the existing download
+  command, not a measured fact. The sweep's
+  reach is bounded by construction: one shell-quoted directory literal, `-maxdepth 1`, `-type f` with no
+  `-L`, and an id-anchored pattern emitted only when `extractVideoId()` resolved
+  ([[adr-0022-download-cancellation-and-partial-cleanup]]).

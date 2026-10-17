@@ -129,3 +129,14 @@ value in the `BROWSER[+KEYRING][:PROFILE]` grammar, garbage falls back to `firef
 omits the flag entirely. Nothing else in this record changes — the download row is still the one sanctioned
 exception, the URL is still validated before a command exists, quoting is still the protection, and a
 second command-building exception still needs its own ADR.
+
+2026-10-17 — the exact-command-shape clause (point 3, "The assembled command is exactly:
+`'yt-dlp' …`") is superseded by
+[adr-0022-download-cancellation-and-partial-cleanup](adr-0022-download-cancellation-and-partial-cleanup.md):
+the download command now carries a fixed prefix in front of the downloader —
+`mkdir -p '<stateDir>' ; echo $$ > '<stopFile>' ; exec '<binary>' … # plasma-run-N` — so the row can
+cancel a download and sweep the partials it left behind. Everything else this record says stands
+unchanged: the row is still the one sanctioned exception, validation still precedes the command, quoting
+is still the protection, `--no-playlist` and `--no-progress` are untouched, the widget still keeps
+yt-dlp's own configuration, and the stop command is the second built command of that same exception, not
+a third exception.

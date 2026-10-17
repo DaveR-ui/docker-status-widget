@@ -9,30 +9,33 @@ edit. The generated-file contract lives upstream:
 <!-- snapshot: 2026-10-17 -->
 ## Generated tag index
 
-- **adr** — adr-0001-corpus-location-and-entry-point, adr-0002-lowercase-naming-convention, adr-0003-slice-taxonomy, adr-0004-scoped-polkit-grant, adr-0005-doc-classes-and-body-shape-exceptions, adr-0006-video-downloader-command-boundary, adr-0007-stop-button-confirmation-and-narrow-grant, adr-0008-configurable-cookies-browser-and-bottom-text, adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation, adr-0011-fixed-dark-palette-from-mockup, adr-0013-widget-update-check-and-release-site, adr-0014-compose-grouping-and-podman-desktop-launch, adr-0015-update-indicator-opens-the-release-page, adr-0016-containers-flat-rows-and-podman-section-removal, adr-0017-podman-launch-button-and-topbar-removal, adr-0018-onrails-v1-4-retrofit, adr-0019-miscelanea-section-merge, adr-0020-footer-removal-and-pinned-popup-layout, adr-0021-download-folder-tooltip-and-open-folder-shortcut, adr-index, adr-template
+- **adr** — adr-0001-corpus-location-and-entry-point, adr-0002-lowercase-naming-convention, adr-0003-slice-taxonomy, adr-0004-scoped-polkit-grant, adr-0005-doc-classes-and-body-shape-exceptions, adr-0006-video-downloader-command-boundary, adr-0007-stop-button-confirmation-and-narrow-grant, adr-0008-configurable-cookies-browser-and-bottom-text, adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation, adr-0011-fixed-dark-palette-from-mockup, adr-0013-widget-update-check-and-release-site, adr-0014-compose-grouping-and-podman-desktop-launch, adr-0015-update-indicator-opens-the-release-page, adr-0016-containers-flat-rows-and-podman-section-removal, adr-0017-podman-launch-button-and-topbar-removal, adr-0018-onrails-v1-4-retrofit, adr-0019-miscelanea-section-merge, adr-0020-footer-removal-and-pinned-popup-layout, adr-0021-download-folder-tooltip-and-open-folder-shortcut, adr-0022-download-cancellation-and-partial-cleanup, adr-0023-qmllint-gate-contract-correction, adr-index, adr-template
 - **bootstrap** — bootstrap-protocol
 - **brownfield** — adr-0003-slice-taxonomy, slice-generalities-template
+- **cancellation** — adr-0022-download-cancellation-and-partial-cleanup
 - **catalog** — interface-surface-template
-- **ci** — adr-0013-widget-update-check-and-release-site
+- **ci** — adr-0013-widget-update-check-and-release-site, adr-0023-qmllint-gate-contract-correction
+- **cleanup** — adr-0022-download-cancellation-and-partial-cleanup
 - **cli** — installer-index, installer-slice
-- **command-boundary** — adr-0006-video-downloader-command-boundary, adr-0014-compose-grouping-and-podman-desktop-launch
+- **command-boundary** — adr-0006-video-downloader-command-boundary, adr-0014-compose-grouping-and-podman-desktop-launch, adr-0022-download-cancellation-and-partial-cleanup
 - **components** — ui-inventory-template
 - **compose** — adr-0014-compose-grouping-and-podman-desktop-launch, adr-0016-containers-flat-rows-and-podman-section-removal
 - **config** — adr-0008-configurable-cookies-browser-and-bottom-text, adr-0010-inline-shutdown-minutes-in-the-representation
 - **contract** — adr-0005-doc-classes-and-body-shape-exceptions, document-template, interface-surface-template, new-note-protocol
 - **convention** — adr-0002-lowercase-naming-convention
 - **daemon** — adr-0007-stop-button-confirmation-and-narrow-grant
-- **data-engine** — data-engine-contract
+- **data-engine** — adr-0022-download-cancellation-and-partial-cleanup, data-engine-contract
 - **decision-record** — adr-template
 - **decisions** — adr-index
 - **dev-aids** — tools-readme
 - **doc-classes** — adr-0005-doc-classes-and-body-shape-exceptions
 - **documentation** — adr-0001-corpus-location-and-entry-point, adr-0018-onrails-v1-4-retrofit
-- **download** — adr-0021-download-folder-tooltip-and-open-folder-shortcut
+- **download** — adr-0021-download-folder-tooltip-and-open-folder-shortcut, adr-0022-download-cancellation-and-partial-cleanup
 - **entry-point** — README, adr-0001-corpus-location-and-entry-point, project, project-md-template
 - **evidence** — render-preview, verification-index, verification-slice
 - **failures** — troubleshooting
 - **folder** — adr-0021-download-folder-tooltip-and-open-folder-shortcut
+- **gate** — adr-0023-qmllint-gate-contract-correction
 - **generality** — installer-slice, privilege-slice, status-slice, verification-slice, widget-slice
 - **github-pages** — adr-0013-widget-update-check-and-release-site
 - **hub** — adr-index, hub-template, installer-index, privilege-index, status-index, verification-index, widget-index
@@ -58,6 +61,7 @@ edit. The generated-file contract lives upstream:
 - **project-md** — project-md-template
 - **protocol** — bootstrap-protocol, new-note-protocol
 - **qml** — adr-0011-fixed-dark-palette-from-mockup, render-preview, widget-index, widget-slice, widget-ui-surfaces
+- **qmllint** — adr-0023-qmllint-gate-contract-correction
 - **render** — render-preview
 - **render-preview** — tools-readme
 - **retrofit** — adr-0018-onrails-v1-4-retrofit
@@ -79,10 +83,10 @@ edit. The generated-file contract lives upstream:
 - **tooling** — adr-0002-lowercase-naming-convention, tools-readme
 - **tooltip** — adr-0021-download-folder-tooltip-and-open-folder-shortcut
 - **troubleshooting** — troubleshooting, troubleshooting-template
-- **ui** — adr-0007-stop-button-confirmation-and-narrow-grant, adr-0008-configurable-cookies-browser-and-bottom-text, adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation, adr-0011-fixed-dark-palette-from-mockup, adr-0015-update-indicator-opens-the-release-page, adr-0016-containers-flat-rows-and-podman-section-removal, adr-0017-podman-launch-button-and-topbar-removal, adr-0019-miscelanea-section-merge, adr-0020-footer-removal-and-pinned-popup-layout, adr-0021-download-folder-tooltip-and-open-folder-shortcut, ui-inventory-template, widget-ui-surfaces
+- **ui** — adr-0007-stop-button-confirmation-and-narrow-grant, adr-0008-configurable-cookies-browser-and-bottom-text, adr-0009-widget-owned-shutdown-countdown, adr-0010-inline-shutdown-minutes-in-the-representation, adr-0011-fixed-dark-palette-from-mockup, adr-0015-update-indicator-opens-the-release-page, adr-0016-containers-flat-rows-and-podman-section-removal, adr-0017-podman-launch-button-and-topbar-removal, adr-0019-miscelanea-section-merge, adr-0020-footer-removal-and-pinned-popup-layout, adr-0021-download-folder-tooltip-and-open-folder-shortcut, adr-0022-download-cancellation-and-partial-cleanup, ui-inventory-template, widget-ui-surfaces
 - **update-check** — adr-0013-widget-update-check-and-release-site, adr-0015-update-indicator-opens-the-release-page
 - **validator** — adr-0002-lowercase-naming-convention
-- **verification** — tools-readme, troubleshooting, verification-index, verification-slice
+- **verification** — adr-0023-qmllint-gate-contract-correction, tools-readme, troubleshooting, verification-index, verification-slice
 - **video-download** — adr-0006-video-downloader-command-boundary, adr-0008-configurable-cookies-browser-and-bottom-text
 - **widget** — widget-index, widget-slice, widget-ui-surfaces
 - **yt-dlp** — adr-0006-video-downloader-command-boundary, adr-0008-configurable-cookies-browser-and-bottom-text

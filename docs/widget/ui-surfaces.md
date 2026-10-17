@@ -4,7 +4,7 @@ category: widget
 tags: [ui, inventory, widget, surfaces, qml]
 aliases: [UI Surfaces, Widget UI Inventory]
 related: [widget-index, widget-slice, troubleshooting]
-version: 1.3
+version: 1.5
 status: active
 ---
 
@@ -54,7 +54,10 @@ removed the footer on `contents/ui/` (−4 `[unqualified]` sites) and the bottom
 `contents/ui/config/` (−2), so it is now seven below adr-0017's 179. The earlier 97/53 and 32/5 counts
 predate adr-0017. Every
 "Verification" line below means both binaries were run; "the Qt6 semantic run is clean" records that
-measured result, and the exit code is not the evidence (Qt6 exits 0 unless `--max-warnings` is set).
+measured result, and the exit code is not the evidence (Qt6 exits 0 unless `--max-warnings` is set). That
+last sentence holds **on this machine**, where Plasma is installed and every import resolves: on the CI
+runner the same clean corpus exits 255 with zero error diagnostics, so the gate reads the exit status
+only where the imports resolved ([[adr-0023-qmllint-gate-contract-correction]]).
 
 ## Component inventory
 
@@ -114,11 +117,12 @@ Takes `daemonState`, `containers`, `daemonRunning`, `containerListEnabled`, `act
 `composeActionFeedback`, `composeActionFeedbackSeverity`, `podmanLaunchInFlight`, `podmanLaunchFeedback`,
 `podmanLaunchFeedbackSeverity`, `downloaderEnabled`, `cookiesBrowser`, `downloadReady`,
 `downloadDirectoryDisplay`, `downloadFolderUrl`,
-`downloadInFlight`, `downloadFeedback`, `downloadFeedbackSeverity`, `shutdownReady`, `shutdownMinutes`,
+`downloadInFlight`, `downloadStopInFlight`, `downloadFeedback`, `downloadFeedbackSeverity`, `shutdownReady`, `shutdownMinutes`,
 `shutdownMinutesText`, `shutdownPending`, `shutdownInFlight`, `shutdownRemainingSeconds`, `shutdownFeedback`,
 `shutdownFeedbackSeverity`, `updateAvailable` and `updateFeedback`; emits `startRequested()`,
 `stopRequested()`, `refreshRequested()`, `podmanLaunchRequested()`,
-`downloadRequested(url)`, `shutdownStartRequested()`, `shutdownStopRequested()`,
+`downloadRequested(url)`, `downloadStopRequested()`, `downloadDismissed()`,
+`shutdownStartRequested()`, `shutdownStopRequested()`,
 `shutdownMinutesEdited(text)`, `updateCheckRequested()`, `composeStartRequested(project)` and
 `composeStopRequested(project)`.
 
@@ -208,12 +212,18 @@ with a single tappable header — a bold `i18n("Miscelánea")` title and the sam
 headers use — a 1px separator, and one body holding the download sub-block above the countdown sub-block,
 each under its own inner title. The single header toggles one flag, `miscSectionExpanded` (local view
 state, default true, never persisted and never signalled); the ± glyph reads the derived `miscBodyVisible`
-(`miscSectionExpanded || shutdownPending`), not the raw bool, so the affordance cannot lie while a
-countdown is armed. The download sub-block keeps its own `visible: fullRoot.downloaderEnabled` gate, so
+(`miscSectionExpanded || shutdownPending || downloadInFlight`), not the raw bool, so the affordance cannot
+lie while a countdown is armed **or a download is in flight**. The second operand is not a weakening of
+that argument but its extension: the glyph and the body's own `visible` gate read the *same* derived
+property, so every operand added to the gate is automatically reflected in the glyph — the more states that
+force the body open, the more states in which a "+" beside hidden controls would be the lie, and the one
+the glyph is structurally unable to tell. The download sub-block keeps its own `visible: fullRoot.downloaderEnabled` gate, so
 its inner title "Import content", the YouTube/X URL label, the
-`videoUrlField` + `downloadButton` + BusyIndicator row, the cookies line, the unsupported-paste line, the
-SeverityDot feedback row and a trailing 1px hairline all disappear together when the setting is off (the
-hairline is the sub-block's last child, so it never leaves a dangling rule). The countdown sub-block opens
+`videoUrlField` + `downloadButton` row, the cookies line, the unsupported-paste line, the
+SeverityDot feedback row — whose leading slot now carries the busy indicator and whose right edge carries
+the live STOP and the dismiss X in their mutually exclusive states — and a trailing 1px hairline all
+disappear together when the setting is off (the hairline is the sub-block's last child, so it never leaves
+a dangling rule). The countdown sub-block opens
 with its inner title "Countdown to Extinction" and the 35x35 "◷" timer tile, moved inside the body beside
 that title; below them sit the unchanged minutes row — a "Minutes until
 power-off:" label with an inline `TextField` (`shutdownMinutesField`) — a wide play button ("Shut down" /
@@ -280,9 +290,12 @@ raising a notification instead of an icon, or showing the icon when no update ex
 #### Verification
 `qmllint` (both binaries — see the verification-tooling note; the Qt6 semantic run is clean); a probe with a deliberately failing command confirmed the failure path renders — that
 probe is **not** recorded in the repository, so treat the failure path as reviewed, not tested. The
-merged Miscelánea section was exercised through the headless render harness ([[render-preview]]) in three
-states — every block open, an armed countdown, and the downloader-off state — via
-`QT_QPA_PLATFORM=offscreen python3 tools/render_preview.py`.
+merged Miscelánea section was exercised through the headless render harness ([[render-preview]]) in five
+states — `active` (both sub-blocks open), `inactive_armed` (an armed countdown reading "Powering off in
+12:34"), `unknown_update` (the downloader-off state), `downloading` (the in-flight row with its live STOP)
+and `download_failed` (the settled failure row with its dismiss X) — via
+`QT_QPA_PLATFORM=offscreen python3 tools/render_preview.py`. Two controls remain without a state of their
+own: the folder-open success icon and the STOP's settling look ([[render-preview]], known gaps).
 
 ### Video download row
 
@@ -297,15 +310,19 @@ separate component file, and it exists only inside the full representation.
 
 #### Interface
 Reads `downloaderEnabled`, `downloadReady`, `downloadDirectoryDisplay`, `downloadFolderUrl`,
-`downloadInFlight`, `downloadFeedback` and
-`downloadFeedbackSeverity`; emits `downloadRequested(url)` with the raw field text. It builds no command
-and touches no `DataSource`.
+`downloadInFlight`, `downloadStopInFlight`, `downloadFeedback` and
+`downloadFeedbackSeverity`; emits `downloadRequested(url)` with the raw field text,
+`downloadStopRequested()` when the row's STOP is pressed and `downloadDismissed()` when its X is pressed.
+It builds no command and touches no `DataSource`.
 
 #### Data Flow
 `main.qml` owns the `download*` state and `root.downloadVideo(url)` validates the paste before a command
 exists; the row only reports the paste and renders the result. `downloadReady` is true once the one-shot
 `homeSource` has reported `$HOME`, because the resolved download directory is built from it. The row
-reuses `SeverityDot` for its feedback, so no second severity-to-colour mapping exists.
+reuses `SeverityDot` for its feedback, so no second severity-to-colour mapping exists. The stop is the
+same shape one step further along: the row emits `downloadStopRequested()` and `main.qml` answers with
+`DockerStatus.buildDownloadStopCommand()` on the `downloadStopAction` one-shot, whose outcome the row then
+renders on that same feedback row ([[adr-0022-download-cancellation-and-partial-cleanup]]).
 
 #### Usage Pattern
 Shown only while the `showVideoDownloader` setting is on, as a sub-block inside the Miscelánea section
@@ -323,11 +340,28 @@ and `DockerStatus.buildFolderUrl()`, both resolved through the same `resolveDown
 command uses, so one explicit click hands a `file://` URL to the desktop — the file manager, never a
 browser page ([[adr-0021-download-folder-tooltip-and-open-folder-shortcut]]).
 
+The row **is** the notification, and it is live ([[adr-0022-download-cancellation-and-partial-cleanup]]).
+The busy indicator sits in the feedback row's leading slot, so the row appears in the same synchronous
+turn as the click and never depends on the Import button's own geometry. While a download is in flight
+the row's right edge carries a STOP control; the dismiss X is shown **only when no download is in
+flight**, because an X that silently cancelled-and-deleted would risk an in-progress download. The
+severity stays NEUTRAL in flight, so `SeverityDot` remains the only severity-to-colour switch; on success
+the row keeps the positive severity and offers the folder-open shortcut beside the STOP/X slot. The
+derived `miscBodyVisible` gains `|| downloadInFlight`, so a live STOP can never be collapsed away — the
+same rule an armed countdown already had ([[adr-0009-widget-owned-shutdown-countdown]]). A STOP pressed in
+the instant the run ends is a visible no-op — STOP is visible only while a run is in flight, so that is a
+race, never a click on a settled row: the stop answers `not-running` and the row keeps the download's own
+result rather than claiming a cancel it cannot prove.
+
 #### Anti-Patterns
 Adding a free-form "extra yt-dlp arguments" setting — configuration supplies validated values, never
 flags. Building the command in the row instead of in `dockerstatus.js`, which would move the quoting
 boundary out of the tested layer. Rendering a second colour for the feedback. Putting the row in the
-compact representation: a panel item stays icon-sized.
+compact representation: a panel item stays icon-sized. Offering the dismiss X while a download is in
+flight, or collapsing the row while a STOP is live. Implementing "cancel" as `connectedSources = []`: it
+stops the events, not the download, and the row would then lie. Sweeping partials by suffix without the
+recovered video id, at any depth but the configured one, or after a kill that was not accepted — the
+sweep must never take a file whose writer it did not signal.
 
 #### Verification
 `qmllint` (both binaries — see the verification-tooling note; the Qt6 semantic run is clean); the command boundary behind it is unit tested against a real shell. The row's layout and interaction are reviewed — in a session or as a render through the harness, [[render-preview]].

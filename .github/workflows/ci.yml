@@ -4,7 +4,7 @@ name: ci
 #
 #   test      node --test tests/*.mjs — the documented canonical command, run from
 #                                      the repo root (docs/project.md, Commands)
-#   qmllint   Qt6 qmllint over both QML roots, error-counted (see below)
+#   qmllint   Qt6 qmllint over both QML roots, gating diagnostics (see below)
 #   docs      node validate.js        — the corpus checker, check mode only
 #
 # Deliberately NOT a push trigger: running the same checks on push and on the
@@ -54,7 +54,17 @@ jobs:
 
   qmllint:
     name: qmllint
-    runs-on: ubuntu-latest
+    # Pinned, deliberately: this job is the only one that reads Qt output, and all
+    # four gate legs below key on diagnostic formats measured against the Qt the
+    # runner installs. ubuntu-24.04 resolves qt6-declarative-dev-tools to
+    # 6.4.2+dfsg-4build3; ubuntu-latest migrates to Ubuntu 26 on 2026-10-19, which
+    # would silently swap that Qt for a newer one and invalidate every label
+    # assumption the legs rest on. `test` and `docs` stay on ubuntu-latest because
+    # neither reads a Qt diagnostic. If this pin is ever relaxed, re-measure all
+    # four legs against the new Qt first — the probe that matters is injecting a
+    # parse failure into a contents/ui/*.qml file and confirming this step still
+    # exits non-zero.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
@@ -66,19 +76,71 @@ jobs:
       - name: Install the Qt6 linter
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends qt6-declarative-dev-tools
 
-      # Qt6 qmllint exits 0 with any number of warnings unless --max-warnings is
-      # set, so warnings and infos are NOT a failure — on this corpus the counts are in
-      # the low hundreds and are version-bound, so they are not evidence and are not
-      # recorded here; the diagnostic stream is printed in full instead. A real defect
-      # shows up two ways:
-      #   1. an `Error:`-severity diagnostic in the captured stream (a category
-      #      raised to error severity, or a build that labels one), and
-      #   2. a non-zero qmllint exit status, which is how "it could not parse or
-      #      open this file" surfaces: the clean corpus exits 0, an injected parse
-      #      error exits 255 (both measured against the real widget files on a Qt6
-      #      build; a runner's point release may report different warning counts).
-      # Either way the whole diagnostic stream is printed first, never summarised away.
-      - name: Lint QML (Qt6, errors only)
+      # The gate a module-less runner can honestly measure. Every format claim below
+      # was re-measured in a real ubuntu:24.04 container running the same package
+      # this step installs (qt6-declarative-dev-tools 6.4.2+dfsg-4build3) and on a
+      # local Qt 6.12.0, over scratch copies of both QML roots; CI logs are cited by
+      # run id:
+      #
+      #   - ubuntu-24.04 ships qml6-module-qtquick{,-controls,-layouts} but no apt
+      #     package for org.kde.kirigami, libplasma6, qml6-module-org-kde-plasma or
+      #     libkf6plasma5support6, so the runner resolves none of the KDE modules this
+      #     corpus imports (six distinct ones over ten import lines: kirigami,
+      #     plasma.components, plasma.configuration, plasma.core, plasma.plasmoid and
+      #     plasma.plasma5support). On such a pass qmllint exits 255 over the
+      #     CLEAN corpus while emitting ZERO error diagnostics (CI 39055120672: 11
+      #     "Failed to import" warnings, 253 "was not found" warnings, no parse
+      #     failure, no "Failed to open file"). Gating on the bare exit status
+      #     therefore gates on the environment, not the code — this check has never
+      #     been green on a PR (first recorded failure CI 38177079659, same
+      #     signature).
+      #   - On a machine where every import resolves (local Qt 6.12.0 + Plasma),
+      #     the clean corpus exits 0; an injected parse error exits 255 AND prints
+      #     exactly one parse diagnostic; a nonexistent path exits 255 AND prints
+      #     "Failed to open file". There the exit status measures the code —
+      #     the old contract's premise ("the clean corpus exits 0") held only here.
+      #   - The two Qt families print the SAME parse failure in DIFFERENT shapes,
+      #     measured on identical inputs:
+      #       6.4.2 (what this runner installs) — UNTAGGED, and with no severity
+      #         prefix at all:
+      #           .../FullRepresentation.qml:1730:1: Syntax error
+      #           m1_braces.qml:1:9: Expected token `}'
+      #           m8_top_level.qml:1:22: Unexpected token `:'
+      #         A clean 6.4.2 run over this corpus (8,117 + 3,314 lines) carries
+      #         ZERO bracketed categories, and CI 39055120672 shows no [syntax],
+      #         no [import], no [unqualified] on any real diagnostic either: the
+      #         category tag only exists from a later Qt.
+      #       6.12.0 (local) — TAGGED, severity-prefixed:
+      #           Warning: .../FullRepresentation.qml:1730:1: Syntax error [syntax]
+      #           Warning: m1_braces.qml:1:9: Expected token `}' [syntax]
+      #     So a grep anchored on `[syntax]` is blind on exactly the Qt this runner
+      #     uses, and leg 4 cannot cover for it there: the same pass that carries a
+      #     parse failure also prints failed imports, which keeps i>0 and disables
+      #     the exit-status leg. That combination is the hole this step exists to
+      #     close — without the message-text anchor, a PR that breaks the parse of
+      #     any of the five contents/ui/*.qml files merges green. Leg 2 therefore
+      #     anchors on the parser's message text as well as its category, so it
+      #     fires on both families.
+      #
+      # So a pass fails the gate on exactly four legs:
+      #   1. an `Error:`-severity diagnostic (a category raised to error severity,
+      #      or a build that labels one);
+      #   2. a parse failure — the `[syntax]` category OR the parser's untagged
+      #      message text (`Syntax error`, `Expected token`, `Unexpected token`);
+      #   3. a `Failed to open file` diagnostic — the file could not be opened;
+      #   4. a non-zero exit status — but ONLY when the pass printed no
+      #      `Failed to import` line, i.e. every import resolved and the status is
+      #      back to measuring the code. With failed imports it is printed as
+      #      information only. Not weakened: it is the only leg that does not depend
+      #      on a diagnostic label existing, and it is sound exactly where its
+      #      premise holds.
+      #
+      # Warnings and infos are otherwise NOT a failure: qmllint exits 0 with any
+      # number of warnings unless --max-warnings is set, and on this corpus the
+      # counts are in the low hundreds and version-bound, so they are not evidence
+      # and are not recorded here. Either way the whole diagnostic stream is
+      # printed first, never summarised away.
+      - name: Lint QML (Qt6, gating diagnostics)
         shell: bash
         run: |
           set -euo pipefail
@@ -105,12 +167,20 @@ jobs:
           )
 
           total=0
+          syntax=0
+          unopenable=0
           broken=0
           pass=0
           for pattern in "${patterns[@]}"; do
             pass=$((pass + 1))
             files=( $pattern ) # unquoted on purpose: this is the glob
-            if [ ! -e "${files[0]}" ]; then
+            # An unmatched glob leaves the pattern itself in place (nullglob is off),
+            # so testing the expansion against the pattern is what actually means
+            # "this glob matched nothing". Testing the first match instead would
+            # report the wrong thing whenever that match exists but cannot be
+            # read — a dangling symlink or an unreadable file sorting first is a
+            # corpus defect for leg 3 to report honestly, not a "no files matched".
+            if [ "${files[0]}" = "$pattern" ]; then
               echo "::error::no QML files matched $pattern"
               exit 1
             fi
@@ -123,29 +193,64 @@ jobs:
             set -e
             cat "$log"
 
-            # Diagnostic formats to expect from Qt builds: `file:line:col: error: msg`,
-            # a leading `Error: file:...`, and the bracketed `[error]` category.
-            # In the 6.11 build measured on the developer machine, a file qmllint
-            # cannot parse is reported as `Warning: ... [syntax]` — which is why the
-            # exit status is checked above and this grep is the belt to its braces,
-            # covering builds where a category is raised to error severity.
-            # No warning category contains the word "error", so this counts errors only.
+            # The four counters behind the gate legs. Formats measured on the
+            # runner's Qt 6.4.2 (untagged diagnostics, no severity prefix) and on
+            # local Qt 6.12.0 (tagged, "Warning: " prefixed):
+            #   errors: `file:line:col: error: msg`, a leading `Error: file:...`,
+            #           or the bracketed `[error]` category. No warning category
+            #           contains the word "error", so this counts errors only.
+            #   syntax: a parse failure, either shape: the tagged `[syntax]`
+            #           category (6.12.0) or the untagged parser message text
+            #           `Syntax error` / `Expected token` / `Unexpected token`
+            #           (6.4.2). Full phrases, case-sensitive, on purpose: qmllint
+            #           echoes the offending source line into the same stream, and
+            #           this corpus is full of identifiers like `paletteTokens`, so
+            #           the obvious looser grep is not safe — measured, a
+            #           case-insensitive single-word `token|error|syntax` sweep of
+            #           the clean 6.4.2 log fires on source-snippet lines such as
+            #           `color: paletteTokens.statusCardTop`. As full phrases, the
+            #           clean corpus matches 0 lines on 6.4.2 and 0 on 6.12.0.
+            #           Residual caveat, stated rather than hidden: if QML source
+            #           ever carries one of these phrases verbatim, this leg fires on
+            #           it — a spurious FAIL, fixed by rewording the string, never by
+            #           weakening the leg.
+            #   open:   `Failed to open file ...` — the file could not be read at
+            #           all (6.12.0 tags it `[import]`, 6.4.2 prints it bare).
+            #   import: `Failed to import <module>` — the marker that this pass
+            #           measured the environment; the exit status is then
+            #           informational, never gating on its own.
             n="$(grep -cE '(^Error:|:[[:space:]]*error:|\[error\])' "$log" || true)"
-            echo "qmllint exit status: $status; error diagnostics in this pass: $n"
+            s="$(grep -cE '\[syntax\]|Syntax error|Expected token|Unexpected token' "$log" || true)"
+            o="$(grep -cE 'Failed to open file' "$log" || true)"
+            i="$(grep -cE 'Failed to import' "$log" || true)"
+            echo "qmllint exit status: $status; error diagnostics in this pass: $n; parse failures: $s; failed to open: $o; failed imports: $i"
             total=$(( total + n ))
-            if [ "$status" -ne 0 ]; then
+            syntax=$(( syntax + s ))
+            unopenable=$(( unopenable + o ))
+
+            gated=0
+            if [ "$n" -gt 0 ] || [ "$s" -gt 0 ] || [ "$o" -gt 0 ]; then
+              gated=1
+            fi
+            if [ "$status" -ne 0 ] && [ "$i" -eq 0 ]; then
+              # Every import resolved: the non-zero status measures the code,
+              # not the environment. This is the old contract's exit-status leg,
+              # kept exactly where its premise is true.
+              gated=1
+            fi
+            if [ "$gated" -eq 1 ]; then
               broken=$(( broken + 1 ))
-              echo "::error::qmllint exited $status for this pass — it could not lint the file set cleanly"
+              echo "::error::qmllint pass $pass failed the gate ($n error diagnostics, $s parse failures, $o failed-to-open diagnostics, exit status $status with $i failed imports)"
             fi
             echo "::endgroup::"
           done
 
-          echo "qmllint error diagnostics: $total; unparseable/unopenable passes: $broken"
-          if [ "$total" -gt 0 ] || [ "$broken" -gt 0 ]; then
-            echo "::error::qmllint gate failed ($total error diagnostics, $broken failed passes); warnings and infos are not gating"
+          echo "qmllint diagnostics: $total error, $syntax parse failures, $unopenable failed-to-open; gated passes: $broken"
+          if [ "$total" -gt 0 ] || [ "$syntax" -gt 0 ] || [ "$unopenable" -gt 0 ] || [ "$broken" -gt 0 ]; then
+            echo "::error::qmllint gate failed ($total error diagnostics, $syntax parse failures, $unopenable failed-to-open diagnostics, $broken gated passes); warnings and infos are not gating"
             exit 1
           fi
-          echo "qmllint: no errors — warnings and infos are not gating"
+          echo "qmllint: no gating diagnostics — warnings and infos are not gating"
 
   docs:
     name: docs

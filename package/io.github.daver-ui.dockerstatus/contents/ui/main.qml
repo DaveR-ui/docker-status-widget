@@ -158,6 +158,48 @@ PlasmoidItem {
     property string downloadStdout: ""
     property string downloadStderr: ""
 
+    // The download-cancellation contract (adr-0022). The row is the notification, and a
+    // cancel is a real kill: the download writes its OWN pid into a per-run state file and
+    // downloadStopAction signals that pid and sweeps the partials behind it.
+    //
+    // downloadSessionStamp is minted ONCE per widget instance: the pid file is named
+    // download-<stamp>-<token>.pid, and the stamp half is what keeps a reloaded widget's
+    // restarted run-token counter from colliding with a previous instance's still-running
+    // download. It is a millisecond timestamp PLUS a per-instance random nonce, because the
+    // timestamp alone is only unique to the millisecond: two instances loaded in the same
+    // millisecond -- one applet in a panel and one on the desktop -- would share the stamp
+    // and each mint token 1 for its first run, so both would name download-<stamp>-1.pid,
+    // the second pid file would overwrite the first, and the first instance's STOP would
+    // signal the second instance's download. The nonce is digits joined by a hyphen, which
+    // keeps the value inside resolveDownloadStopFile's /^[A-Za-z0-9._-]+$/ charset -- the
+    // only shape that names a stop file at all.
+    // downloadRunToken is the DOWNLOAD's own run token -- the other half of that name --
+    // and downloadUrl is the paste the partial sweep anchors on while downloadDirectory is
+    // the folder that sweep runs in; all three are captured before the engine sees the
+    // command, because the stop is dispatched later and must resolve against the values
+    // THIS run used, never against a configuration the user may have edited meanwhile.
+    //
+    // The four flags settle the two racing one-shot events, because the stop command waits
+    // for the writer to die and then sweeps, so its closing event OUTLIVES the download's:
+    //   downloadCancelRequested  a stop was asked for and has not settled yet;
+    //   downloadStopSettled      the stop's own closing event has been observed;
+    //   downloadRunClosed        the run's own closing event rendered the run's own outcome;
+    //   downloadOutcomeRendered  one outcome is latched on the row and must not be rewritten.
+    readonly property string downloadSessionStamp: "" + Date.now() + "-" + Math.floor(Math.random() * 1e9)
+    property bool downloadStopInFlight: false
+    property int downloadRunToken: 0
+    property string downloadUrl: ""
+    // The configured download folder AS IT WAS when the run started. Captured for exactly
+    // the reason downloadRunToken and downloadUrl are: the stop command resolves `-P` from
+    // the value in force at download time, and a folder the user picked while the download
+    // was running would send the kill to the right pid but the sweep to the wrong
+    // directory, so the partial would survive a cancel reported as clean.
+    property string downloadDirectory: ""
+    property bool downloadCancelRequested: false
+    property bool downloadStopSettled: false
+    property bool downloadRunClosed: false
+    property bool downloadOutcomeRendered: false
+
     // Display and open-folder forms of the configured download directory. Both are pure
     // helpers resolved HERE, because the representation never reads configuration: it
     // receives the finished strings as plain properties, exactly like cookiesBrowser.
@@ -319,6 +361,13 @@ PlasmoidItem {
 
     // Pasted links are validated before a command exists, and again inside
     // buildVideoDownloadCommand() before anything is shell-quoted into one.
+    //
+    // The order is build-then-guard-then-set, deliberately: the command embeds the run's
+    // pid file name, so the builder is the only thing that can say whether this run can be
+    // cancelled at all, and a run it refuses never reaches the engine (adr-0006, adr-0022).
+    // The feedback is written before the engine assignment in every branch, so the row --
+    // which is the notification -- renders in the same synchronous turn as the click,
+    // independent of the Import button's own geometry.
     function downloadVideo(url) {
         if (root.downloadInFlight) {
             return;
@@ -331,25 +380,233 @@ PlasmoidItem {
             return;
         }
 
+        // The token is minted BEFORE the command is built, because the command embeds the
+        // pid file this token names: the run writes its own pid there, and
+        // buildDownloadStopCommand() later locates that file by the same token. A run whose
+        // stop file cannot be resolved is refused rather than started uncancellable --
+        // unresolvable means $HOME is unknown, the same condition that already gates
+        // downloadReady, so this guard is the belt to that braces.
+        const token = root.nextRunToken();
+        const command = DockerStatus.buildVideoDownloadCommand({
+            binary: Plasmoid.configuration.ytDlpBinary,
+            directory: Plasmoid.configuration.downloadDirectory,
+            jsRuntime: Plasmoid.configuration.jsRuntime,
+            cookiesBrowser: Plasmoid.configuration.cookiesBrowser,
+            home: root.homeDirectory,
+            url: url,
+            sessionStamp: root.downloadSessionStamp,
+            token: token
+        });
+        if (command === "") {
+            root.downloadFeedback = i18n("The download could not start, because it could not be made cancellable.");
+            root.downloadFeedbackSeverity = DockerStatus.SEVERITY_NEGATIVE;
+            return;
+        }
+
+        // The run's identity is captured before the engine sees the command, and every race
+        // flag is cleared, so a second run can never inherit the previous run's state. The
+        // directory is captured raw alongside the URL and the token: stopDownload() sweeps
+        // from it, and it must be the folder the run resolved -P against rather than
+        // whatever the configuration page says by the time STOP is clicked.
+        root.downloadRunToken = token;
+        root.downloadUrl = url;
+        root.downloadDirectory = Plasmoid.configuration.downloadDirectory;
+        root.downloadCancelRequested = false;
+        root.downloadStopSettled = false;
+        root.downloadRunClosed = false;
+        root.downloadOutcomeRendered = false;
+        root.downloadStopInFlight = false;
+
         root.downloadInFlight = true;
-        root.downloadFeedback = kind === DockerStatus.VIDEO_KIND_YOUTUBE
-            ? i18n("Downloading the video from YouTube…")
-            : i18n("Downloading the video from X…");
+        root.downloadFeedback = root.downloadInFlightText();
         root.downloadFeedbackSeverity = DockerStatus.SEVERITY_NEUTRAL;
         root.downloadStdout = "";
         root.downloadStderr = "";
 
-        downloadAction.connectedSources = [
-            DockerStatus.buildVideoDownloadCommand({
-                binary: Plasmoid.configuration.ytDlpBinary,
-                directory: Plasmoid.configuration.downloadDirectory,
-                jsRuntime: Plasmoid.configuration.jsRuntime,
-                cookiesBrowser: Plasmoid.configuration.cookiesBrowser,
-                home: root.homeDirectory,
-                url: url,
-                token: root.nextRunToken()
-            })
-        ];
+        downloadAction.connectedSources = [ command ];
+    }
+
+    // The row's in-flight text, in ONE place: downloadVideo() is now its only writer,
+    // because handleDownloadStop() no longer restores it -- a stop that settles as a no-op
+    // says so in the negative-feedback line instead -- so the text can never drift into
+    // naming a different source.
+    function downloadInFlightText() {
+        return DockerStatus.classifyVideoUrl(root.downloadUrl) === DockerStatus.VIDEO_KIND_YOUTUBE
+            ? i18n("Downloading the video from YouTube…")
+            : i18n("Downloading the video from X…");
+    }
+
+    // The row's STOP. The stop command is assembled from the captured run identity: the
+    // session stamp plus the DOWNLOAD's own run token locate the pid file, the captured
+    // URL anchors the partial-file sweep and the captured directory is the folder that
+    // sweep runs in -- all three read from the run, never re-read from
+    // Plasmoid.configuration, which the user may have edited while the download ran. It is
+    // deliberately NOT a disconnect -- connectedSources = [] ends the events, not the
+    // process, and a row that reported "cancelled" while yt-dlp kept downloading would be
+    // lying (adr-0022).
+    //
+    // The stop command carries its OWN run token, so a second click is a distinct source
+    // for the engine instead of a silent set no-op.
+    function stopDownload() {
+        if (!root.downloadInFlight || root.downloadStopInFlight) {
+            return;
+        }
+
+        const command = DockerStatus.buildDownloadStopCommand({
+            directory: root.downloadDirectory,
+            home: root.homeDirectory,
+            sessionStamp: root.downloadSessionStamp,
+            runToken: root.downloadRunToken,
+            url: root.downloadUrl,
+            token: root.nextRunToken()
+        });
+        if (command === "") {
+            // No stop file means no handle: report it honestly and never pretend a cancel
+            // happened. The run stays in flight and STOP stays live -- a possibly-running
+            // download must not be stranded behind a dead button.
+            root.downloadFeedback = i18n("The download could not be stopped; it may still be running.");
+            root.downloadFeedbackSeverity = DockerStatus.SEVERITY_NEGATIVE;
+            return;
+        }
+
+        // The settled flag is cleared on EVERY dispatch, not only on the first: it is the
+        // other half of the guard that keeps downloadAction from flashing the run's own
+        // failure line while a cancel is pending, and a flag left set by a previous stop
+        // would leave a retry unguarded, so the row could paint "the download failed
+        // (exit code 143)" for the process the stop command killed.
+        root.downloadStopSettled = false;
+        root.downloadCancelRequested = true;
+        root.downloadStopInFlight = true;
+        root.downloadFeedback = i18n("Cancelling…");
+        root.downloadFeedbackSeverity = DockerStatus.SEVERITY_NEUTRAL;
+        downloadStopAction.connectedSources = [ command ];
+    }
+
+    // The row's X. It clears the row's own feedback and nothing else: the row IS the
+    // notification, so dismissing it must not touch the run, the cancel state, or any other
+    // surface's feedback line.
+    function dismissDownloadFeedback() {
+        root.downloadFeedback = "";
+        root.downloadFeedbackSeverity = DockerStatus.SEVERITY_MUTED;
+    }
+
+    /*
+     * The stop one-shot's closing event, and the settlement of the race between it and
+     * downloadAction's. The stop command waits for the writer to die and then sweeps, so
+     * its event outlives the download's own -- yet either can arrive first, because the
+     * engine delivers exactly one event per run at process exit and the two processes exit
+     * independently (docs/status/data-engine-contract.md). Every branch therefore reads the
+     * flags, never the arrival order, and downloadOutcomeRendered is the single latch that
+     * keeps a settled row from being rendered twice.
+     */
+    function handleDownloadStop(data) {
+        root.downloadStopInFlight = false;
+
+        const exitCode = data["exit code"];
+        if (exitCode === undefined) {
+            return;
+        }
+
+        // Accumulated into the run's own accumulators: the download is dead by the time a
+        // stop can report, and the stop's stdout carries only its "docker-status: " marker,
+        // which parseDownloadStopResult() is the only thing that reads. Its stderr stays
+        // the operating system's error channel, surfaced exactly like daemonAction's.
+        root.downloadStdout += String(data["stdout"] !== undefined ? data["stdout"] : "");
+        root.downloadStderr += String(data["stderr"] !== undefined ? data["stderr"] : "");
+
+        const marker = DockerStatus.parseDownloadStopResult(root.downloadStdout);
+        const stderr = DockerStatus.normalizeOutput(root.downloadStderr);
+        const output = DockerStatus.normalizeOutput(root.downloadStdout + "\n" + root.downloadStderr);
+        root.downloadStopSettled = true;
+
+        if (marker === DockerStatus.DOWNLOAD_STOP_KILLED) {
+            // The stop command's own predicate answers "accepted" for a zombie: a pid whose
+            // /proc/<pid>/stat state is Z still passes kill -0 and kill -TERM, so a run that
+            // already exited -- and whose own closing event already painted its real result
+            // -- is reported as killed. That event is the truth and the row is already
+            // latched, so a stop that signalled a corpse must never relabel it: only a stop
+            // whose run has NOT closed (a genuine kill, whose own failure event the guard in
+            // downloadAction withheld) may claim the cancel below.
+            if (root.downloadRunClosed) {
+                root.downloadCancelRequested = false;
+                return;
+            }
+
+            root.downloadInFlight = false;
+            root.downloadCancelRequested = false;
+            root.downloadOutcomeRendered = true;
+            if (stderr === "" && Number(exitCode) === 0) {
+                // The process died and the sweep ran: the one clean claim.
+                root.downloadFeedback = i18n("Download cancelled.");
+                root.downloadFeedbackSeverity = DockerStatus.SEVERITY_NEUTRAL;
+                return;
+            }
+
+            // The process died but the sweep could not finish its job: either the kill was
+            // refused (stderr marker, exit 1, nothing swept) or `find` could not read the
+            // directory (non-zero exit -- the sweep is the last program in the run on
+            // purpose, so its failure is the run's exit status). Surface the engine's own
+            // error line rather than a bare claim of a clean cancel.
+            const detail = DockerStatus.extractErrorLine(output);
+            root.downloadFeedback = detail !== ""
+                ? i18nc("@info", "Download cancelled, but the partial file could not be removed: %1", detail)
+                : i18nc("@info", "Download cancelled, but the partial file could not be removed (exit code %1).", Number(exitCode));
+            root.downloadFeedbackSeverity = DockerStatus.SEVERITY_NEGATIVE;
+            return;
+        }
+
+        if (marker === DockerStatus.DOWNLOAD_STOP_KILLED_UNSWEPT) {
+            // Same zombie guard as the KILLED case above: the stop command's predicate
+            // answers "accepted" for a pid whose /proc/<pid>/stat state is Z, so a run
+            // that already exited -- and whose own closing event already painted its real
+            // result -- is reported as killed. That event is the truth and the row is
+            // already latched, so a stop that signalled a corpse must never relabel it.
+            if (root.downloadRunClosed) {
+                root.downloadCancelRequested = false;
+                return;
+            }
+
+            root.downloadInFlight = false;
+            root.downloadCancelRequested = false;
+            root.downloadOutcomeRendered = true;
+            // The process died, but there was no video id to anchor a sweep on, so the
+            // partial may still be there. The honest half of the pair, never a clean claim.
+            root.downloadFeedback = i18n("Download cancelled. The partial file could not be removed automatically.");
+            root.downloadFeedbackSeverity = DockerStatus.SEVERITY_NEGATIVE;
+            return;
+        }
+
+        if (marker === DockerStatus.DOWNLOAD_STOP_NOT_RUNNING) {
+            // No live pid: the click is visibly a no-op, never a false "cancelled". If the
+            // run's own closing event already rendered its outcome, that outcome stands on
+            // the row and is never overwritten with a cancel the stop cannot prove.
+            root.downloadCancelRequested = false;
+            if (root.downloadRunClosed) {
+                return;
+            }
+
+            // Otherwise the run is still live -- or its own closing event was withheld by
+            // this very stop, in which case that event renders as soon as it arrives. The
+            // row SAYS the stop did not take instead of restoring the in-flight text
+            // silently: a download directory the widget cannot write produces no pid file at
+            // all, so this branch would answer not-running on every retry behind a STOP that
+            // visibly does nothing and the user would be told nothing (adr-0022 accepts the
+            // failure; it does not accept a silent one). downloadInFlight stays true and
+            // STOP stays visible and enabled, so a possibly-running download is neither
+            // stranded behind a dead button nor left without a way to retry. The dismiss X
+            // stays hidden, because it is gated on !downloadInFlight on purpose.
+            root.downloadInFlight = true;
+            root.downloadFeedback = i18n("The download could not be stopped; it may still be running.");
+            root.downloadFeedbackSeverity = DockerStatus.SEVERITY_NEGATIVE;
+            return;
+        }
+
+        // DOWNLOAD_STOP_UNKNOWN: the kill was refused (stderr marker, exit 1, no sweep) or
+        // the run said nothing this build can parse. Never claim a cancel, and leave
+        // downloadInFlight untouched so a possibly-live download is not stranded behind a
+        // dead button -- STOP stays available and retryable.
+        root.downloadFeedback = i18n("The download could not be stopped; it may still be running.");
+        root.downloadFeedbackSeverity = DockerStatus.SEVERITY_NEGATIVE;
     }
 
     onDaemonRunningChanged: {
@@ -682,20 +939,61 @@ PlasmoidItem {
                 root.downloadStdout + "\n" + root.downloadStderr
             );
 
-            if (Number(exitCode) === 0) {
-                const file = DockerStatus.parseDownloadedFile(output);
-                root.downloadFeedback = file !== ""
-                    ? i18nc("@info", "Saved to %1", file)
-                    : i18n("Download finished.");
+            // A completed download is never relabelled a cancel, whatever a stop is doing:
+            // the sweep only ever touches .part/.part-Frag*/.ytdl files, so it cannot delete
+            // a finished one. This branch renders unconditionally and latches both flags,
+            // which is what lets a stop that arrives afterwards answer not-running and
+            // still leave this result on the row (adr-0022).
+            const okExit = Number(exitCode) === 0;
+            const file = okExit ? DockerStatus.parseDownloadedFile(output) : "";
+            if (okExit && file !== "") {
+                root.downloadFeedback = i18nc("@info", "Saved to %1", file);
                 root.downloadFeedbackSeverity = DockerStatus.SEVERITY_POSITIVE;
+                root.downloadCancelRequested = false;
+                root.downloadRunClosed = true;
+                root.downloadOutcomeRendered = true;
                 return;
             }
 
-            const detail = DockerStatus.extractErrorLine(output);
-            root.downloadFeedback = detail !== ""
-                ? detail
-                : i18nc("@info", "The download failed (exit code %1).", Number(exitCode));
-            root.downloadFeedbackSeverity = DockerStatus.SEVERITY_NEGATIVE;
+            // Any other outcome renders only when nothing has claimed the row yet and no
+            // cancel is waiting to settle: a pending-unsettled stop keeps "Cancelling…" on
+            // screen, so the row never flashes "the download failed (exit code 143)" for a
+            // process the stop command killed. The numeric code of a killed process is
+            // deliberately never depended on; the stop's own marker settles the row.
+            if (root.downloadOutcomeRendered
+                    || (root.downloadCancelRequested && !root.downloadStopSettled)) {
+                return;
+            }
+
+            if (okExit) {
+                // Exit 0 with no path to name is still a success, never a failure line.
+                root.downloadFeedback = i18n("Download finished.");
+                root.downloadFeedbackSeverity = DockerStatus.SEVERITY_POSITIVE;
+            } else {
+                const detail = DockerStatus.extractErrorLine(output);
+                root.downloadFeedback = detail !== ""
+                    ? detail
+                    : i18nc("@info", "The download failed (exit code %1).", Number(exitCode));
+                root.downloadFeedbackSeverity = DockerStatus.SEVERITY_NEGATIVE;
+            }
+            root.downloadRunClosed = true;
+            root.downloadOutcomeRendered = true;
+        }
+    }
+
+    // One-shot: the download cancellation, assembled by
+    // DockerStatus.buildDownloadStopCommand() and run by stopDownload(). It waits for the
+    // writer to die and then sweeps, so its closing event OUTLIVES the download's own and
+    // the two events race; handleDownloadStop() settles that race order-independently
+    // (adr-0022). One source, one in-flight flag, exactly like downloadAction.
+    P5Support.DataSource {
+        id: downloadStopAction
+        engine: "executable"
+        interval: 0
+        connectedSources: []
+
+        onNewData: (sourceName, data) => {
+            root.handleDownloadStop(data);
         }
     }
 
@@ -727,15 +1025,15 @@ PlasmoidItem {
         }
     }
 
-    // Update check: two sources, the tenth and eleventh in this file (the nine before them
+    // Update check: two sources, the eleventh and twelfth in this file (the ten before them
     // are the two docker probes, forcedDaemonRead, daemonAction, composeAction, powerAction,
-    // homeSource, downloadAction and podmanLaunch). A polled source runs the fixed command --
-    // the engine runs it once on connect, so the load-time check is free -- and disconnects
-    // itself when the interval is 0 via the connectedSources binding. A one-shot carries the
-    // manual "Check for updates": a polled source's connectedSources is a binding and cannot
-    // be reassigned per click, so the tokenised command rides this one instead, exactly like
-    // the daemon re-read. Both deliver to the single handler above; neither ever surfaces
-    // stderr.
+    // homeSource, downloadAction, downloadStopAction and podmanLaunch). A polled source runs
+    // the fixed command -- the engine runs it once on connect, so the load-time check is
+    // free -- and disconnects itself when the interval is 0 via the connectedSources binding.
+    // A one-shot carries the manual "Check for updates": a polled source's connectedSources
+    // is a binding and cannot be reassigned per click, so the tokenised command rides this
+    // one instead, exactly like the daemon re-read. Both deliver to the single handler above;
+    // neither ever surfaces stderr.
     P5Support.DataSource {
         id: updateCheckSource
         engine: "executable"
@@ -800,6 +1098,7 @@ PlasmoidItem {
         cookiesBrowser: Plasmoid.configuration.cookiesBrowser
         downloadReady: root.homeDirectory !== ""
         downloadInFlight: root.downloadInFlight
+        downloadStopInFlight: root.downloadStopInFlight
         downloadFeedback: root.downloadFeedback
         downloadFeedbackSeverity: root.downloadFeedbackSeverity
         downloadDirectoryDisplay: root.downloadDirectoryDisplay
@@ -827,6 +1126,8 @@ PlasmoidItem {
         onStopRequested: root.stopDaemon()
         onRefreshRequested: root.refreshDaemonState()
         onDownloadRequested: (url) => root.downloadVideo(url)
+        onDownloadStopRequested: root.stopDownload()
+        onDownloadDismissed: root.dismissDownloadFeedback()
         onShutdownStartRequested: root.startShutdownCountdown()
         onShutdownStopRequested: root.stopShutdownCountdown()
         onShutdownMinutesEdited: (text) => root.setShutdownMinutes(text)

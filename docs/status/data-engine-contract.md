@@ -4,7 +4,7 @@ category: status
 tags: [interface-surface, interface-contract, status, data-engine]
 aliases: [Data engine contract, Executable engine contract]
 related: [status-index, status-slice, widget-slice]
-version: 1.0
+version: 1.1
 status: active
 ---
 
@@ -23,7 +23,7 @@ committed test — see the evidence layers in
 [verification-slice](../verification/verification-slice.md#how-it-works). Anything not in these tables is
 unverified, and treating
 it as a guarantee is how a widget silently stops updating. This is a *contract* sheet, not a catalog:
-the ten sources that implement it are listed in
+the twelve sources that implement it are listed in
 [widget-slice](../widget/widget-slice.md#how-it-works).
 
 ### Field groups
@@ -34,6 +34,7 @@ the ten sources that implement it are listed in
 | Payload | `stdout`, `stderr`, `exit code`, `exit status` | the run's result, handed to `onNewData` | the keys are present on delivery; values arrive as strings |
 | Cadence | `interval` | milliseconds between runs; `0` disables repetition | quantised to roughly one second regardless of the requested value |
 | Lifecycle | `connectedSources = []` | disconnect: no further `onNewData` | the supported way to stop a source |
+| Process | *(none)* | the engine exposes **no pid and no kill path** | a source's events can be disconnected; the process behind them cannot. A handle has to be made by the command itself — the download row writes its own pid from inside the command — and a **second** one-shot signals it ([[adr-0022-download-cancellation-and-partial-cleanup]]) |
 
 ### Mode differences
 
@@ -41,7 +42,7 @@ the ten sources that implement it are listed in
 |---|---|---|
 | Purpose | continuous state | an action, or an immediate re-read |
 | The identical command assigned again | re-runs on the next tick | **not re-run** — the assignment is a set no-op |
-| Instances | `daemonSource`, `containerSource`, `updateCheckSource` | `forcedDaemonRead`, `daemonAction`, `composeAction`, `homeSource`, `downloadAction`, `powerAction`, `updateCheckForced` |
+| Instances | `daemonSource`, `containerSource`, `updateCheckSource` | `forcedDaemonRead`, `daemonAction`, `composeAction`, `homeSource`, `downloadAction`, `downloadStopAction`, `podmanLaunch`, `powerAction`, `updateCheckForced` |
 | Output delivery | one `onNewData` per run | exactly one `onNewData`, at process exit, carrying the whole run |
 
 Measured event counts for the trap that shapes this design:
@@ -71,6 +72,15 @@ The last row is why `withRunToken()` exists: appending a unique trailing shell c
 assignment a distinct source, so the command re-runs. Because that trick appends a shell comment, it is
 safe only for command strings the project itself builds — fixed constants, or the sanctioned
 command-building exceptions, whose values are validated and shell-quoted before the token is appended.
+
+The engine's other blind spot is the process itself: it exposes **no pid and no kill path**, so
+`connectedSources = []` ends the *reporting* and nothing else — a long run the widget has stopped
+listening to keeps running. The pattern this corpus uses to work around that is **two hands on one pid**,
+and it is a property of the engine rather than of any one row: the run's own command writes its pid from
+inside the command file (the engine's shell expands it there), and a **second** one-shot reads the file
+back and signals that pid, accepting it only while it names a live process. Anything the widget starts
+and wants to be able to stop needs both halves; a disconnect is not a stop
+([[adr-0022-download-cancellation-and-partial-cleanup]]).
 
 ### Normalization rules
 
@@ -108,6 +118,6 @@ command-building exceptions, whose values are validated and shell-quoted before 
 ## Related sheets
 
 - [status-slice.md](status-slice.md) — the logic that consumes this payload.
-- [widget-slice.md](../widget/widget-slice.md) — the ten sources that implement this contract.
+- [widget-slice.md](../widget/widget-slice.md) — the twelve sources that implement this contract.
 - [troubleshooting.md](../verification/troubleshooting.md#the-start-daemon-button-does-nothing-on-the-second-click)
   — the symptom a consumer sees when the set semantics are ignored.

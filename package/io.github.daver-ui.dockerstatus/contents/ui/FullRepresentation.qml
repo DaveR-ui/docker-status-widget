@@ -57,6 +57,9 @@ Item {
     property bool downloaderEnabled: true
     property bool downloadReady: false
     property bool downloadInFlight: false
+    // True while the stop one-shot is settling: STOP goes inert rather than firing a second
+    // kill-and-sweep for a run the first one already claimed (adr-0022). main.qml owns it.
+    property bool downloadStopInFlight: false
     property string downloadFeedback: ""
     property string downloadFeedbackSeverity: "muted"
     property string cookiesBrowser: ""
@@ -128,7 +131,12 @@ Item {
     // section bool says, and an armed destructive state can never be collapsed away.
     // The header's own toggle still flips the section bool, so a pending countdown
     // is restored in full and stays that way until the user cancels it.
-    readonly property bool miscBodyVisible: fullRoot.miscSectionExpanded || fullRoot.shutdownPending
+    //
+    // The download row's STOP is the SECOND live control, and adr-0022 applies adr-0009's
+    // own reasoning to it: while a download is in flight the merged body comes back too,
+    // so a live STOP can never be collapsed away either. A settled row can still be
+    // collapsed, and its X dismisses the feedback.
+    readonly property bool miscBodyVisible: fullRoot.miscSectionExpanded || fullRoot.shutdownPending || fullRoot.downloadInFlight
 
     // Update check. main.qml owns the whole check; this representation only renders the one
     // line it produces and can ask for a manual re-check. No severity here: the line reuses
@@ -141,6 +149,12 @@ Item {
     signal stopRequested()
     signal refreshRequested()
     signal downloadRequested(string url)
+    // The row's two live controls (adr-0022): STOP asks main.qml to kill the run and sweep
+    // its partials; the X dismisses the row's own feedback. Both are requests out -- the
+    // representation builds no command and touches no data source, exactly like every other
+    // signal here.
+    signal downloadStopRequested()
+    signal downloadDismissed()
     signal shutdownStartRequested()
     signal shutdownStopRequested()
     signal shutdownMinutesEdited(string text)
@@ -1130,9 +1144,10 @@ Item {
                         //
                         // It reads miscBodyVisible, NOT the raw section bool: the glyph has
                         // to describe what the user can actually see. While a shutdown is
-                        // pending the body is un-collapsible, so the affordance must show
-                        // the open state -- a minus next to hidden controls would be a lie,
-                        // and could read as "collapse the countdown away".
+                        // pending or a download is in flight the body is un-collapsible, so
+                        // the affordance must show the open state -- a minus next to hidden
+                        // controls would be a lie, and could read as "collapse the countdown
+                        // away" or "collapse the live STOP away".
                         Item {
                             Layout.alignment: Qt.AlignVCenter
                             implicitWidth: miscToggleGlow.implicitWidth
@@ -1299,13 +1314,6 @@ Item {
                                     text: i18n("Download this video with yt-dlp, using your configured cookies browser")
                                 }
                             }
-
-                            PlasmaComponents3.BusyIndicator {
-                                Layout.preferredWidth: Kirigami.Units.iconSizes.small
-                                Layout.preferredHeight: Kirigami.Units.iconSizes.small
-                                running: fullRoot.downloadInFlight
-                                visible: fullRoot.downloadInFlight
-                            }
                         }
 
                         PlasmaComponents3.Label {
@@ -1328,16 +1336,38 @@ Item {
                             font.pixelSize: paletteTokens.subtlePixelSize
                         }
 
-                        // The dot carries the severity, exactly as in the header: no second
-                        // severity-to-colour switch is allowed to exist.
+                        // The row IS the notification, and it is live (adr-0022): its leading
+                        // slot carries the busy indicator while a download is in flight and the
+                        // severity dot otherwise, so the row appears in the same synchronous
+                        // turn as the click and never depends on the Import button's own
+                        // geometry. The fixed-width wrapper reserves the small-icon slot in
+                        // both states, so swapping the 6px dot for the 16px spinner cannot
+                        // reflow the row. The dot carries the severity, exactly as in the
+                        // header: no second severity-to-colour switch is allowed to exist, and
+                        // the severity stays NEUTRAL in flight.
                         RowLayout {
                             Layout.fillWidth: true
                             visible: fullRoot.downloadFeedback !== ""
                             spacing: 6
 
-                            SeverityDot {
+                            Item {
                                 Layout.alignment: Qt.AlignVCenter
-                                severity: fullRoot.downloadFeedbackSeverity
+                                implicitWidth: Kirigami.Units.iconSizes.small
+                                implicitHeight: Kirigami.Units.iconSizes.small
+
+                                PlasmaComponents3.BusyIndicator {
+                                    anchors.centerIn: parent
+                                    width: Kirigami.Units.iconSizes.small
+                                    height: Kirigami.Units.iconSizes.small
+                                    running: fullRoot.downloadInFlight
+                                    visible: fullRoot.downloadInFlight
+                                }
+
+                                SeverityDot {
+                                    anchors.centerIn: parent
+                                    visible: !fullRoot.downloadInFlight
+                                    severity: fullRoot.downloadFeedbackSeverity
+                                }
                             }
 
                             PlasmaComponents3.Label {
@@ -1349,13 +1379,17 @@ Item {
                                 font.pixelSize: paletteTokens.subtlePixelSize
                             }
 
-                            // Appended LAST so it sits on the row's right edge: the label above
+                            // Appended so it sits on the row's right edge: the label above
                             // fills the width, which pushes this control into the corner. Only a
                             // SUCCESSFUL download offers the shortcut -- a failed download
                             // (negative severity) and an in-flight/neutral state must never look
                             // like there is a file to open -- and only once $HOME gave a usable
                             // path (downloadFolderUrl !== ""), the belt-and-braces gate the
                             // disabled state repeats.
+                            //
+                            // It is no longer the row's LAST child: the live STOP and the dismiss X
+                            // follow it, the X last of all, so the dismiss sits on the far right
+                            // edge (adr-0022).
                             PlasmaComponents3.ToolButton {
                                 Layout.alignment: Qt.AlignVCenter
                                 Layout.preferredWidth: 24
@@ -1378,6 +1412,51 @@ Item {
 
                                 PlasmaComponents3.ToolTip {
                                     text: i18n("Open the download folder")
+                                }
+                            }
+
+                            // The row's cancel, on the right edge and shown ONLY while a download
+                            // is in flight: a flat, icon-only 24x24 process-stop. It emits and
+                            // builds no command -- main.qml owns the stop one-shot (adr-0022) --
+                            // and it is deliberately NOT one of the widget's two
+                            // Qt.openUrlExternally call sites. Enabled goes inert while the stop
+                            // itself is settling, so one gesture cannot fire two kill-and-sweeps.
+                            PlasmaComponents3.ToolButton {
+                                Layout.alignment: Qt.AlignVCenter
+                                Layout.preferredWidth: 24
+                                Layout.preferredHeight: 24
+                                icon.name: "process-stop"
+                                icon.color: paletteTokens.text
+                                display: PlasmaComponents3.AbstractButton.IconOnly
+                                flat: true
+                                visible: fullRoot.downloadInFlight
+                                enabled: !fullRoot.downloadStopInFlight
+                                onClicked: fullRoot.downloadStopRequested()
+
+                                PlasmaComponents3.ToolTip {
+                                    text: i18n("Cancel the download and remove the partial file")
+                                }
+                            }
+
+                            // The dismiss X, the row's LAST child and therefore its far-right
+                            // control, shown ONLY when no download is in flight. An X that
+                            // silently cancelled-and-deleted would risk an in-progress download,
+                            // so the two controls are mutually exclusive and the row never shows
+                            // two dismiss-ish controls at once (adr-0022).
+                            PlasmaComponents3.ToolButton {
+                                Layout.alignment: Qt.AlignVCenter
+                                Layout.preferredWidth: 24
+                                Layout.preferredHeight: 24
+                                icon.name: "window-close"
+                                icon.color: paletteTokens.text
+                                display: PlasmaComponents3.AbstractButton.IconOnly
+                                flat: true
+                                visible: !fullRoot.downloadInFlight
+                                    && fullRoot.downloadFeedback !== ""
+                                onClicked: fullRoot.downloadDismissed()
+
+                                PlasmaComponents3.ToolTip {
+                                    text: i18n("Dismiss")
                                 }
                             }
                         }
