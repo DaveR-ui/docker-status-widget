@@ -4,7 +4,10 @@ name: ci
 #
 #   test      node --test tests/*.mjs — the documented canonical command, run from
 #                                      the repo root (docs/project.md, Commands)
-#   qmllint   Qt6 qmllint over both QML roots, error-counted (see below)
+#   qmllint   Qt6 qmllint over both QML roots, error-counted (see below); the one
+#             job pinned to ubuntu-26.04 rather than ubuntu-latest, because the
+#             modules it must resolve against only exist from that release on
+#             (see the pin's comment in the job)
 #   docs      node validate.js        — the corpus checker, check mode only
 #
 # Deliberately NOT a push trigger: running the same checks on push and on the
@@ -54,17 +57,60 @@ jobs:
 
   qmllint:
     name: qmllint
-    runs-on: ubuntu-latest
+    # ubuntu-26.04 deliberately, not ubuntu-latest: this pin is the fix, not a
+    # version preference. Two measured facts make 24.04 (noble) unusable here.
+    #
+    #   1. Noble ships no Qt6 KDE QML modules. Its KDE QML packages are the
+    #      Plasma 5 set (libkf5plasma5, qml-module-org-kde-kirigami2); there is
+    #      no qml6-module-org-kde-kirigami and no qml6-module-org-kde-plasma-*
+    #      in the archive at all. So QtQuick, Kirigami and the Plasma modules
+    #      cannot all be installed there, whichever package names you try.
+    #   2. Noble's qmllint is Qt 6.4.2, which predates --max-warnings and
+    #      returns -1 (exit 255) whenever it emits any warning at all. Measured
+    #      in a noble container: the corpus lints with 0 error diagnostics and
+    #      exit 255, and a three-line file whose only diagnostic is one
+    #      "failed to find builtins" warning also exits 255. No set of modules
+    #      can make that gate pass.
+    #
+    # ubuntu-latest migrates to 26.04 across Oct-Nov 2026, so this names
+    # explicitly what it would otherwise acquire by accident; when that
+    # migration lands the pin can be dropped back to ubuntu-latest.
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
 
-      # Provides /usr/lib/qt6/bin/qmllint on ubuntu-24.04 (noble). The Qt6 linter
-      # is the semantic one; the qmllint that ships on PATH from the Qt5 packages
-      # is syntax-only and reports nothing useful for a Plasma 6 target
-      # (docs/verification/verification-slice.md, evidence table).
-      - name: Install the Qt6 linter
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends qt6-declarative-dev-tools
+      # Both halves are needed, and the split is the whole defect that broke
+      # this job: qt6-declarative-dev-tools provides the /usr/lib/qt6/bin/qmllint
+      # binary, the qml6-module-* packages provide the import trees qmllint
+      # resolves `import` statements against. Installing the binary alone lints
+      # every file against nothing: every import fails, and the run exits 255
+      # with zero error diagnostics — a red gate that reports no defect.
+      #
+      # Which package carries which import (verified against the 26.04 archive):
+      #   QtQuick / QtQuick.Layouts / QtQuick.Controls -> qml6-module-qtquick*
+      #   org.kde.kirigami                            -> qml6-module-org-kde-kirigami
+      #   org.kde.plasma.plasmoid / .core / .components
+      #                                               -> plasma-desktoptheme
+      #   org.kde.plasma.plasma5support               -> qml6-module-org-kde-plasma-plasma5support
+      # The Qt6 linter is the semantic one; the qmllint on PATH from the Qt5
+      # packages is syntax-only and reports nothing useful for a Plasma 6
+      # target (docs/verification/verification-slice.md, evidence table).
+      # --no-install-recommends keeps the Plasma set from pulling in the whole
+      # desktop: 127 MB of archives, 541 MB of installed disk (the bulk is the
+      # Plasma/Kirigami library dependencies, not the QML trees themselves,
+      # which are ~12 MB). The job measured 28 s against timeout-minutes: 15.
+      - name: Install the Qt6 linter and the QML import modules it resolves against
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            qt6-declarative-dev-tools \
+            qml6-module-qtquick \
+            qml6-module-qtquick-layouts \
+            qml6-module-qtquick-controls \
+            qml6-module-org-kde-kirigami \
+            plasma-desktoptheme \
+            qml6-module-org-kde-plasma-plasma5support
 
       # Qt6 qmllint exits 0 with any number of warnings unless --max-warnings is
       # set, so warnings and infos are NOT a failure — on this corpus the counts are in

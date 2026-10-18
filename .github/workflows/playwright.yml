@@ -18,7 +18,8 @@ name: playwright
 # and python3 is present on ubuntu-latest.
 #
 # The suite is installed into $RUNNER_TEMP, never into the repo: there is no
-# package.json and none may be created.
+# package.json and none may be created, so the spec imports the runner by
+# absolute path through E2E_RUNNER_MODULE instead of the bare specifier.
 
 on:
   pull_request:
@@ -55,6 +56,12 @@ jobs:
 
       # The config lives in site/e2e/ and drives its own webServer on localhost,
       # so no deployment is needed and no deployed URL has to be passed in.
+      #
+      # The spec imports the runner by absolute path, never by the bare
+      # "@playwright/test" specifier: this repository has no package.json and
+      # none may be created, so there is no node_modules above site/e2e for
+      # Node's ESM resolution to walk, and NODE_PATH is ignored by ESM. The path
+      # below is the package's exports["."]["import"] entry.
       - name: Run the Playwright suite
         shell: bash
         run: |
@@ -63,4 +70,5 @@ jobs:
             echo "::error::RUNNER_TEMP is empty — the Playwright install location is gone"
             exit 1
           fi
+          export E2E_RUNNER_MODULE="$RUNNER_TEMP/pw/node_modules/@playwright/test/index.mjs"
           "$RUNNER_TEMP/pw/node_modules/.bin/playwright" test --config site/e2e/playwright.config.mjs

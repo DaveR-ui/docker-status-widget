@@ -147,9 +147,13 @@
       <article class="card">
         <h3>The popup</h3>
         <p>
-          Daemon state, a <code>running/total</code> count with a bar, and the container list — one row per
-          container, each with its own icon tile, severity dot and state label. Plus a refresh button and
-          the video-download row.
+          Daemon state, a <code>running/total</code> count with a bar, the start/stop row and the
+          refresh, Podman Desktop and update controls — all in one pinned status card. Below it the
+          containers are listed flat, grouped by Docker Compose project, each group carrying its own
+          counter and its own collapse, and — for compose-backed groups — its own play/stop controls; the
+          list scrolls, so the widget never changes size as containers come and go.
+          <strong>Miscelánea</strong> is the pinned card at the bottom, holding both the video-download
+          row and the shutdown countdown. No footer.
         </p>
       </article>
 
@@ -158,7 +162,8 @@
         <p>
           A shutdown countdown with a wall-clock deadline you set in minutes and a one-second ticker, so it
           survives a suspend. Neither arming nor cancelling needs root, and the power-off runs the fixed
-          command — the configured minutes only size the deadline.
+          command — the configured minutes only size the deadline. It lives inside Miscelánea, and an
+          armed countdown is never collapsed away.
         </p>
       </article>
 
@@ -168,16 +173,27 @@
           Paste a YouTube or X link into the popup and <code>yt-dlp</code> fetches it into the configured
           folder, with cookies from the configured browser. This is the one place user input reaches a
           command, and it is bounded: https only, an exact host allow-list, a length cap, no quotes or
-          backslashes, and every interpolated value shell-quoted.
+          backslashes, and every interpolated value shell-quoted. It shares the Miscelánea card with the
+          countdown.
+        </p>
+      </article>
+
+      <article class="card">
+        <h3>An honest update check</h3>
+        <p>
+          The widget asks one fixed manifest whether a newer release exists, and says so with a muted line
+          and one indicator. Nothing is said while it is current, and a failed check draws nothing at all —
+          the version is authored once, in <code>metadata.json</code>.
         </p>
       </article>
 
       <article class="card">
         <h3>Configured, not compiled</h3>
         <p>
-          Poll interval, panel icon, container list, download row, folder, yt-dlp binary, JS runtime,
-          cookies browser — all on the config page, all validated before they reach a
-          command, and a refused value falls back to its safe default.
+          Poll interval, panel icon, container list, Podman Desktop path, download row, folder, yt-dlp
+          binary, JS runtime, cookies browser, shutdown countdown minutes and update-check interval — all on
+          the config page. Every value that reaches a command is validated before it is assembled, and a
+          refused value falls back to its safe default.
         </p>
       </article>
     </div>
@@ -187,22 +203,23 @@
     <h2 id="shots-title">What it looks like</h2>
     <div class="gallery">
       <figure class="shot">
-        <img src="screenshots/widget-popup.png" alt="The Docker Status popup: daemon state, the container running bar, the start and stop buttons, the container list, the video-download row and the countdown"
-             width="629" height="919" loading="lazy" decoding="async"
+        <img src="screenshots/widget-popup.png" alt="The design mockup the popup follows: the daemon status card with its start and stop buttons, the containers grouped by Compose project with their play and stop controls, and the Miscelánea section holding the download row and the shutdown countdown"
+             width="624" height="915" loading="lazy" decoding="async"
              onerror="this.closest('.shot').classList.add('is-broken')">
         <span class="shot__missing">screenshots/widget-popup.png</span>
         <figcaption>
-          The popup: daemon state, container count and list, the start and stop row, the download row and
-          the countdown.
+          The popup the widget follows: daemon status, the container count, the grouped container list
+          with its per-group controls, and Miscelánea — the download row and the countdown.
         </figcaption>
       </figure>
       <figure class="shot">
-        <img src="screenshots/settings-general.png" alt="The Docker Status config page: polling interval, the container list toggle, the video-download settings and the shutdown countdown minutes"
-             width="812" height="659" loading="lazy" decoding="async"
+        <img src="screenshots/settings-general.png" alt="The design mockup the config page follows: the Docker, Container list, Podman Desktop and Miscelánea cards"
+             width="815" height="668" loading="lazy" decoding="async"
              onerror="this.closest('.shot').classList.add('is-broken')">
         <span class="shot__missing">screenshots/settings-general.png</span>
         <figcaption>
-          The config page: polling, the container list, the whole download row and the countdown.
+          The config page the widget follows: Docker, Container list, Podman Desktop and Miscelánea
+          (the Updates and Appearance cards sit below the captured viewport).
         </figcaption>
       </figure>
     </div>

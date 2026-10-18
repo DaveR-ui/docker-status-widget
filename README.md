@@ -1,9 +1,9 @@
 ---
-last_updated: 2026-10-13
+last_updated: 2026-10-18
 status: active
 description: Single entry point for the Docker Status documentation corpus — what the project is and how to navigate its docs.
 tags: [entry-point, index, navigation]
-version: 1.2
+version: 1.3
 doc_language: en
 related: [project]
 ---
@@ -17,8 +17,8 @@ A KDE Plasma 6 widget for the Docker daemon. It tells you the state at a glance,
 password prompt, stops it behind a deliberate confirmation, and downloads the YouTube or X link you just
 pasted — no terminal, no browser tab, no `sudo` dance.
 
-![The design mockup the popup follows: the daemon state, the container count and list, the action row, the download row and the shutdown countdown](screenshots/widget-popup.png)
-![The design mockup the config page follows: polling, the panel icon, the container list, the whole download row and the shutdown minutes](screenshots/settings-general.png)
+![The design mockup the popup follows: the daemon status card with its start/stop row, the flat grouped container rows with their per-group controls, and the Miscelánea section holding the Import content download row and the Countdown to Extinction controls](screenshots/widget-popup.png)
+![The design mockup the config page follows: the Docker, Container list, Podman Desktop and Miscelánea cards](screenshots/settings-general.png)
 
 KDE Plasma 6 on Wayland, developed and verified against **Plasma 6.7.4 / plasma5support 6.7.4 / polkit 127
 on CachyOS**.
@@ -57,16 +57,27 @@ only for downloads — a `yt-dlp` reachable on plasmashell's `PATH`, plus a Java
 | Surface | Content |
 | --- | --- |
 | Panel (compact) | Theme icon (dimmed when stopped) + severity dot |
-| Popup / desktop (full) | Daemon state, `running/total` container count, scrollable container list, start/stop buttons, refresh button, video-download row |
+| Popup / desktop (full) | A pinned column: the daemon status card (state, `running/total` count, start/stop row, and the refresh, Podman Desktop launch and update-indicator buttons), the scrollable grouped container list in the middle, the update notice row, and the Miscelánea card pinned at the bottom |
+
+The popup is laid out so it never changes size as containers come and go: the status card and the
+Miscelánea card stay pinned at the two ends, and the container list is the scrollable middle region.
+
+Containers are listed **flat, grouped by their Docker Compose project**: one header row per group
+carrying the project name, its running/total counter and — for compose-backed groups — small flat
+play/stop buttons, each group collapsing on its own. There is no "Containers" section header, and
+there is no footer.
+
+**Miscelánea** is one collapsible card holding both the video-download row ("Import content") and the
+shutdown countdown ("Countdown to Extinction"), each under its own inner title.
 
 State is reported honestly in four levels, not two:
 
-| State | Severity | Colour |
-| --- | --- | --- |
-| `active` | positive | green |
-| `inactive` | neutral | orange |
-| `failed` | negative | red |
-| `unknown` (probe failed) | muted | grey |
+| State | Severity | Colour | Meaning |
+| --- | --- | --- | --- |
+| `active` | positive | green | the daemon is running |
+| `inactive` | neutral | orange | the daemon is stopped |
+| `failed` | negative | red | the unit failed |
+| `unknown` (probe failed) | muted | grey | the probe could not tell |
 
 `unknown` is deliberately *not* rendered as "stopped": a broken probe must never
 look like a healthy reading.
@@ -135,8 +146,9 @@ The full boundary and the rejected alternatives are recorded in
 
 ## Settings
 
-Everything on the widget's config page. Every value is validated by `dockerstatus.js` before it reaches a
-command, and a value it refuses falls back to the default in this table.
+Everything on the widget's config page. Every value that reaches a command is validated by
+`dockerstatus.js` before it is assembled, and a value it refuses falls back to the default in this
+table.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
@@ -148,29 +160,23 @@ command, and a value it refuses falls back to the default in this table.
 | JS runtime | `node` | Passed as `--js-runtimes`; leave empty to omit the flag entirely. |
 | yt-dlp binary | `yt-dlp` | Executable name or path; `~/` expands. |
 | Cookies browser | `firefox` | Passed as `--cookies-from-browser`; accepts yt-dlp syntax such as `chrome:Default` or `firefox+gnomekeyring`. Leave empty to send no cookies. |
-
-## What it shows
-
-| Surface | Content |
-| --- | --- |
-| Panel (compact) | Theme icon (dimmed when stopped) + severity dot |
-| Popup / desktop (full) | Daemon state, `running/total` container count, scrollable container list, start/stop buttons, refresh button, download row |
-
-The daemon state is reported in four levels instead of two, so that a probe that fails is never mistaken
-for a daemon that is stopped:
-
-| State | Colour | Meaning |
-| --- | --- | --- |
-| `active` | green | the daemon is running |
-| `inactive` | orange | the daemon is stopped |
-| `failed` | red | the unit failed |
-| `unknown` | grey | the probe could not tell |
+| Podman Desktop path | `podman-desktop` | Executable name or path behind the square launch button beside the daemon status. `~/` expands. |
+| Shutdown countdown (minutes) | `15` | How long the countdown runs before the power-off; a whole number greater than 10, editable inline in the popup too. |
+| Update check interval (hours) | `6` | How often the widget asks the release manifest whether a newer version exists; `0` disables the check entirely. |
 
 ## Starting and stopping the daemon
 
 `systemctl start docker` needs root, and this widget wants that to be one click. The rule in
 `polkit/49-docker-status-widget.rules` grants exactly one action id, one unit, one verb, from a local
 active session only. It does not grant stop, restart, disable or mask.
+
+## Updates
+
+The widget checks a fixed release manifest on a schedule and says so when a newer version exists. The
+notice is a muted line in the popup plus one indicator beside the daemon status; clicking that indicator
+opens the release page. Nothing is said while the widget is current, and a failed check — offline, no
+`curl`, an unreadable manifest — draws nothing at all. The manifest is generated from the same
+`metadata.json` the widget is packaged with, so the version is authored exactly once.
 
 ---
 
@@ -295,6 +301,7 @@ is rebuilt, never rescued — if it is lost, rerun the generator.
 | [adrs/adr-0016-containers-flat-rows-and-podman-section-removal.md](docs/adrs/adr-0016-containers-flat-rows-and-podman-section-removal.md) | The Containers header and its collapse flag are removed and group rows go flat per the mockup; the Podman Desktop section is deleted while its builders, kcfg entry and tests are retained — superseding ADR-0014's UI-section clause, with the compose boundary left standing. |
 | [adrs/adr-0017-podman-launch-button-and-topbar-removal.md](docs/adrs/adr-0017-podman-launch-button-and-topbar-removal.md) | The Podman Desktop launch returns as a square button beside the daemon-status label, and the "Workspace" topbar is removed — superseding ADR-0016's Podman Desktop UI-removal clause, with the flat container rows still standing. |
 | [adrs/adr-0018-onrails-v1-4-retrofit.md](docs/adrs/adr-0018-onrails-v1-4-retrofit.md) | The corpus is retrofitted to documentation-onrails v1.4: the root `README.md` becomes the single entry point, the procedure container becomes `docs/protocols/`, the validator and the generated artifacts move to the repo root, and the methodology is cited by URL. |
+| [adrs/adr-0019-miscelanea-section-merge.md](docs/adrs/adr-0019-miscelanea-section-merge.md) | The popup's video-download block and its "Countdown to Extinction" block merge into one collapsible "Miscelánea" section under a single toggle, each keeping its own inner title, with one local flag and one derived gate replacing the two per-block flags — so an armed countdown can never be collapsed away. The config page merges its two cards the same way. It supersedes nothing. |
 | [adrs/adr-0020-footer-removal-and-pinned-popup-layout.md](docs/adrs/adr-0020-footer-removal-and-pinned-popup-layout.md) | The popup's footer and its configurable bottom text are deleted end to end (kcfg entry and config control included), and the popup becomes a pinned column — status card on top, Miscelánea at the bottom, the container list as a scrollable middle region floored at one and a half rows — so the widget no longer resizes as the list grows. Its bottom-text clause supersedes only ADR-0008's. |
 
 ## Layout
@@ -306,14 +313,18 @@ package/io.github.daver-ui.dockerstatus/
     ├── config/main.xml               # kcfg entries -> cfg_* aliases
     ├── icons/dockerstatus.svg        # bundled app icon (metadata.json Icon: /icons/dockerstatus.svg)
     └── ui/
-        ├── main.qml                  # PlasmoidItem: commands, polling, download wiring, state
+        ├── main.qml                  # PlasmoidItem: commands, polling, actions, download/update wiring, state
         ├── CompactRepresentation.qml # panel icon + severity dot
-        ├── FullRepresentation.qml    # popup/desktop: state, list, start/stop buttons, download row
+        ├── FullRepresentation.qml    # popup/desktop: pinned column — status card, scrollable grouped container list, update notice, Miscelánea
         ├── SeverityDot.qml           # single severity -> colour mapping
+        ├── DockerStatusPalette.qml   # the mockup's fixed dark palette and type scale
         ├── dockerstatus.js           # pure logic incl. download boundary, unit tested in Node
-        └── config/ConfigGeneral.qml  # config page (poll, icon, list, download settings)
+        └── config/ConfigGeneral.qml  # config page (poll, icon, list, Podman path, download, countdown, updates)
 polkit/49-docker-status-widget.rules
+install.sh                            # lifecycle CLI
 tests/dockerstatus.test.mjs
+.github/                              # CI gate (test, qmllint, docs) and the Pages release workflow
+site/                                 # the GitHub Pages release site, and the manifest the widget fetches
 screenshots/                          # the two images above
 docs/                                 # documentation corpus — entry point: this README; routing: docs/project.md
 index.md                              # generated corpus tree (marker region, repo root)
