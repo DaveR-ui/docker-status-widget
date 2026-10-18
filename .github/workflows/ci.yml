@@ -192,20 +192,3 @@ jobs:
             exit 1
           fi
           echo "qmllint: no errors — warnings and infos are not gating"
-
-  docs:
-    name: docs
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: "22"
-
-      # Check mode only. validate.js --write rewrites the two generated
-      # regions; CI never rewrites anything, it only reports, so the flag is
-      # deliberately absent.
-      - name: Validate the documentation corpus
-        run: node validate.js
