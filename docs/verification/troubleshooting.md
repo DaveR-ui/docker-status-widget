@@ -42,8 +42,7 @@ not a fault.
 **Root cause:** the polkit grant is deliberately not widened for stop. `ALLOWED_VERBS` holds exactly
 `"start"`, so a stop fails that gate, falls through to polkit's normal authentication agent, and prompts.
 Starting stays passwordless on the same machine under the same rule; the asymmetry between the benign
-action and the destructive one is the design
-([[adr-0007-stop-button-confirmation-and-narrow-grant]]).
+action and the destructive one is the design.
 **Fix:** none is needed — enter the password, or cancel and leave the daemon running. Do **not** "fix"
 the prompt by adding `"stop"` to `ALLOWED_VERBS`: that is a security decision, not a configuration
 change, and it removes the only real gate on a destructive verb. If no prompt appears at all and the
@@ -125,9 +124,9 @@ across reboots.
 **Fix:** decide deliberately. `sudo systemctl enable docker.service` starts it at boot;
 `systemctl enable --now docker.socket` gives socket activation instead: the daemon comes up on demand, so
 the widget's start button becomes unnecessary — although the widget is not read-only, because the stop
-button remains ([ADR-0007](../adrs/adr-0007-stop-button-confirmation-and-narrow-grant.md)). Check the
+button remains. Check the
 current state with `./install.sh status`, which prints both `is-active` and `is-enabled`.
-**Reference:** [../adrs/adr-0004-scoped-polkit-grant.md](../adrs/adr-0004-scoped-polkit-grant.md) —
+**Reference:** [privilege-slice.md](../privilege/privilege-slice.md) —
 what the grant does and does not make persistent.
 
 ## the download row is missing or its button is greyed out
@@ -137,9 +136,9 @@ what the grant does and does not make persistent.
 disabled while a download is in flight, while the paste field is empty, or until the one-shot
 `homeSource` has reported `$HOME`. A URL that is not an allow-listed `https` link does **not** disable
 the button — a click reports why it was refused instead.
-**Fix:** check the "Show the download row in the popup" setting, then confirm the installed package is
-version 0.2.0 or later (`./install.sh status`), because the row does not exist before that. If the row
-is present and the field has text but the button stays grey, the running widget has no `$HOME` yet;
+**Fix:** check the "Show the download row in the popup" setting, then confirm the installed package with
+`./install.sh status`. If the row is present and the field has text but the button stays grey, the
+running widget has no `$HOME` yet;
 restarting plasmashell re-runs `homeSource`.
 **Reference:** [../widget/ui-surfaces.md](../widget/ui-surfaces.md) — the video download row entry.
 
@@ -186,12 +185,14 @@ the browser's own profile list. The widget's explicit flag wins over the same fl
 **Context:** the widget's options are opened, or applied, and "Cookies browser" reads `brave` — the first
 item of the list — whatever was configured before. Downloads then use a browser the user did not choose,
 or fail with "Sign in to confirm you're not a bot".
-**Root cause:** `cfg_cookiesBrowser` used to be an alias to the combo's `editText`. Plasma hands the stored
+**Root cause:** `cfg_cookiesBrowser` is a plain string property, not an alias to the combo's `editText`.
+Plasma hands the stored
 value to the page as an initial property, and that write arrives before the combo initialises: the combo's
 own startup then adopts index 0 and rewrites `editText` to `brave`, and its `Component.onCompleted` runs
-only after that. Because Plasma reads `cfg_<entryName>` back when the page is applied, opening the options
-and accepting them wrote `brave` over the configured browser. Order measured on Qt 6.11.2 against the
-shipped file, with the stored value passed the way `AppletConfiguration.qml` passes it.
+only after that. An `editText` alias therefore cannot hold the stored value, and because Plasma reads
+`cfg_<entryName>` back when the page is applied, an aliased page shows `brave` and then saves it over the
+configured browser. Order measured on Qt 6.11.2 against the shipped file, with the stored value passed the
+way `AppletConfiguration.qml` passes it.
 **Fix:** keep `cfg_cookiesBrowser` a plain string property and seed the combo in its own
 `Component.onCompleted` — `currentIndex` first, then `editText`, so a free-form value such as
 `chrome:Default` survives an index of -1 — with the `onEditTextChanged` push-back muted behind
@@ -199,7 +200,7 @@ shipped file, with the stored value passed the way `AppletConfiguration.qml` pas
 which is the same bug from the other side. `config/ConfigGeneral.qml` carries the arrangement, and the Node
 suite pins it as text.
 **Reference:** [../widget/ui-surfaces.md](../widget/ui-surfaces.md) — the ConfigGeneral Interface section;
-[../adrs/adr-0008-configurable-cookies-browser-and-bottom-text.md](../adrs/adr-0008-configurable-cookies-browser-and-bottom-text.md)
+[../status/status-slice.md](../status/status-slice.md)
 — the setting's accepted grammar and validation.
 
 ## the download finished but no file appeared
@@ -231,8 +232,7 @@ unusable, so the button is not silently dead; a valid edit persists through `mai
 invalid one is never persisted.
 **Reference:** [../status/status-slice.md](../status/status-slice.md) — `resolveShutdownMinutes`;
 [../widget/ui-surfaces.md](../widget/ui-surfaces.md) — the shutdown section;
-[../adrs/adr-0010-inline-shutdown-minutes-in-the-representation.md](../adrs/adr-0010-inline-shutdown-minutes-in-the-representation.md)
-— the inline field and the single-writer rule.
+[../widget/widget-slice.md](../widget/widget-slice.md) — the inline field and the single-writer rule.
 
 ## the machine powers off without asking for a password
 
@@ -244,11 +244,10 @@ and `/usr/share/polkit-1/actions/org.freedesktop.login1.policy` gives
 `allow_inactive=auth_admin_keep`, `allow_active=yes` (`power-off-multiple-sessions` is likewise
 `allow_active=yes`), so a local active session is authorised without authentication — the `pkcheck` probe
 for `org.freedesktop.login1.power-off` exits 0 without interaction. Unlike
-`systemctl stop docker`, the power-off does not prompt
-([[adr-0009-widget-owned-shutdown-countdown]]).
+`systemctl stop docker`, the power-off does not prompt.
 **Fix:** none is needed. The safeguards are the deliberate activation, the more-than-10-minute countdown,
-the live visible countdown and the `Cancel` button ([[adr-0009-widget-owned-shutdown-countdown]]). Do
-**not** "fix" the absent prompt by widening `ALLOWED_VERBS` or adding a rule: the power-off is a logind
+the live visible countdown and the `Cancel` button. Do **not** "fix" the absent prompt by widening
+`ALLOWED_VERBS` or adding a rule: the power-off is a logind
 action, not a systemd `manage-units` verb, so a rule would not create a password gate — it would only
 weaken the docker grant. Changing logind's default is a system-policy edit, outside this widget.
 **Reference:** [privilege-slice.md](../privilege/privilege-slice.md) — why the power-off is outside the
@@ -274,8 +273,8 @@ manifest at `https://dave-r-ui.github.io/docker-status-widget/latest.json`. A st
 checkout is a maintenance fault, not a widget fault: regenerate it with
 `node .github/scripts/sync-manifest.mjs --write`. Note that the static version text in `site/index.html` is
 hand-maintained and is **not** guarded by `sync-manifest.mjs --check`, which checks the manifest only.
-**Reference:** [../adrs/adr-0013-widget-update-check-and-release-site.md](../adrs/adr-0013-widget-update-check-and-release-site.md)
-— the reversal, the manifest contract and the silence contract; [status-slice.md](../status/status-slice.md)
+**Reference:** [../status/data-engine-contract.md](../status/data-engine-contract.md)
+— the marker split and the silence contract; [status-slice.md](../status/status-slice.md)
 — `isUpdateAvailable` and `compareVersions`.
 
 ## every container lands in one group and the play/stop buttons are missing
@@ -290,7 +289,7 @@ standalone group, never to an empty list.
 **Fix:** run `docker ps -a --format '{{.Names}}|{{.State}}|{{.Label "com.docker.compose.project"}}'` as
 the widget's user. If the third field is empty for a container you know belongs to a stack, the label is
 genuinely absent, not the grouping. Upgrade docker only if the template function itself is unsupported.
-**Reference:** [../adrs/adr-0014-compose-grouping-and-podman-desktop-launch.md](../adrs/adr-0014-compose-grouping-and-podman-desktop-launch.md)
+**Reference:** [../status/status-slice.md](../status/status-slice.md)
 — the probe format and the grouping contract; [widget-slice.md](../widget/widget-slice.md) — the grouped
 container section.
 
@@ -306,24 +305,21 @@ swallowed.
 **Fix:** none is needed beyond the next poll — refresh and the group disappears from the list. If the
 group is still shown, confirm the project label is still on its containers with the `docker ps` probe in
 the entry above.
-**Reference:** [../adrs/adr-0014-compose-grouping-and-podman-desktop-launch.md](../adrs/adr-0014-compose-grouping-and-podman-desktop-launch.md)
-— the label form and the vanished-stack behaviour; [widget-slice.md](../widget/widget-slice.md) — the
+**Reference:** [../status/status-slice.md](../status/status-slice.md)
+— `buildComposeProjectCommand()` and the label form; [widget-slice.md](../widget/widget-slice.md) — the
 per-group controls.
 
-## the Podman Desktop launch was removed (it reported podman-desktop: not found)
+## the Podman Desktop launch reports podman-desktop: not found
 
-**Context:** historically, the popup's Podman Desktop button failed immediately, reporting
-`podman-desktop: not found` on its feedback line.
+**Context:** the status card's square Podman Desktop button fails immediately, reporting
+`podman-desktop: not found` on the card's feedback row.
 **Root cause:** the default is the PATH name `podman-desktop`, resolved by `resolvePodmanDesktopPath()`.
-plasmashell's `PATH` is not the interactive shell's, so an executable outside it was not found — and the
-failure appeared at click time, not at load time, because the path was only resolved and run on click.
-**Fix:** the launch surface returned as the square button beside the daemon status in the status card
-([[adr-0017-podman-launch-button-and-topbar-removal]]), so the failure is visible again on the card's
-feedback row, exactly as the removed section reported it. Set "Podman Desktop path" in the widget's options to an
+plasmashell's `PATH` is not the interactive shell's, so an executable outside it is not found — and the
+failure appears at click time, not at load time, because the path is resolved and run only on click.
+**Fix:** the launch surface is the square button beside the daemon status in the status card, so the
+failure is visible on the card's feedback row. Set "Podman Desktop path" in the widget's options to an
 absolute or `~/`-expanded path, for example `~/.local/bin/podman-desktop`, or make the executable
 reachable on the session `PATH` (check `systemctl --user show-environment`); clearing the field re-arms
 the `podman-desktop` default.
 **Reference:** [status-slice.md](../status/status-slice.md) — `resolvePodmanDesktopPath`;
-[../adrs/adr-0016-containers-flat-rows-and-podman-section-removal.md](../adrs/adr-0016-containers-flat-rows-and-podman-section-removal.md)
-— the removal; [../adrs/adr-0014-compose-grouping-and-podman-desktop-launch.md](../adrs/adr-0014-compose-grouping-and-podman-desktop-launch.md)
-— the Podman Desktop path boundary.
+[../widget/ui-surfaces.md](../widget/ui-surfaces.md) — the launch button in the status card.

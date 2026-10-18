@@ -3,7 +3,7 @@ id: privilege-slice
 category: privilege
 tags: [slice, generality, privilege, polkit, security]
 aliases: [Privilege slice, Polkit slice]
-related: [privilege-index, adr-0004-scoped-polkit-grant]
+related: [privilege-index]
 version: 1.0
 status: active
 ---
@@ -16,7 +16,9 @@ The whole privilege boundary of the project, in one file: a polkit JavaScript ru
 one verb on exactly one systemd unit to a local, active member of `wheel`. Its form is a declarative
 predicate — every branch either returns `YES` or `NOT_HANDLED`, and `NOT_HANDLED` means polkit's normal
 authentication applies. Nothing in the widget can escalate by itself; this file is the only place
-where "may do this unprivileged" is ever answered.
+where "may do this unprivileged" is ever answered. It is one scoped rule rather than `pkexec` per click
+or a sudoers entry: a click stays passwordless with no per-click escalation prompt, and the whole grant
+is auditable in one file that names its action, its unit and its verb.
 
 ## Boundaries
 
@@ -25,14 +27,11 @@ what must never be granted.
 
 **Out:** installing the file ([installer-slice](../installer/installer-slice.md)); the action that
 reaches polkit ([widget-slice](../widget/widget-slice.md)); how a prompt is diagnosed
-([troubleshooting](../verification/troubleshooting.md)); the rejected alternative models, which are
-archaeology and live in [adr-0004](../adrs/adr-0004-scoped-polkit-grant.md).
+([troubleshooting](../verification/troubleshooting.md)).
 
 ## Entry points
 
 - `polkit/49-docker-status-widget.rules` — the rule, and its comment block stating the intent.
-- [../adrs/adr-0004-scoped-polkit-grant.md](../adrs/adr-0004-scoped-polkit-grant.md) — why this model
-  and not `pkexec` or a sudoers entry.
 - `./install.sh install-polkit` and `./install.sh remove-polkit` — the only sanctioned way in or out.
 
 ## How it works
@@ -61,8 +60,7 @@ power-off does **not** prompt: `/usr/share/polkit-1/actions/org.freedesktop.logi
 `allow_inactive=auth_admin_keep`, **`allow_active=yes`** (`power-off-multiple-sessions` is likewise
 `allow_active=yes`), so a local active session is authorised without authentication — the `pkcheck` probe
 for `org.freedesktop.login1.power-off` exits 0 without interaction. The safeguards for
-that action are the countdown and the `Cancel` button, not a password
-([[adr-0009-widget-owned-shutdown-countdown]]).
+that action are the countdown and the `Cancel` button, not a password.
 
 ## Conventions of this slice
 
@@ -83,12 +81,11 @@ that action are the countdown and the `Cancel` button, not a password
 the existence of the `wheel` group.
 **Downstream:** the widget's start button becomes passwordless only when this rule is installed. No
 code depends on the rule existing — without it the button still works and simply prompts. The stop
-button always prompts, installed rule or not: it is outside the grant by decision, not by omission
-([[adr-0007-stop-button-confirmation-and-narrow-grant]]).
+button always prompts, installed rule or not: it is outside the grant by decision, not by omission.
 
 ## Known gaps & accepted debt
 
-- The rule's **text** is now pinned by a test: `tests/dockerstatus.test.mjs` reads the shipped rule file
+- The rule's **text** is pinned by a test: `tests/dockerstatus.test.mjs` reads the shipped rule file
   and asserts `ALLOWED_VERBS` is exactly `["start"]` plus the action-id, unit and session gates. Nothing
   exercises the rule **at runtime** against polkit, so a polkit release could still dead-end the grant
   silently, and `pkcheck` remains the only runtime confirmation.
@@ -97,11 +94,10 @@ button always prompts, installed rule or not: it is outside the grant by decisio
 - Only `start` is supported. `stop`, `restart`, `enable`, `disable` and `mask` were all deliberately
   excluded, so "widen the array" is the only supported change and it is a security decision. The
   widget's stop button deliberately relies on polkit's interactive prompt instead of a grant, which is
-  what keeps the destructive verb out of the passwordless path
-  ([[adr-0007-stop-button-confirmation-and-narrow-grant]]).
+  what keeps the destructive verb out of the passwordless path.
 - The rule does not enable `docker.service` at boot; that stays a separate, deliberate system
   decision.
 - The power-off is not covered by this grant and needs no rule: logind's `allow_active=yes` default makes
   a local active session power off without a password. That is the platform's policy, not this project's,
   and it is not a prompt this slice can produce. The countdown and the `Cancel` button are the only
-  safeguards ([[adr-0009-widget-owned-shutdown-countdown]]).
+  safeguards.

@@ -91,20 +91,19 @@ severity. The public surface, and what each function guarantees:
 State ownership: this module owns *meaning*; `main.qml` owns the lifetime of the values. The download
 helpers own the whole safety argument for the one command that is not a fixed constant: the URL is
 classified before a command exists, and every value interpolated into the command — URL and
-configuration alike — goes through `shellQuote()`. The boundary itself is recorded in
-[../adrs/adr-0006-video-downloader-command-boundary.md](../adrs/adr-0006-video-downloader-command-boundary.md).
+configuration alike — goes through `shellQuote()`. It is the only place user input enters a command:
+everywhere else the interpolated values are configuration values the resolvers validated.
 
 The shutdown helpers own a different boundary: the configured minutes are a validated *duration*, not a
 command fragment, so `resolveShutdownMinutes` decides whether a countdown can be armed at all while the
 fixed `systemctl poweroff` command stays in `main.qml` and is never touched. `null` is the deliberate
 answer for an unusable value; the caller disables play and shows why, rather than arming a nonsense
-countdown ([../adrs/adr-0009-widget-owned-shutdown-countdown.md](../adrs/adr-0009-widget-owned-shutdown-countdown.md)).
+countdown.
 
 The update-check helpers own a third boundary, and it is deliberately the opposite of the download's:
 `buildUpdateCheckCommand()` interpolates nothing — every fragment is a fixed constant, the URL included —
-so it adds no new command-building exception
-([../adrs/adr-0013-widget-update-check-and-release-site.md](../adrs/adr-0013-widget-update-check-and-release-site.md)).
-`VERSION_PATTERN` is the single shape gate — one to three numeric segments, no leading zeros — and
+so it adds no new command-building exception. `VERSION_PATTERN` is the single shape gate — one to three
+numeric segments, no leading zeros — and
 `isVersionString()` is the only place that rule is applied, so `parseWidgetVersion`, `parseLatestVersion`
 and `compareVersions` all refuse a malformed segment at once rather than half-parsing it in one place. The
 comparison is numeric and segment-wise on purpose (`"0.10"` is greater than `"0.9"`), and
@@ -112,7 +111,7 @@ comparison is numeric and segment-wise on purpose (`"0.10"` is greater than `"0.
 the widget structurally cannot show an update line that is wrong. `UPDATE_PAGE_URL` is the second fixed
 constant in this area: the update indicator's click opens it through the widget's single
 `Qt.openUrlExternally` call, so the browser-opening surface is exactly one call to exactly one constant,
-never configuration ([[adr-0015-update-indicator-opens-the-release-page]]).
+never configuration.
 
 The compose grouping and the Podman launch own a fourth boundary, and it is the second sanctioned
 command-building exception. The probe already carries the grouping identity: `parseContainers()` reads
@@ -124,13 +123,11 @@ rather than nothing. `buildComposeProjectCommand()` turns a group into
 interpolated as exactly one shell-quoted argument and the function returning `""` for the standalone
 bucket or an unvalidated action, while `buildPodmanDesktopCommand()` assembles the quoted resolved path
 plus the run token and nothing else. Both mutations are unprivileged — the user's own docker socket and
-the user's own session — so the daemon's start/stop asymmetry is untouched; the boundary is recorded in
-[../adrs/adr-0014-compose-grouping-and-podman-desktop-launch.md](../adrs/adr-0014-compose-grouping-and-podman-desktop-launch.md)
-and the sources and surfaces that call it in the [widget slice](../widget/widget-slice.md). The popup
-surface that called the Podman builder was removed
-([[adr-0016-containers-flat-rows-and-podman-section-removal]]), which drops the data-source count to ten,
-but the builders, the resolver, the `podmanDesktopPath` kcfg entry and their tests stand: the boundary
-remains live in the pure core even though no QML surface currently calls it.
+the user's own session — so the daemon's start/stop asymmetry is untouched; the sources and surfaces that
+call both builders are in the [widget slice](../widget/widget-slice.md). The builders, the resolver, the
+`podmanDesktopPath` kcfg entry and their tests stand, and `main.qml` is the only caller of all three —
+the compose builder from the grouped container section, the Podman builder from the status card's square
+launch button, and the resolver behind both.
 
 ## Conventions of this slice
 

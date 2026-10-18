@@ -35,10 +35,8 @@ the privilege grant belongs to [privilege-slice](../privilege/privilege-slice.md
 package belongs to [installer-slice](../installer/installer-slice.md); linting and evidence belong to
 [verification-slice](../verification/verification-slice.md). Assembling a command from configuration
 is out of scope for every slice; the two sanctioned command-building exceptions are the video-download
-command and the compose/Podman commands, whose
-assembly lives in the [status slice](../status/status-slice.md) and whose boundaries are recorded in
-[ADR-0006](../adrs/adr-0006-video-downloader-command-boundary.md) and
-[ADR-0014](../adrs/adr-0014-compose-grouping-and-podman-desktop-launch.md).
+command and the compose/Podman commands, whose assembly and command boundary live in the
+[status slice](../status/status-slice.md).
 
 ## Entry points
 
@@ -84,55 +82,49 @@ ownership is one-directional — `main.qml` owns state, the
 representations are pure consumers of properties, and `SeverityDot.qml` owns the only colour
 decision.
 
-The container list is richer than before, and the popup renders it as a flat list of grouped rows. The
-probe line carries the compose project, and the list crosses into `FullRepresentation.qml` already
-grouped: the popup draws one flat header row per project — the bundled Docker box glyph on a 28px tile,
-the project name, the running/total counter and, for compose-backed groups only, small flat 28x28
-play/stop `ToolButton`s with muted glyphs — with the same +/- affordance the merged Miscelánea section
-header uses, and
-the standalone group keeps its header but carries no controls. There is no section header above the
-list and no section-level collapse flag: each group carries its own open/closed state last, so
-per-group collapse is the surviving affordance
-([[adr-0016-containers-flat-rows-and-podman-section-removal]]). A play or stop click does not build a
-command in the representation: it emits a signal naming the project and the action, and `main.qml`
+The popup renders the container list as a flat list of grouped rows. The probe line carries the compose
+project, and the list crosses into `FullRepresentation.qml` already grouped: the popup draws one flat
+header row per project — the bundled Docker box glyph on a 28px tile, the project name, the running/total
+counter and, for compose-backed groups only, small flat 28x28 play/stop `ToolButton`s with muted glyphs —
+with the same +/- affordance the merged Miscelánea section header uses, and the standalone group keeps
+its header but carries no controls. There is no section header above the list and no section-level
+collapse flag: each group carries its own open/closed state last, so per-group collapse is the only
+collapse affordance. A play or stop click does not build a command in the representation: it emits a
+signal naming the project and the action, and `main.qml`
 assembles the command with `DockerStatus.buildComposeProjectCommand()` and runs it on the `composeAction`
 one-shot. The popup stays a pure consumer — everything crosses a property in and a signal out.
 
-The popup's one remaining section-level collapsible card is the merged "Miscelánea" section
-([[adr-0019-miscelanea-section-merge]]): one header (the "Miscelánea" title and the ± glyph) over one body
-holding both the video-download sub-block (gated on the `showVideoDownloader` setting, as the old card
-was) and the "Countdown to Extinction" sub-block (its inner title and its 35x35 timer tile moved inside the
-body), each keeping its own inner title. One flag replaces the two the blocks used to carry:
-`miscSectionExpanded` (local view state, default true, never persisted and never signalled) collapses both
-together, and the derived `miscBodyVisible` (`miscSectionExpanded || shutdownPending`) gates the body — the
-same adr-0009 semantics as the old `countdownBodyVisible`, so an armed countdown comes back whatever the
-section bool says and can never be collapsed away. The renamed state stays entirely inside
-`FullRepresentation.qml`: like `downloadSectionExpanded` and `countdownSectionExpanded` before it, it never
-crosses into `main.qml`, and the popup remains a pure consumer. The config page merges its two cards the
-same way: one "Miscelánea" card (after Podman Desktop, before Updates) whose single nested
-`Kirigami.FormLayout` holds the seven download and shutdown controls in their original order, with no kcfg
-entry, `cfg_*` alias, control id or tooltip changed; the page now renders six section cards.
+The popup's one section-level collapsible card is the merged "Miscelánea" section: one header (the
+"Miscelánea" title and the ± glyph) over one body holding both the video-download sub-block (gated on the
+`showVideoDownloader` setting) and the "Countdown to Extinction" sub-block (its inner title and its 35x35
+timer tile inside the body), each keeping its own inner title. One flag covers both: `miscSectionExpanded`
+(local view state, default true, never persisted and never signalled) collapses them together, and the
+derived `miscBodyVisible` (`miscSectionExpanded || shutdownPending`) gates the body — the countdown's own
+rule, so an armed countdown is always visible whatever the section bool says and can never be collapsed
+away. The state stays entirely inside `FullRepresentation.qml`: it never crosses into `main.qml`, and the
+popup remains a pure consumer. The config page merges its two cards the same way: one "Miscelánea" card
+(after Podman Desktop, before Updates) whose single nested `Kirigami.FormLayout` holds the seven download
+and shutdown controls in their original order, with no kcfg entry, `cfg_*` alias, control id or tooltip
+changed; the page renders six section cards.
 
-The popup is a pinned column ([[adr-0020-footer-removal-and-pinned-popup-layout]]): the status card is its
-first region and the merged Miscelánea card is its last, neither inside a scroll region, and the container
-section between them is the scrollable middle region — `Layout.fillHeight: true`, its `ListView` uncapped
+The popup is a pinned column: the status card is its first region and the merged Miscelánea card is its
+last, neither inside a scroll region, and the container section between them is the scrollable middle
+region — `Layout.fillHeight: true`, its `ListView` uncapped
 and clipped, and a height floor of one and a half container rows
 (`containerScrollFloor: containerRowHeight * 3 / 2` = 78px) so the next row always peeks in and the widget
 never resizes as the list grows. The update notice sits in a reserved one-grid-unit row between the middle
 region and the pinned Miscelánea card, its text emptied rather than the label hidden, so it cannot grow the
-widget either. The footer and the configurable bottom text are removed; the palette's `footerText` token
-stays in `DockerStatusPalette.qml` because the palette is the mockup's fixed set, not a list of tokens in
-use ([[adr-0020-footer-removal-and-pinned-popup-layout]]).
+widget either. There is no footer and no configurable bottom text; the palette's `footerText` token stays
+in `DockerStatusPalette.qml` because the palette is the mockup's fixed set, not a list of tokens in use.
 
-The Podman Desktop launch ADR-0014 added as the popup's fourth collapsible card, and ADR-0016 removed, is back
-as a square 28x28 `ToolButton` beside the daemon-status label in the status card: `FullRepresentation.qml`
-emits `podmanLaunchRequested()` and `main.qml` answers with `launchPodmanDesktop()`, running
-`DockerStatus.buildPodmanDesktopCommand()` on the restored `podmanLaunch` one-shot — one source, one in-flight
-flag, exit code 0 clears the feedback and anything else surfaces stderr verbatim (or a generic fallback naming
-the exit code), with the button disabled while the app runs. The data-source count is eleven again
-([[adr-0017-podman-launch-button-and-topbar-removal]]). The backing logic —
-`DockerStatus.buildPodmanDesktopCommand()`, `DockerStatus.resolvePodmanDesktopPath()`, the `podmanDesktopPath`
-kcfg entry and the `ConfigGeneral` setting — is the retained adr-0014 boundary and has a QML caller again.
+The Podman Desktop launch is a square 28x28 `ToolButton` beside the daemon-status label in the status card:
+`FullRepresentation.qml` emits `podmanLaunchRequested()` and `main.qml` answers with
+`launchPodmanDesktop()`, running `DockerStatus.buildPodmanDesktopCommand()` on the `podmanLaunch` one-shot —
+one source, one in-flight flag, exit code 0 clears the feedback and anything else surfaces stderr verbatim
+(or a generic fallback naming the exit code), with the button disabled while the app runs. The data-source
+count is eleven. The backing logic — `DockerStatus.buildPodmanDesktopCommand()`,
+`DockerStatus.resolvePodmanDesktopPath()`, the `podmanDesktopPath` kcfg entry and the `ConfigGeneral`
+setting — is the Podman Desktop command boundary, and `main.qml` is its caller.
 
 `downloadVideo(url)` is the one handler that accepts input. It classifies the paste with
 `DockerStatus.classifyVideoUrl()` before a command exists; a refused paste sets `downloadFeedback` and
@@ -161,14 +153,13 @@ user text stays visible to be fixed). `setShutdownMinutes(raw)` — the ONLY wri
 kcfg entry — resolves through that same `DockerStatus.resolveShutdownMinutes()`, refuses a `null` value
 without persisting, skips a redundant write, and otherwise writes
 `Plasmoid.configuration.shutdownCountdownMinutes`. The representation validates its field through the same
-resolver but reads and writes no configuration ([[adr-0010-inline-shutdown-minutes-in-the-representation]]).
+resolver but reads and writes no configuration.
 
 The update check is the second polled source, and it is deliberately not a third command-building
 exception: `DockerStatus.buildUpdateCheckCommand()` assembles `updateCheckCommand` entirely from fixed
-constants, so no configuration value and no user input reaches it
-([[adr-0013-widget-update-check-and-release-site]]). `handleUpdateCheck()` is the one handler both sources
-deliver to; it reads only the closing event, splits the output at the marker and decides with
-`DockerStatus.isUpdateAvailable()`. Every failure branch is silent by construction: offline, no `curl`, an
+constants, so no configuration value and no user input reaches it. `handleUpdateCheck()` is the one
+handler both sources deliver to; it reads only the closing event, splits the output at the marker and
+decides with `DockerStatus.isUpdateAvailable()`. Every failure branch is silent by construction: offline, no `curl`, an
 unreadable `metadata.json` or an unparseable manifest all clear the state and render nothing — there is no
 error text anywhere in this feature. `checkForUpdates()` is the manual one-shot behind the third contextual
 action ("Check for updates", `enabled: !root.updateCheckInFlight`), and it tokenises the fixed command
@@ -182,27 +173,22 @@ plus a small flat `emblem-important` `ToolButton` beside the daemon state in the
 same `updateAvailable` gate. The line stays deliberately neither a button nor a `SeverityDot` nor a
 link, but the indicator is the widget's one sanctioned exception: its click opens the fixed
 `DockerStatus.UPDATE_PAGE_URL` release-page constant through the widget's single `Qt.openUrlExternally`
-call, and the URL is never configuration
-([[adr-0015-update-indicator-opens-the-release-page]]).
+call, and the URL is never configuration.
 
 ## Conventions of this slice
 
-- Commands are `readonly` constants in `main.qml`, with **two** recorded command-building exceptions:
+- Commands are `readonly` constants in `main.qml`, with **two** command-building exceptions:
   the video-download command, assembled by `DockerStatus.buildVideoDownloadCommand()` from a validated
-  URL and validated configuration values with every interpolated value shell-quoted
-  ([[adr-0006-video-downloader-command-boundary]]), and the compose project play/stop plus the Podman
-  Desktop launch, assembled by `DockerStatus.buildComposeProjectCommand()` /
-  `DockerStatus.buildPodmanDesktopCommand()` ([[adr-0014-compose-grouping-and-podman-desktop-launch]]).
-  The compose builder is called by `main.qml`; the Podman Desktop builder is called by `main.qml` again
-  too, from the relocated status-card button
-  ([[adr-0017-podman-launch-button-and-topbar-removal]]).
+  URL and validated configuration values with every interpolated value shell-quoted, and the compose
+  project play/stop plus the Podman Desktop launch, assembled by
+  `DockerStatus.buildComposeProjectCommand()` / `DockerStatus.buildPodmanDesktopCommand()`.
+  `main.qml` calls both builders — the compose one from the grouped container section, the Podman one
+  from the status-card button.
   No other configuration value is a command; everywhere else configuration supplies only values inside
   a command the widget builds. The update-check command is also
-  built in the pure module, but entirely from fixed constants, so it mints no further exception
-  ([[adr-0013-widget-update-check-and-release-site]]).
+  built in the pure module, but entirely from fixed constants, so it mints no further exception.
 - The per-project compose action needs no privilege — it is the user's own docker socket and the user's
-  own containers — so the daemon's start/stop asymmetry
-  ([[adr-0007-stop-button-confirmation-and-narrow-grant]]) is untouched: the per-group stop is
+  own containers — so the daemon's start/stop asymmetry is untouched: the per-group stop is
   deliberately NOT `systemctl stop docker`.
 - The compose project name is interpolated as a single shell-quoted argument
   (`DockerStatus.shellQuote()`), and the builder returns `""` for the standalone bucket or an action
@@ -210,7 +196,7 @@ call, and the URL is never configuration
   reaches the engine.
 - The shutdown countdown is widget-owned and its command is a fixed constant (`powerOffCommand`). The
   configured minutes size a local `Date.now()` deadline and never reach a shell; the cancel path is purely
-  local and needs no privilege ([[adr-0009-widget-owned-shutdown-countdown]]).
+  local and needs no privilege.
 - The download row lives only in the full representation. It is never rendered in the panel, and its
   tooltip is attached to the `ToolButton`: `PlasmaComponents3.ToolTip` only renders when its parent is
   an `AbstractButton`.
@@ -218,12 +204,10 @@ call, and the URL is never configuration
   strings are a no-op in the engine (see [data-engine-contract](../status/data-engine-contract.md)).
 - Representations receive properties and emit signals. They never reach for a `DataSource`, and a
   representation reads `Plasmoid.configuration` only for the panel icon; persisting a setting goes through
-  a value-carrying signal to `main.qml`, never through configuration access in the representation
-  ([[adr-0010-inline-shutdown-minutes-in-the-representation]]).
-- The severity-to-colour switch lives only in `SeverityDot.qml`, and now resolves against the mockup
+  a value-carrying signal to `main.qml`, never through configuration access in the representation.
+- The severity-to-colour switch lives only in `SeverityDot.qml`, and resolves against the mockup
   palette (`DockerStatusPalette.qml`) rather than the Kirigami theme; the neutral chrome tokens live in
-  that palette file, and the palette never maps a severity
-  ([[adr-0011-fixed-dark-palette-from-mockup]]). A new state adds a severity in
+  that palette file, and the palette never maps a severity. A new state adds a severity in
   [status-slice](../status/status-slice.md), never a colour here.
 - The `cfg_*` alias target must stay a plain writable property; aliasing an expression saves nothing
   and reports nothing. A setting carried by a combo box is the exception: the initial property Plasma
@@ -244,10 +228,9 @@ Firefox) for X and for age-gated YouTube. **Runtime (update check only):** a `cu
 plasmashell's `PATH`, plus network reachability to the fixed Pages URL; a missing `curl` or an offline
 machine is not an error — it is simply no update notice.
 **Runtime (Podman launch only):** the Podman Desktop executable, on plasmashell's `PATH` (default
-`podman-desktop`) or named by an absolute or `~/`-expanded path in the widget's options; a wrong
-setting fails at click time with the binary's own message, not at load time. The status card's square
-launch button is the UI trigger again ([[adr-0017-podman-launch-button-and-topbar-removal]]); a wrong
-setting fails at click time with the binary's own message, not at load time.
+`podman-desktop`) or named by an absolute or `~/`-expanded path in the widget's options; the status
+card's square launch button is the UI trigger, and a wrong setting fails at click time with the
+binary's own message, not at load time.
 **Downstream:** the installer copies this package; the privilege slice decides whether the start
 button prompts; the verification slice can lint these files and now render the representations
 headless for pixel review ([[render-preview]]), but the full wrapper is only observable inside
@@ -294,4 +277,4 @@ a running Plasma session.
 - Grouping depends on the `com.docker.compose.project` label. A docker that does not answer it (or does
   not support the `.Label` template function) degrades the list to one standalone group, never to an
   empty list.
-- The Podman path is a PATH name by default, so a wrong `podmanDesktopPath` fails at click time with the binary's own message (for example `podman-desktop: not found`), not at load time — the relocated status-card button reports it on the card's feedback row ([[adr-0017-podman-launch-button-and-topbar-removal]]).
+- The Podman path is a PATH name by default, so a wrong `podmanDesktopPath` fails at click time with the binary's own message (for example `podman-desktop: not found`), not at load time — the status-card button reports it on the card's feedback row.

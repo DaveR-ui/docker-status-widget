@@ -28,6 +28,6 @@ package at all is [../installer/installer-slice.md](../installer/installer-slice
 
 - The severity values these surfaces render: [../status/status-slice.md](../status/status-slice.md)
 - The engine contract behind the data sources: [../status/data-engine-contract.md](../status/data-engine-contract.md)
-- Why the stop button exists but confirms on a second click, and why it keeps the interactive
-  polkit prompt while start stays passwordless:
-  [../adrs/adr-0007-stop-button-confirmation-and-narrow-grant.md](../adrs/adr-0007-stop-button-confirmation-and-narrow-grant.md)
+- Why the stop button confirms on a second click, and why it keeps the interactive polkit prompt while
+  start stays passwordless: [../privilege/privilege-slice.md](../privilege/privilege-slice.md) — the
+  grant holds exactly `start` — and the action row in [ui-surfaces.md](ui-surfaces.md#fullrepresentation).

@@ -1,9 +1,9 @@
 ---
-last_updated: 2026-10-13
+last_updated: 2026-10-18
 status: active
 description: Agent-facing entry point for the Docker Status plasmoid — stack, slices, commands, conventions, vocabulary and symptom routing.
 tags: [project, entry-point, routing, slices]
-version: 1.2
+version: 2.0
 doc_language: en
 ---
 
@@ -14,10 +14,9 @@ doc_language: en
 Docker Status is a KDE Plasma 6 plasmoid (panel widget, and full widget on the desktop)
 that reports whether the Docker daemon is running, starts it with one click, and stops it behind a
 confirmation. Its form is a KPackage of QML files, one polkit rule, one Bash installer and a GitHub
-Pages release site: no build step, no service of its own, no database. It used to list "no network code"
-as a goal; that goal is deliberately reversed — the installed widget now reads its own `metadata.json`
-and fetches one fixed https release manifest to tell you an update exists, and nothing else about it
-talks to the network ([[adr-0013-widget-update-check-and-release-site]]). The widget is a read-mostly
+Pages release site: no build step, no service of its own, no database. The installed widget reads its
+own `metadata.json` and fetches one fixed https release manifest to tell you an update exists, and
+nothing else about it talks to the network. The widget is a read-mostly
 observer of two external commands — `systemctl is-active docker` and `docker ps -a` — and the only mutations it can
 perform are `systemctl start docker.service`, passwordless through a deliberately narrow privilege
 grant; `systemctl stop docker.service`, which is deliberately not covered by that grant and so goes
@@ -25,28 +24,27 @@ through polkit's interactive password prompt; and `systemctl poweroff`, which ru
 widget-owned countdown expires and, unlike the stop, does not prompt. Containers are grouped by their
 Docker Compose project, each group carrying its own play/stop controls; the Podman Desktop path
 setting and its command builder remain in the core and config, and the launch is a square button
-beside the daemon-status label in the popup's status card
-([[adr-0014-compose-grouping-and-podman-desktop-launch]], [[adr-0017-podman-launch-button-and-topbar-removal]]).
+beside the daemon-status label in the popup's status card.
 
 Anti-goals, stated so nobody adds them by accident: no stop on a single click — stopping the daemon is
 destructive to every running container, so the stop button arms on the first click and runs on the
-second, with an expiring confirmation ([[adr-0007-stop-button-confirmation-and-narrow-grant]]); no stop
+second, with an expiring confirmation; no stop
 without the interactive polkit prompt, and no widening of the grant for stop — `ALLOWED_VERBS` stays
 `["start"]`; no scheduled or systemd-owned shutdown — the countdown is widget-owned, so a reload cancels
 it; no countdown of 10 minutes or less, and no unvalidated duration — the configured minutes size a
-local deadline and never reach the fixed `systemctl poweroff` command
-([[adr-0009-widget-owned-shutdown-countdown]]); no polkit rule for the power-off and no widening of the
+local deadline and never reach the fixed `systemctl poweroff` command;
+no polkit rule for the power-off and no widening of the
 grant for it — unlike the docker stop it does not prompt, so the countdown and the Cancel button, not a
 password, are the safeguard; no restart/disable/mask button; no stop entry in the context menu, because
 a menu is also a one-click surface; no rootless or user-scoped daemon support; no `docker events` subscription (state
 is polled, not streamed); no network beyond the one update check — no service of its own, no telemetry,
-no POST, and no URL taken from configuration, because the manifest address is a fixed constant
-([[adr-0013-widget-update-check-and-release-site]]); no command string taken from configuration — with
+no POST, and no URL taken from configuration, because the manifest address is a fixed constant;
+no command string taken from configuration — with
 **two** recorded exceptions instead of one: the video-download row, where configuration supplies only
-validated values inside a command the widget builds
-([[adr-0006-video-downloader-command-boundary]]), and the Podman Desktop launch, where the one
-configuration-supplied value is a validated executable path that is itself the quoted command
-([[adr-0014-compose-grouping-and-podman-desktop-launch]]); the per-group compose play/stop adds a new
+validated values inside a command the widget builds,
+and the Podman Desktop launch, where the one
+configuration-supplied value is a validated executable path that is itself the quoted command;
+the per-group compose play/stop adds a new
 `docker` mutation built from a docker-reported project label, not from configuration, and both new
 mutations run unprivileged, so the polkit grant is not widened for them — hence no `docker compose`
 plugin dependency, no `docker exec`, no restart or remove action, no second Podman path, and no flag
@@ -127,55 +125,47 @@ install.sh                            lifecycle CLI
 ├── workflows/pages.yml               push to master: validate, test, rebuild latest.json, publish dist/
 ├── workflows/playwright.yml          non-gating site e2e (continue-on-error)
 └── scripts/sync-manifest.mjs         derives site/latest.json from metadata.json (--write / --check)
-tools/                                  dev/verification aids — nothing here ships in the plasmoid
-├── render_preview.qml                 preview harness: loads the shipped FullRepresentation.qml by URL
-└── render_preview.py                  driver: injects preview state, grabs PNGs (headless-representation probe)
+tools/                                dev/verification aids — nothing here ships in the plasmoid
+├── render_preview.qml                preview harness: loads the shipped FullRepresentation.qml by URL
+└── render_preview.py                 driver: injects preview state, grabs PNGs (headless-representation probe)
 site/                                 the GitHub Pages release site (the widget's update endpoint)
 ├── index.html                        static page; its version text is hand-maintained
 ├── styles.css                        the site's stylesheet
 ├── latest.json                       generated manifest the widget fetches (version only)
 └── e2e/                              non-gating Playwright scaffold over the static site
-docs/                                 this corpus — entry point: the root README.md
+docs/                                 the documentation — entry point: the root README.md
 ├── project.md                        the agent-facing entry point (nine fixed sections)
-├── adrs/                             append-only decision records, behind adr-index.md
-├── protocols/                        corpus procedures (bootstrap, new note)
-├── templates/                        the copyable note, hub, ADR and project shapes
 └── <topic>/                          the five slice folders, each behind its <topic>-index.md hub
 index.md                              generated corpus tree (marker region, repo root)
 tag-index.md                          generated tag → docs surface (marker region, repo root)
 validate.js                           zero-dependency corpus validator (run from the repo root)
-tools/                                dev/verification aids — nothing here ships in the plasmoid
-README.md                             the single human entry point, with the corpus navigation table
+README.md                             the single human entry point
 ```
 
 ## Key Conventions
 
 - Executed commands are **fixed constants in `main.qml`**, with **two** recorded command-building
   boundaries: the video-download command, built in `dockerstatus.js` from a validated URL and validated
-  configuration values with every interpolated value shell-quoted
-  ([[adr-0006-video-downloader-command-boundary]]), and the compose project play/stop and Podman
+  configuration values with every interpolated value shell-quoted, and the compose project play/stop and Podman
   Desktop launch, built in `dockerstatus.js` from a docker-reported project label and a validated
-  executable path respectively ([[adr-0014-compose-grouping-and-podman-desktop-launch]]); the Podman
-  Desktop builder is called again by the status card's square launch button
-  ([[adr-0017-podman-launch-button-and-topbar-removal]]). No other
+  executable path respectively; the Podman
+  Desktop builder is called again by the status card's square launch button. No other
   configuration value is a command; everywhere else configuration supplies only values inside a command
   the widget builds. The update-check command is also built in `dockerstatus.js`, but entirely from
-  fixed constants, so it is deliberately not a third boundary
-  ([[adr-0013-widget-update-check-and-release-site]]). The run-token trick
+  fixed constants, so it is deliberately not a third boundary. The run-token trick
   appends a shell comment, which is safe only for strings this project builds itself.
 - Every one-shot assignment goes through `withRunToken()`: the `executable` engine treats
   `connectedSources` as a **set**, so an identical command string is not re-executed.
 - `dockerstatus.js` carries no QML types and no side effects; keep it ES5-style. The test harness
   strips only the `.pragma library` line and evaluates the shipped bytes.
-- Severity is decided in `dockerstatus.js`; QML only maps severity onto the mockup palette
-  ([[adr-0011-fixed-dark-palette-from-mockup]]). That mapping lives in `SeverityDot.qml` and nowhere
-  else.
+- Severity is decided in `dockerstatus.js`; QML only maps severity onto the mockup palette.
+  That mapping lives in `SeverityDot.qml` and nowhere else.
 - `unknown` is a first-class state and must never render as "stopped": it gets the muted colour,
   never the neutral one.
 - Privilege is granted only by the polkit rule: one action id, one unit (`docker.service`), one verb
   (`start`), local and active session, `wheel` group. Never replace the verb lookup with a wildcard.
   The stop button is deliberately outside this grant and always prompts; adding `stop` to the verb
-  array is a security decision, not a fix ([[adr-0007-stop-button-confirmation-and-narrow-grant]]).
+  array is a security decision, not a fix.
 - The plasmoid install and the privilege grant are two separate commands; the privileged one is
   never implicit.
 - Frontmatter keys are never invented: membership rides on `tags`, ownership on `category`.
@@ -197,8 +187,7 @@ README.md                             the single human entry point, with the cor
 - **Podman Desktop path** — the validated executable name or path behind the `podmanDesktopPath` kcfg
   entry; resolved by `resolvePodmanDesktopPath()` (default `podman-desktop`), and the only
   configuration value that is itself a command. The status card's square launch button resolves it
-  again through the retained builder
-  ([[adr-0017-podman-launch-button-and-topbar-removal]]).
+  again through the retained builder.
 - **Run token** — a unique trailing shell comment (`# plasma-run-N`) that makes a repeated command a
   distinct source for the `executable` engine.
 - **Video link** — the raw text pasted into the download row; accepted only as an `https` URL on the
@@ -216,10 +205,7 @@ README.md                             the single human entry point, with the cor
 - **Data engine** — the `plasma5support` `DataSource` with the `executable` engine.
 - **Polkit action** — `org.freedesktop.systemd1.manage-units`, scoped to unit `docker.service` and
   verb `start`.
-- **Slice** — a code area a human demarcated; the routing unit of this corpus.
-- **Hub** — the single `<folder>-index.md` that registers every note in its folder.
-- **Generated region** — the marker-delimited block of `index.md` / `tag-index.md` that
-  `validate.js` rewrites.
+- **Slice** — a code area a human demarcated; the routing unit of this documentation.
 
 ## Context Index
 
@@ -235,10 +221,6 @@ README.md                             the single human entry point, with the cor
 - [verification/troubleshooting.md](verification/troubleshooting.md) — symptom-keyed write-ups.
 - [verification/render-preview.md](verification/render-preview.md) — seeing the widget rendered: the
   `tools/` harness, the three capture tiers and their prerequisites.
-- [adrs/adr-index.md](adrs/adr-index.md) — decision records, append-only.
-- [protocols/new-note-protocol.md](protocols/new-note-protocol.md) — walk one note before merging.
-- [protocols/bootstrap-protocol.md](protocols/bootstrap-protocol.md) — bootstrap or audit the corpus skeleton.
-- [templates/document-template.md](templates/document-template.md) — the note contract, copyable.
 
 ## Common Lookups
 
@@ -268,13 +250,15 @@ README.md                             the single human entry point, with the cor
   [troubleshooting.md](verification/troubleshooting.md#yt-dlp-not-found)
 - "Sign in to confirm you're not a bot" →
   [troubleshooting.md](verification/troubleshooting.md#sign-in-to-confirm-youre-not-a-bot)
-- "the download finished but no file appeared" →
-  [troubleshooting.md](verification/troubleshooting.md#the-download-finished-but-no-file-appeared)
 - "the cookies browser setting shows brave after opening the options" →
   [troubleshooting.md](verification/troubleshooting.md#the-cookies-browser-setting-shows-brave-after-opening-the-options)
+- "the download finished but no file appeared" →
+  [troubleshooting.md](verification/troubleshooting.md#the-download-finished-but-no-file-appeared)
 - "the shutdown play button stays disabled" →
   [troubleshooting.md](verification/troubleshooting.md#the-shutdown-play-button-stays-disabled)
 - "the machine powers off without asking for a password" →
   [troubleshooting.md](verification/troubleshooting.md#the-machine-powers-off-without-asking-for-a-password)
 - "the widget never says an update is available" →
   [troubleshooting.md](verification/troubleshooting.md#the-widget-never-says-an-update-is-available)
+- "the Podman Desktop launch reports podman-desktop: not found" →
+  [troubleshooting.md](verification/troubleshooting.md#the-podman-desktop-launch-reports-podman-desktop-not-found)

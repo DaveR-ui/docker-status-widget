@@ -121,9 +121,9 @@ test("the action identities are stable and distinct", () => {
 });
 
 /*
- * Why this test exists. adr-0007 adds a stop button whose whole safety argument is
- * that the polkit grant was NOT widened for it: stopping prompts for a password while
- * starting stays passwordless. This test pins the shipped rule as text -- the literal
+ * Why this test exists. The stop button's whole safety argument is that the polkit grant
+ * was NOT widened for it: stopping prompts for a password while starting stays
+ * passwordless. This test pins the shipped rule as text -- the literal
  * ALLOWED_VERBS array, a single polkit.addRule() call, and the membership check that
  * still reads that array. It is not a runtime test of polkit: the companion test below
  * executes the captured predicate instead.
@@ -138,7 +138,7 @@ test("the polkit rule grants exactly the start verb and nothing more", () => {
     assert.deepEqual(
         JSON.parse(match[1]),
         ["start"],
-        "adr-0007: the stop button deliberately relies on the interactive polkit prompt. "
+        "the stop button deliberately relies on the interactive polkit prompt. "
             + "Widening ALLOWED_VERBS to include stop is a security decision, not a bug fix, "
             + "and it must arrive as a deliberate, reviewed change to the grant.",
     );
@@ -246,11 +246,11 @@ test("the shipped polkit predicate is default-deny across its whole decision sur
 
     // The whole grant, in one assertion: one action id, one unit, one verb. Anything else
     // reaching YES -- another unit, another verb (stop included), another action id -- is a
-    // security decision rather than a bug fix, and it must fail here (adr-0007).
+    // security decision rather than a bug fix, and it must fail here.
     assert.deepEqual(
         granted,
         [GRANTED_COMBINATION],
-        "adr-0007: the polkit grant must remain exactly one action id, one unit and one verb.",
+        "the polkit grant must remain exactly one action id, one unit and one verb.",
     );
 });
 
@@ -423,7 +423,7 @@ test("parseContainers splits at the first two separators and keeps the rest whol
 
 test("parseContainers parses the reference machine's three-field probe output", () => {
     // Measured on the reference machine, docker 29.9.0: one compose stack named
-    // odysseus, four exited containers (adr-0014).
+    // odysseus, four exited containers.
     const raw =
         "odysseus-odysseus-1|exited|odysseus\n" +
         "odysseus-searxng-1|exited|odysseus\n" +
@@ -532,7 +532,7 @@ test("containerSeverity normalises case and an unknown state", () => {
  * ---------------------------------------------------------------------------
  * Compose groups, per-project start/stop and the Podman Desktop launch
  * ---------------------------------------------------------------------------
- * The second sanctioned command-building boundary (adr-0014). It is narrow in the
+ * The second sanctioned command-building boundary. It is narrow in the
  * same shape as the download: the project name is a value INTERPOLATED into one
  * shell-quoted argument, the verb is picked from a fixed pair of constants, and the
  * standalone bucket or an unknown action yields "" so no caller can run a command
@@ -1388,9 +1388,8 @@ test("formatCountdown refuses negatives, non-finite values and garbage", () => {
  * ---------------------------------------------------------------------------
  * Update check
  * ---------------------------------------------------------------------------
- * A human-approved reversal of the "no network code" goal: the installed widget
- * fetches a release manifest from a FIXED URL, compares it with its own
- * metadata.json, and shows one line. The command is the THIRD sanctioned
+ * The installed widget fetches a release manifest from a FIXED URL, compares it with
+ * its own metadata.json, and shows one line. The command is the THIRD sanctioned
  * boundary and mints no command-building exception because it is assembled
  * entirely from fixed constants -- so these tests are mostly about the version
  * maths that must never cry wolf, and about the one-shot degrading to silence.
@@ -1596,7 +1595,7 @@ test("the assembled update check runs through a real shell and splits into two h
 });
 
 test("parseWidgetVersion reads the real shipped metadata.json version", () => {
-    assert.equal(parseWidgetVersion(realMetadataBytes), "0.5.0");
+    assert.equal(parseWidgetVersion(realMetadataBytes), "1.0.0");
 });
 
 test("parseWidgetVersion accepts one-to-three numeric segments", () => {
@@ -2482,13 +2481,13 @@ const paletteQmlUrl = new URL(
 const paletteQml = readFileSync(paletteQmlUrl, "utf8");
 
 // Section state -> its header RowLayout's id, its body's visible gates. The
-// download and countdown blocks no longer own a flag each: adr-0019 merged them
-// into ONE "Miscelánea" section, so a single collapsible flag and a single header
+// download and countdown blocks share ONE "Miscelánea" section, so a single
+// collapsible flag and a single header
 // RowLayout now cover both. The countdown's three conditional cues fold their own
 // rule in, so their pinned expressions appear with the flag first and the cue's
 // own condition second -- except the invalid cue, which keeps the leading test a
 // separate pin below. The containers section is NOT here: its header row is gone
-// entirely (adr-0016), so it owns no collapse state and no separator any more.
+// at all, so it owns no collapse state and no separator.
 const COLLAPSIBLE_SECTIONS = [
     {
         flag: "miscSectionExpanded",
@@ -2519,8 +2518,8 @@ test("each collapsible section declares its own local view state, open by defaul
     // Local view state only: no signal is minted for it, and the one write each
     // flag ever receives is its own header flipping itself -- nothing else, and in
     // particular nothing in main.qml, may assign it. The comment above the array
-    // explains why the containers section is absent: with its header row gone
-    // (adr-0016) there is no collapse state left to own.
+    // explains why the containers section is absent: with no header row there is no
+    // collapse state left to own.
     for (const section of COLLAPSIBLE_SECTIONS) {
         assert.ok(
             !fullQml.includes(`signal ${section.flag}`),
@@ -2626,8 +2625,8 @@ test("each collapsible section hides its body, never its header or separator", (
 });
 
 /*
- * Why this test exists. adr-0009 and the project's own Overview name "the visible
- * countdown and the cancel button" among the safeguards that let the power-off run
+ * Why this test exists. The project's own Overview names "the visible countdown and
+ * the cancel button" among the safeguards that let the power-off run
  * without a password prompt. Collapsing a section is therefore a rest-state
  * declutter only: while a shutdown is pending, the merged "Miscelánea" body -- the
  * live "Powering off in M:SS" figure and the Cancel button included -- has to come
@@ -2812,9 +2811,9 @@ test("FullRepresentation.qml gives each compose group its own local collapse sta
         "the group collapse state is assigned by its own header and nothing else",
     );
 
-    // The group's OWN flag is the only collapse state the body reads: the section
-    // flag it used to be ANDed with is gone with the header row (adr-0016), so a
-    // collapsed section can no longer hide a group body.
+    // The group's OWN flag is the only collapse state the body reads: there is no
+    // section flag to AND with, so a collapsed section can no longer hide a group
+    // body.
     assert.ok(
         fullQml.includes("visible: containerGroup.groupOpen"),
         "the group body must be gated on its own flag, with no section flag left to AND in",
@@ -2913,14 +2912,14 @@ test("the group body reuses the original container-row markup", () => {
  * The flat containers section, pinned in FullRepresentation.qml
  * ---------------------------------------------------------------------------
  * The human operator asked for the containers list as a flat row list with a Docker
- * glyph, small right-aligned action icons and no section header (adr-0016). Every
+ * glyph, small right-aligned action icons and no section header. Every
  * piece of that compiles and renders when it is dropped -- a resurrected header is
  * exactly the kind of silent re-addition the pins exist to catch -- so the absence
  * is pinned as text alongside the two visible gates that replaced it.
  */
 
 test("the containers section is a flat list: no header, no section flag, a Docker glyph", () => {
-    assert.ok(!fullQml.includes('i18n("Containers")'), "the Containers title row is gone (adr-0016)");
+    assert.ok(!fullQml.includes('i18n("Containers")'), "the Containers title row is gone");
     assert.ok(!fullQml.includes("%1 services"), "the N services meta row went with the header");
     assert.ok(!fullQml.includes("containerSectionExpanded"), "no section flag is left with no header to tap it");
     assert.ok(!fullQml.includes("containersHeaderRow"), "the header RowLayout is gone");
@@ -2941,7 +2940,7 @@ test("the containers section is a flat list: no header, no section flag, a Docke
  * Why this test exists. The compose play/stop were 38x38 ToolButtons carrying
  * overridden `background` Rectangles in the daemon action's mint and pink, which
  * the human operator flagged as disproportionate and off-centre next to the group
- * name (adr-0016). They are now 28x28 flat icon-only buttons with muted glyphs.
+ * name. They are now 28x28 flat icon-only buttons with muted glyphs.
  * Pinned as the REMOVAL of the old surface plus the new size, not as a size ceiling
  * on everything: the refresh button and the download row keep their own dimensions.
  */
@@ -3003,10 +3002,9 @@ test("the compose group header shares its rows' 8px gutter without shrinking the
 });
 
 /*
- * The Podman Desktop launch returned as a square status-card button (adr-0017)
- * after the ADR-0016 section removal: the section, its collapse and its full-width
- * card are gone, but the launch itself came back -- not as a surface the popup
- * owns, but as a 28x28 button beside the daemon-status label whose click emits
+ * The Podman Desktop launch is a square status-card button: the section, its collapse
+ * and its full-width card are gone, and the launch itself is a 28x28 button beside
+ * the daemon-status label whose click emits
  * into main.qml. Pinned as text because the surface moved rather than simply
  * vanishing: the topbar's removal is what took the old "Workspace"/refresh row
  * with it, and a resurrected card or a resurrected topbar is exactly the kind of
@@ -3033,8 +3031,8 @@ test("FullRepresentation.qml renders the relocated Podman launch button in the s
     }
 
     // The topbar and the removed section leave nothing behind.
-    assert.ok(!fullQml.includes('i18n("Workspace")'), "the Workspace eyebrow is gone with the topbar (adr-0017)");
-    assert.ok(!fullQml.includes("podmanSectionExpanded"), "the launch is a button, not a collapsible section (adr-0017)");
+    assert.ok(!fullQml.includes('i18n("Workspace")'), "the Workspace eyebrow is gone with the topbar");
+    assert.ok(!fullQml.includes("podmanSectionExpanded"), "the launch is a button, not a collapsible section");
 });
 
 /*
@@ -3071,9 +3069,8 @@ test("main.qml declares the compose one-shot source and its handler", () => {
         "composeAction must surface stderr verbatim on a failure",
     );
 
-    // The launch source the removed section took with it (adr-0016) returned as the
-    // retained boundary's caller (adr-0017); its own declaration is pinned by the
-    // dedicated test below, not here.
+    // The launch is the retained boundary's caller here; its own declaration is
+    // pinned by the dedicated test below, not here.
 
     // The handler clears its own in-flight flag and clears the feedback on success.
     assert.ok(compose.includes("root.composeActionInFlight = false;"), compose);
@@ -3120,9 +3117,8 @@ test("main.qml builds the compose command only through the pure builder", () => 
 });
 
 test("main.qml wires the retained Podman Desktop launch back to its surface", () => {
-    // The removed section took its caller off this surface (adr-0016); the retained
-    // boundary (builder, kcfg entry, resolver) is put back into use as a status-card
-    // button (adr-0017), so the launcher and its one-shot return here.
+    // The retained boundary (builder, kcfg entry, resolver) is put to use by the
+    // status-card button, so the launcher and its one-shot live here.
     assert.ok(mainQml.includes("function launchPodmanDesktop()"), "the launcher function must return");
     assert.ok(mainQml.includes("DockerStatus.buildPodmanDesktopCommand("), "the launch must come from the pure builder");
     assert.ok(mainQml.includes("path: Plasmoid.configuration.podmanDesktopPath,"), "the path comes from the kcfg entry");
@@ -3366,9 +3362,9 @@ test("FullRepresentation.qml carries the reserved update line and its signal", (
     assert.ok(fullQml.includes('property string updateFeedback: ""'));
     assert.ok(fullQml.includes("signal updateCheckRequested()"));
 
-    // It is a Label, not a button. adr-0015 reverses adr-0013's "not a link" clause
-    // for exactly ONE fixed target: the indicator beside the daemon status opens the
-    // constant, and the muted version line itself stays a non-clickable label.
+    // It is a Label, not a button: the indicator beside the daemon status is the ONE
+    // click target and opens the fixed constant, and the muted version line itself
+    // stays a non-clickable label.
     const updateLine = fullQml
         .split("PlasmaComponents3.Label {")
         .find((block) => block.includes('text: fullRoot.updateAvailable ? fullRoot.updateFeedback : ""'));

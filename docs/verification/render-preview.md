@@ -15,11 +15,10 @@ status: active
 `main.qml` is a `PlasmoidItem`, so the widget cannot be instantiated by a bare QML
 runtime — the attached-properties factory fails with
 `PlasmaQuick::PlasmoidAttached` ([[troubleshooting]]). There is no QML-level
-automated test either, so a layout or colour regression in a representation has,
-until now, had exactly one proof: a human eyeballing a running Plasma session.
-Whether a given environment *can* observe a render is not knowable from the
-repository, so the method has to name its own prerequisites instead of assuming
-them.
+automated test either, so a layout or colour regression in a representation has no
+automated proof: a human has to look at a rendered surface. Whether a given
+environment *can* observe a render is not knowable from the repository, so the
+method has to name its own prerequisites instead of assuming them.
 
 ## Solution
 
@@ -80,7 +79,7 @@ than promoted to a gate.
 Reviewing a change to a representation: popup layout, palette tokens, severity
 accents, the download row, the shutdown section, the update line. Before/after
 pixel comparison of a restyle. Recording what the widget looks like for a
-corpus note. Any time the panel is not visible, the widget slot is covered by
+documentation note. Any time the panel is not visible, the widget slot is covered by
 another window, or the machine is headless.
 
 ## When not to use
@@ -94,7 +93,7 @@ not as a release gate: nothing here blocks a merge.
 ## Examples
 
 Measured on this machine (Plasma 6.7.5, Qt 6.12.0, plasmashell live under
-`kwin_wayland`, widget installed at version 0.5.0): tier 1 produced
+`kwin_wayland`, widget installed at version 1.0.0): tier 1 produced
 `render_active.png` (daemon online, grouped containers, and both sub-blocks inside
 the merged Miscelánea section — download and countdown),
 `render_inactive_armed.png` (OFFLINE, armed stop, denied feedback, and an armed
@@ -102,7 +101,7 @@ countdown reading "Shutting down…" with Cancel enabled and "Powering off in
 12:34") and `render_unknown_update.png` (muted unknown state, busy
 "Starting…", update indicator and its line, and the downloader-off state
 `previewDownloaderEnabled=False`, where Miscelánea holds ONLY the countdown and
-renders no dangling hairline; [[adr-0019-miscelanea-section-merge]]). Tier 2 grabbed the real installed
+renders no dangling hairline). Tier 2 grabbed the real installed
 desktop widget from behind a covering browser window.
 `plasmoidviewer -a io.github.daver-ui.dockerstatus -f planar` opens the packaged
 applet in a simulated desktop containment (the full representation, live state
@@ -129,5 +128,3 @@ representation. Both were exercised after installing `plasma-sdk`.
 - [[verification-slice]] — the evidence layers this feed does and does not join.
 - [[troubleshooting]] — the `PlasmaQuick::PlasmoidAttached` symptom write-up.
 - [[widget-slice]] — the QML surfaces under review.
-- [../templates/document-template.md](../templates/document-template.md) — the
-  note contract this file follows.

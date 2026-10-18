@@ -23,7 +23,7 @@ committed test — see the evidence layers in
 [verification-slice](../verification/verification-slice.md#how-it-works). Anything not in these tables is
 unverified, and treating
 it as a guarantee is how a widget silently stops updating. This is a *contract* sheet, not a catalog:
-the ten sources that implement it are listed in
+the eleven sources that implement it are listed in
 [widget-slice](../widget/widget-slice.md#how-it-works).
 
 ### Field groups
@@ -41,7 +41,7 @@ the ten sources that implement it are listed in
 |---|---|---|
 | Purpose | continuous state | an action, or an immediate re-read |
 | The identical command assigned again | re-runs on the next tick | **not re-run** — the assignment is a set no-op |
-| Instances | `daemonSource`, `containerSource`, `updateCheckSource` | `forcedDaemonRead`, `daemonAction`, `composeAction`, `homeSource`, `downloadAction`, `powerAction`, `updateCheckForced` |
+| Instances | `daemonSource`, `containerSource`, `updateCheckSource` | `forcedDaemonRead`, `daemonAction`, `composeAction`, `homeSource`, `downloadAction`, `podmanLaunch`, `powerAction`, `updateCheckForced` |
 | Output delivery | one `onNewData` per run | exactly one `onNewData`, at process exit, carrying the whole run |
 
 Measured event counts for the trap that shapes this design:
@@ -102,12 +102,11 @@ command-building exceptions, whose values are validated and shell-quoted before 
   `splitUpdateCheckOutput()` treats a marker-less run as `installed: ""` with the whole text as the
   manifest, and `handleUpdateCheck()` renders nothing when either half is empty. It reads neither `stderr`
   nor the exit code, beyond using a present `exit code` key as the end-of-run marker exactly as
-  `downloadAction` does, because a check the user did not ask for must never nag
-  ([../adrs/adr-0013-widget-update-check-and-release-site.md](../adrs/adr-0013-widget-update-check-and-release-site.md)).
+  `downloadAction` does, because a check the user did not ask for must never nag.
 
 ## Related sheets
 
 - [status-slice.md](status-slice.md) — the logic that consumes this payload.
-- [widget-slice.md](../widget/widget-slice.md) — the ten sources that implement this contract.
+- [widget-slice.md](../widget/widget-slice.md) — the eleven sources that implement this contract.
 - [troubleshooting.md](../verification/troubleshooting.md#the-start-daemon-button-does-nothing-on-the-second-click)
   — the symptom a consumer sees when the set semantics are ignored.

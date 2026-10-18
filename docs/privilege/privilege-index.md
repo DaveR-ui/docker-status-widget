@@ -3,7 +3,7 @@ id: privilege-index
 category: privilege
 tags: [hub, index, privilege, polkit]
 aliases: [Privilege Index, Polkit Index]
-related: [privilege-slice, adr-0004-scoped-polkit-grant]
+related: [privilege-slice]
 version: 1.0
 status: active
 ---
@@ -26,8 +26,10 @@ unexpected password prompt is
 
 ## Elsewhere
 
-- The decision and its rejected alternatives:
-  [../adrs/adr-0004-scoped-polkit-grant.md](../adrs/adr-0004-scoped-polkit-grant.md)
+- The grant is one scoped rule — exactly one action id, one unit and one verb — rather than `pkexec`
+  per click (a per-click escalation prompt) or a sudoers entry, so a click stays passwordless and the
+  whole grant is auditable in one file:
+  [../privilege/privilege-slice.md](../privilege/privilege-slice.md)
 - Installation and removal commands: [../installer/installer-slice.md](../installer/installer-slice.md)
 - A prompt that should not appear:
   [../verification/troubleshooting.md](../verification/troubleshooting.md#the-start-button-asks-for-a-password-every-time)

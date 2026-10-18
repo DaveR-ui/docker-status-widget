@@ -62,7 +62,7 @@ The evidence layers, and which of them can be re-run:
 
 | Layer | How it is verified | Re-runnable |
 |---|---|---|
-| Node unit suite | 172 unit tests under `node --test`, over the shipped bytes: parsing, severity, the run token, the download helpers, the update-check helpers (the constants, the fixed command they assemble, the marker split, the version parsers and the strictly-greater comparison), the shutdown countdown helpers (`resolveShutdownMinutes`, `shutdownRemainingSeconds`, `formatCountdown` and the two constants), the two action identities and their exact QML `actionKind` expressions, both fixed privileged commands, and the polkit rule as text plus a default-deny predicate matrix over its whole decision surface; also the surfaces a runtime test cannot reach — the removed footer and bottom-text surfaces (`taglineText`, `cfg_taglineText`, `Persiguiendo la singularidad` and a `footerText` read absent from the shipped code), the pinned-column assertions (the status → container → update → Miscelánea order, the container section as the scrollable middle region, and the `containerScrollFloor`), the `firefox` cookies default, the cookies combo's seed-and-mute arrangement, the shutdown kcfg entry and its config control, the fixed `powerOffCommand` literal and the countdown state machine in `main.qml`, the full-representation shutdown bindings, the inline shutdown-minutes field's wiring (inbound property, edit signal, validation through the single resolver, seed/sync guards, the focus-loss mirror that re-syncs a valid field value without clobbering the user's error text, disabled-while-pending) and the single-writer rule (only `main.qml` writes the entry; an unresolvable value is never persisted), and the stop button's fixed width | yes |
+| Node unit suite | 172 unit tests under `node --test`, over the shipped bytes: parsing, severity, the run token, the download helpers, the update-check helpers (the constants, the fixed command they assemble, the marker split, the version parsers and the strictly-greater comparison), the shutdown countdown helpers (`resolveShutdownMinutes`, `shutdownRemainingSeconds`, `formatCountdown` and the two constants), the two action identities and their exact QML `actionKind` expressions, both fixed privileged commands, and the polkit rule as text plus a default-deny predicate matrix over its whole decision surface; also the surfaces a runtime test cannot reach — the footer and bottom-text surfaces, asserted absent (`taglineText`, `cfg_taglineText`, `Persiguiendo la singularidad` and a `footerText` read), the pinned-column assertions (the status → container → update → Miscelánea order, the container section as the scrollable middle region, and the `containerScrollFloor`), the `firefox` cookies default, the cookies combo's seed-and-mute arrangement, the shutdown kcfg entry and its config control, the fixed `powerOffCommand` literal and the countdown state machine in `main.qml`, the full-representation shutdown bindings, the inline shutdown-minutes field's wiring (inbound property, edit signal, validation through the single resolver, seed/sync guards, the focus-loss mirror that re-syncs a valid field value without clobbering the user's error text, disabled-while-pending) and the single-writer rule (only `main.qml` writes the entry; an unresolvable value is never persisted), and the stop button's fixed width | yes |
 | Download command boundary | unit tests run the assembled command through a real `/bin/sh` with a stub `yt-dlp` on `PATH` and assert the argv arrives intact, including the real YouTube URL with its `&list=` and a quote-injection URL; a separate test pins the `withRunToken()` newline case an adversarial pass found | yes |
 | CI (GitHub Actions) | `.github/workflows/ci.yml`, on `pull_request` into `master`: `node --test tests/*.mjs`; the Qt6 `qmllint` — the job installs `qt6-declarative-dev-tools` and runs `/usr/lib/qt6/bin/qmllint` over both QML roots, read as a **diagnostic stream**, not an exit code, because Qt6 exits 0 unless `--max-warnings` is set, so a real defect is an `Error:`-severity diagnostic in the captured output **or** a non-zero qmllint exit status (a file it cannot parse exits 255); and `node validate.js` in check mode only, run from the repo root — plus one more step inside the `test` job:
   `.github/scripts/sync-manifest.mjs --check`, which fails the pull request when the committed
@@ -72,7 +72,7 @@ The evidence layers, and which of them can be re-run:
 | Data engine contract | probe QML against live plasma5support 6.7.4, re-measured on 6.7.5 for the long one-shot row: payload keys, set semantics, interval quantisation, and the finding that a two-second silence produces no event at all | no — probe |
 | Full pipeline against live Docker | a probe harness parsed the real three-container stack | no — probe |
 | End-to-end download | the exact assembled command for an X link exited 0 and wrote a 10,365,309-byte mp4, with yt-dlp reporting cookies extracted from Firefox; a YouTube `--simulate` run reported `--no-playlist`, node solving JS challenges and format 401+251; without `--js-runtimes` the same URL failed with "The page needs to be reloaded", and without cookies with "Sign in to confirm you're not a bot" | no — probe |
-| All QML files | two binaries measured. The `qmllint` on `PATH` is Qt5 (`qt5-declarative 5.15.19`): exit 0 and no output, and a deliberate `property int x: "boom"` probe also exited 0 — syntax-only. The matching `/usr/lib/qt6/bin/qmllint` is the semantic tool for a Plasma 6 target: it reports **0 errors** and no `[missing-property]`, `[incompatible-type]`, `[unresolved-type]` or `[import]` diagnostic on either QML root. The warning and info counts are version-bound and are **not** evidence, so they are not restated here — the current measured set, with the baseline each figure supersedes, is recorded in [../widget/ui-surfaces.md](../widget/ui-surfaces.md). Exit code is not the evidence: Qt6 exits 0 unless `--max-warnings` is set, so the diagnostic stream is. | yes, re-run to confirm |
+| All QML files | two binaries measured. The `qmllint` on `PATH` is Qt5 (`qt5-declarative 5.15.19`): exit 0 and no output, and a deliberate `property int x: "boom"` probe also exited 0 — syntax-only. The matching `/usr/lib/qt6/bin/qmllint` is the semantic tool for a Plasma 6 target: it reports **0 errors** and no `[missing-property]`, `[incompatible-type]`, `[unresolved-type]` or `[import]` diagnostic on either QML root. The warning and info counts are version-bound and are **not** evidence, so they are not restated here; [../widget/ui-surfaces.md](../widget/ui-surfaces.md) records the binary pair and what counts as evidence. Exit code is not the evidence: Qt6 exits 0 unless `--max-warnings` is set, so the diagnostic stream is. | yes, re-run to confirm |
 | Shutdown countdown (QML) | the play/stop timing, the inline field's interaction, the wall-clock deadline and the effective passwordless power-off live in QML that cannot be instantiated outside plasmashell; only the resolver, the formatting helpers and the field's wiring (pinned as static text) are covered by the suite | impossible here — review only |
 | `main.qml` as a `PlasmoidItem` | **not executable outside plasmashell** — the attached-properties factory fails with `PlasmaQuick::PlasmoidAttached`; the representations are previewable headless ([[render-preview]]) | wrapper: impossible outside a session; representation: yes (manual probe) |
 
@@ -112,7 +112,7 @@ claim this corpus makes about the widget rests on these layers.
 - **The deployed Pages artifact is only verified by simulation.** The e2e suite serves `site/` with a local
   `python3` server; it never sees the assembled `dist/` the Pages workflow uploads (`site/*` plus the copied
   icon and screenshots). A missing or mis-pathed asset in `dist/` would not be caught here.
-- **`sync-manifest --check` now guards the manifest, but only the manifest.** It runs as a step inside the
+- **`sync-manifest --check` guards the manifest, and only the manifest.** It runs as a step inside the
   `test` job of `ci.yml` — deliberately a step rather than a fourth job, so the branch-protection contract
   stays three status contexts — so a `metadata.json` version bump with a stale committed `site/latest.json`
   fails the pull request. What it does not see is the site itself: the non-gating e2e suite reads the
@@ -125,18 +125,17 @@ claim this corpus makes about the widget rests on these layers.
   decision, not a default.
 - **The update check inside plasmashell is unreachable by any test.** Its control flow — offline, no `curl`,
   an unreadable `metadata.json`, an unparseable manifest — is review-and-lint only; the Node suite pins the
-  pure helpers and the wiring as static text, which proves the arrangement, not the running behaviour
-  ([[adr-0013-widget-update-check-and-release-site]]).
+  pure helpers and the wiring as static text, which proves the arrangement, not the running behaviour.
 - No QML behavioural test: the widget wrapper — including the download row, the shutdown countdown and the
   update check —
   is lint-and-review only. The download's *command boundary* and the countdown's *resolver* are well
   tested; their *rows*, the inline field's interaction and the play/stop timing are not — the field's
   wiring is pinned as static text, which proves the arrangement, not the behaviour. The *pixels* of the
-  representations are now reviewable without a session ([[render-preview]]); that is still a probe, not a test.
+  representations are reviewable without a session ([[render-preview]]); that is still a probe, not a test.
 - The effective passwordless power-off has no runtime test: whether logind authorises
   `org.freedesktop.login1.power-off` is a property of the machine's policy (measured with `pkcheck`, exit
   0 in a local active session), not of anything this suite runs. A policy change on another machine would
-  not be caught here ([[adr-0009-widget-owned-shutdown-countdown]]).
+  not be caught here.
 - Probes are one-off evidence rather than scripted reproductions — the weakest layer, and it is
   labelled as such rather than promoted to a test.
 - Container states outside the mapped set are untested against live `docker ps` output.
@@ -145,4 +144,4 @@ claim this corpus makes about the widget rests on these layers.
 - The representations can be previewed outside plasmashell — headless for the full
   representation, live for the rest ([[render-preview]]); this machine has a live
   Plasma 6 session, a CI runner does not. What still cannot be instantiated outside
-  a running plasmashell is the `main.qml` wrapper and the panel integ
+  a running plasmashell is the `main.qml` wrapper and the panel integration.
