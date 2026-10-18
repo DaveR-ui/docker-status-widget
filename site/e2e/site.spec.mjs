@@ -11,7 +11,25 @@
  * time and are absent from a plain checkout, so nothing here depends on them.
  */
 
-import { test, expect } from "@playwright/test";
+import { pathToFileURL } from "node:url";
+
+// This repository has no package.json and must not have one, so the runner is
+// installed outside the checkout: the workflow runs
+// `npm i --prefix "$RUNNER_TEMP/pw" @playwright/test@^1`. Node resolves a bare
+// "@playwright/test" specifier by walking node_modules directories upwards from
+// this file, and there is none above it — NODE_PATH would not help either, it is
+// ignored by ESM — so the workflow hands in the absolute path to the package's
+// ESM entry and this file imports that instead.
+const runnerEntry = process.env.E2E_RUNNER_MODULE;
+if (!runnerEntry) {
+  throw new Error(
+    "E2E_RUNNER_MODULE is not set — this repository has no package.json, so the " +
+      "Playwright runner must be installed outside it and the absolute path to " +
+      "@playwright/test/index.mjs passed in (the workflow sets it to " +
+      "$RUNNER_TEMP/pw/node_modules/@playwright/test/index.mjs).",
+  );
+}
+const { test, expect } = await import(pathToFileURL(runnerEntry).href);
 
 const MANIFEST = "/latest.json";
 // Mirrors VERSION_PATTERN in package/.../ui/dockerstatus.js: one to three numeric
