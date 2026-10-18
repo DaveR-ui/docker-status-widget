@@ -97,7 +97,9 @@ jobs:
       # packages is syntax-only and reports nothing useful for a Plasma 6
       # target (docs/verification/verification-slice.md, evidence table).
       # --no-install-recommends keeps the Plasma set from pulling in the whole
-      # desktop; the full tree is ~540 MB installed on the 14 GB runner.
+      # desktop: 127 MB of archives, 541 MB of installed disk (the bulk is the
+      # Plasma/Kirigami library dependencies, not the QML trees themselves,
+      # which are ~12 MB). The job measured 28 s against timeout-minutes: 15.
       - name: Install the Qt6 linter and the QML import modules it resolves against
         run: |
           sudo apt-get update
