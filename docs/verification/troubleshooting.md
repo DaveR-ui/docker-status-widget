@@ -4,7 +4,7 @@ category: verification
 tags: [troubleshooting, symptoms, verification, failures]
 aliases: [Troubleshooting, Symptom Write-ups]
 related: [verification-index, data-engine-contract, privilege-slice, installer-slice, widget-slice, status-slice]
-version: 1.0
+version: 1.1
 status: active
 ---
 
@@ -217,8 +217,9 @@ feedback.
 
 ## the shutdown play button stays disabled
 
-**Context:** the full representation, in the "Countdown to Extinction" section, after typing a value into
-its inline "Minutes until power-off" field (or after setting the countdown on the config page).
+**Context:** the full representation, in the "Countdown to Extinction" sub-block inside the Miscelánea
+section, after typing a value into its inline "Minutes until power-off" field (or after setting the
+countdown on the config page).
 **Root cause:** the value shown could not arm a countdown, so `resolveShutdownMinutes()` returned `null`
 and the play button is disabled on purpose. That happens for anything that is not a plain run of digits —
 `abc`, `12abc`, `12.5`, `1e3`, ` 1 2`, `-5`, `+15` — and for any whole number at or below 10 (`10`, `0`,
