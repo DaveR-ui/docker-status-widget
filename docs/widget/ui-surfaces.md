@@ -112,7 +112,10 @@ All state flows down as properties from `main.qml`; the signals flow back up and
 `root.startDaemon()`, `root.stopDaemon()`, `root.refreshDaemonState()`, `root.downloadVideo(url)`,
 `root.startShutdownCountdown()`, `root.stopShutdownCountdown()` and `root.setShutdownMinutes(text)`.
 The container list model is `DockerStatus.groupContainersByComposeProject(fullRoot.containers)` — the core's
-grouping is the only model source — and each group keeps its open/closed state locally. `actionKind` (`DockerStatus.ACTION_START` / `ACTION_STOP`)
+grouping is the only model source — and each group keeps its open/closed state locally, starting closed on
+load; the collapse-all strip above the list bumps a root generation counter that every not-yet-tapped group
+absorbs. The state is delegate-local view state: a poll that rebuilds the list resets it to closed, and it is
+never persisted. `actionKind` (`DockerStatus.ACTION_START` / `ACTION_STOP`)
 says which action owns an in-flight reply, so the row can show the matching label while both actions share
 one `actionInFlight` flag. The view derives its own display values from those properties:
 `runningContainerRatio` (`DockerStatus.countByState(containers, "running")` over the container count,
@@ -155,9 +158,11 @@ or logo tile: the status card is the popup's first region.
 
 The container list is a `ListView` over the grouped model that forms the popup's scrollable middle
 region: it fills whatever height the pinned status card and Miscelánea card leave and scrolls its own
-content, so the list growing or shrinking never resizes the widget. Its height floor is one and a half
-container rows — `containerScrollFloor: containerRowHeight * 3 / 2` (52 × 1.5 = 78px) — so the bottom half
-of the next row always peeks in and the operator can see there is more below. Each group is one flat header row — the
+content, so the list growing or shrinking never resizes the widget. The container section's height floor is
+one and a half container rows plus the collapse-all strip — `containerScrollFloor: containerRowHeight * 3 / 2
++ containerCollapseStripHeight` (52 × 1.5 + 32 = 110px) — so the `ListView` keeps its 78px
+one-and-a-half-row scroll peek (the strip is card chrome above the list, not list content) at the honest cost
+of a fixed 32px taller popup. Each group is one flat header row — the
 bundled `contents/icons/dockerstatus.svg` box glyph on a 28px tile (resolved with `Qt.resolvedUrl`, so
 there is no external asset and no network fetch), the project name (`Other containers` for the standalone
 bucket), the running/total counter, and, for compose-backed groups only, small flat 28x28 play/stop
@@ -165,8 +170,14 @@ bucket), the running/total counter, and, for compose-backed groups only, small f
 The header row and its container rows share one left edge: both carry the same 8px horizontal inset
 inside the sunken card, so the group tile and the ± affordance sit clear of the card borders instead of
 hugging them.
-There is no section header above the list and no section collapse flag: a group's ± toggles only that
-group's local open/closed state. Every container row keeps its deterministic theme-icon tile
+There is no section header above the list and no section collapse flag. Above the list, gated on the same
+condition as the list (`containers.length > 0`), sits the collapse-all strip: one muted, flat, text-only
+`ToolButton` reading "Collapse all" with a tooltip. It is an action, not a header — it carries no title and
+no section state — and it closes every group, the standalone "Other containers" bucket included. The control
+is repeatable through a root generation counter (`groupsCollapseEpoch`): every group that has not been tapped
+since absorbs the current generation by closing, so pressing the control again re-closes the groups the
+human reopened in between, and each group's ± still toggles only its own group and always wins over the
+control. Groups start closed on load, so every group header is listed with its body shut. Every container row keeps its deterministic theme-icon tile
 (`containerIconFor(name)`, a cheap hash into a fixed list of generic theme names, so the same container
 always gets the same tile and a missing theme icon degrades to nothing), the container name, and a
 six-pixel severity dot beside the state. Inside the Miscelánea section the download sub-block appears
@@ -463,7 +474,7 @@ The widget paints the mockup's fixed dark palette, not the Kirigami theme. The t
 | `Kirigami.Units.smallSpacing` | gaps inside every layout row |
 | `Kirigami.Units.largeSpacing` | section spacing, config-card margins |
 | `Kirigami.Units.gridUnit` | dot diameter (`/3`), the fixed popup width (`*34`, minimum `*30`) |
-| `containerScrollFloor` (`containerRowHeight * 3 / 2` = 78px) | the container middle region's height floor (one and a half rows; `containerRowHeight` = 52) |
+| `containerScrollFloor` (`containerRowHeight * 3 / 2 + containerCollapseStripHeight` = 110px) | the container middle region's height floor: one and a half rows (78px) plus the 32px collapse-all strip folded in on top, so the scroll peek survives and the popup grows by a fixed 32px instead (`containerRowHeight` = 52) |
 | `Kirigami.Units.iconSizes.smallMedium` | the panel icon |
 | `Kirigami.Units.iconSizes.small` | the busy indicators |
 
