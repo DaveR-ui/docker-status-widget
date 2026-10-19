@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Docker Status — a Docker daemon widget for KDE Plasma 6</title>
+<meta name="description" content="Docker Status is a KDE Plasma 6 widget for the Docker daemon: state at a glance, a one-click passwordless start, a stop behind a confirmation, a shutdown countdown and a yt-dlp download row.">
+<meta name="color-scheme" content="dark light">
+<link rel="icon" href="icons/dockerstatus.svg" type="image/svg+xml">
+<link rel="stylesheet" href="styles.css">
+<script>
+/*
+ * Progressive enhancement only. The static markup below already names the
+ * current version; this fetches the release manifest and rewrites the derived
+ * bits. A failed fetch (offline, blocked, non-200) must leave the static text
+ * untouched and say nothing to the user, hence the empty catch.
+ */
+(function () {
+  "use strict";
+  var badge = document.getElementById("latest-version");
+  if (!badge || typeof window.fetch !== "function") { return; }
+  var date = document.getElementById("release-date");
+  var line = document.getElementById("release-line");
+  var link = document.getElementById("release-link");
+  window.fetch("latest.json", { cache: "no-store" })
+    .then(function (response) {
+      if (!response.ok) { throw new Error("HTTP " + response.status); }
+      return response.json();
+    })
+    .then(function (manifest) {
+      var name = typeof manifest.name === "string" ? manifest.name : "Docker Status";
+      var version = typeof manifest.version === "string" ? manifest.version : null;
+      var released = typeof manifest.released === "string" ? manifest.released : null;
+      if (!version) { return; }
+      badge.textContent = version;
+      if (line) { line.textContent = name + " " + version + (released ? " — released " + released + "." : "."); }
+      if (date && released) {
+        date.textContent = released;
+        date.setAttribute("datetime", released);
+      }
+      if (link && typeof manifest.url === "string" && /^https:/.test(manifest.url)) { link.href = manifest.url; }
+    })
+    .catch(function () { /* keep the static fallback, silently */ });
+})();
+</script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <div class="wrap topbar__inner">
+    <a class="brand" href="#main">
+      <img class="brand__icon" src="icons/dockerstatus.svg" alt="" width="34" height="34"
+           onerror="this.style.visibility='hidden'">
+      <span class="brand__name">Docker Status</span>
+    </a>
+    <nav class="nav" aria-label="Sections">
+      <a href="#what">What it does</a>
+      <a href="#shots">Screenshots</a>
+      <a href="#install">Install</a>
+      <a href="#updates">Updates</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+
+  <section class="hero" aria-labelledby="hero-title">
+    <p class="eyebrow">KDE Plasma 6 · Wayland · no build step</p>
+    <h1 id="hero-title">Docker Status</h1>
+    <p class="lede">
+      The two things every developer actually needs, one click away in the panel: a Docker daemon that is
+      running, and the meme video saved before it disappears.
+    </p>
+
+    <p class="release">
+      <span class="release__label">Latest release</span>
+      <strong class="badge" id="latest-version">1.0.0</strong>
+      <span class="release__meta">
+        <time id="release-date" datetime="2026-10-18">2026-10-18</time>
+        <a id="release-link" href="https://github.com/DaveR-ui/docker-status-widget/releases/latest">release notes</a>
+      </span>
+    </p>
+    <p class="release__blurb" id="release-notes">
+      <span id="release-line">Docker Status 1.0.0 — released 2026-10-18.</span>
+      Version 1 — stable, the first finished release of the widget. A KDE Plasma 6 widget for the Docker
+      daemon: it tells you the state at a glance, starts it without a password prompt, stops it behind a
+      deliberate confirmation, and downloads the YouTube or X link you just pasted — no terminal, no
+      browser tab, no <code>sudo</code> dance.
+    </p>
+
+    <p class="cta">
+      <a class="button" href="#install">Install it</a>
+      <a class="button button--quiet" href="https://github.com/DaveR-ui/docker-status-widget">GitHub repository</a>
+    </p>
+  </section>
+
+  <section id="what" aria-labelledby="what-title">
+    <h2 id="what-title">What it does</h2>
+
+    <div class="cards">
+      <article class="card">
+        <h3>Panel, at a glance</h3>
+        <p>
+          A theme icon, dimmed while the daemon is down, plus a severity dot. Nothing else. The count
+          and the state text live in the popup, so the panel stays quiet.
+        </p>
+      </article>
+
+      <article class="card">
+        <h3>Four states, not two</h3>
+        <p>
+          State is reported honestly, and a probe that fails is never drawn as a daemon that is stopped:
+        </p>
+        <table class="states">
+          <caption class="visually-hidden">Daemon state, severity and colour</caption>
+          <thead>
+            <tr><th scope="col">State</th><th scope="col">Severity</th><th scope="col">Colour</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>active</code></td><td>positive</td><td>green</td></tr>
+            <tr><td><code>inactive</code></td><td>neutral</td><td>orange</td></tr>
+            <tr><td><code>failed</code></td><td>negative</td><td>red</td></tr>
+            <tr><td><code>unknown</code></td><td>muted</td><td>grey</td></tr>
+          </tbody>
+        </table>
+      </article>
+
+      <article class="card">
+        <h3>Start without a password</h3>
+        <p>
+          One click, no prompt. A single polkit rule grants exactly one action id, one unit
+          (<code>docker.service</code>) and one verb (<code>start</code>), from a local active session in
+          the <code>wheel</code> group. It is not widened for anything else, and installing it is a
+          separate, explicit command.
+        </p>
+      </article>
+
+      <article class="card">
+        <h3>Stop behind a confirmation</h3>
+        <p>
+          Stopping the daemon stops every running container, so the Stop button arms on the first click
+          and runs on the second, and the confirmation expires. Stop is deliberately outside the grant, so
+          polkit asks for your password as well. Two safeguards, on purpose.
+        </p>
+      </article>
+
+      <article class="card">
+        <h3>The popup</h3>
+        <p>
+          Daemon state, a <code>running/total</code> count with a bar, the start/stop row and the
+          refresh, Podman Desktop and update controls — all in one pinned status card. Below it the
+          containers are listed flat, grouped by Docker Compose project, each group carrying its own
+          counter and its own collapse, and — for compose-backed groups — its own play/stop controls; the
+          list scrolls, so the widget never changes size as containers come and go.
+          <strong>Miscelánea</strong> is the pinned card at the bottom, holding both the video-download
+          row and the shutdown countdown. No footer.
+        </p>
+      </article>
+
+      <article class="card">
+        <h3>Countdown to Extinction</h3>
+        <p>
+          A shutdown countdown with a wall-clock deadline you set in minutes and a one-second ticker, so it
+          survives a suspend. Neither arming nor cancelling needs root, and the power-off runs the fixed
+          command — the configured minutes only size the deadline. It lives inside Miscelánea, and an
+          armed countdown is never collapsed away.
+        </p>
+      </article>
+
+      <article class="card">
+        <h3>Save the meme before it disappears</h3>
+        <p>
+          Paste a YouTube or X link into the popup and <code>yt-dlp</code> fetches it into the configured
+          folder, with cookies from the configured browser. This is the one place user input reaches a
+          command, and it is bounded: https only, an exact host allow-list, a length cap, no quotes or
+          backslashes, and every interpolated value shell-quoted. It shares the Miscelánea card with the
+          countdown.
+        </p>
+      </article>
+
+      <article class="card">
+        <h3>An honest update check</h3>
+        <p>
+          The widget asks one fixed manifest whether a newer release exists, and says so with a muted line
+          and one indicator. Nothing is said while it is current, and a failed check draws nothing at all —
+          the version is authored once, in <code>metadata.json</code>.
+        </p>
+      </article>
+
+      <article class="card">
+        <h3>Configured, not compiled</h3>
+        <p>
+          Poll interval, panel icon, container list, Podman Desktop path, download row, folder, yt-dlp
+          binary, JS runtime, cookies browser, shutdown countdown minutes and update-check interval — all on
+          the config page. Every value that reaches a command is validated before it is assembled, and a
+          refused value falls back to its safe default.
+        </p>
+      </article>
+    </div>
+  </section>
+
+  <section id="shots" aria-labelledby="shots-title">
+    <h2 id="shots-title">What it looks like</h2>
+    <div class="gallery">
+      <figure class="shot">
+        <img src="screenshots/widget-popup.png" alt="The design mockup the popup follows: the daemon status card with its start and stop buttons, the containers grouped by Compose project with their play and stop controls, and the Miscelánea section holding the download row and the shutdown countdown"
+             width="624" height="915" loading="lazy" decoding="async"
+             onerror="this.closest('.shot').classList.add('is-broken')">
+        <span class="shot__missing">screenshots/widget-popup.png</span>
+        <figcaption>
+          The popup the widget follows: daemon status, the container count, the grouped container list
+          with its per-group controls, and Miscelánea — the download row and the countdown.
+        </figcaption>
+      </figure>
+      <figure class="shot">
+        <img src="screenshots/settings-general.png" alt="The design mockup the config page follows: the Docker, Container list, Podman Desktop and Miscelánea cards"
+             width="815" height="668" loading="lazy" decoding="async"
+             onerror="this.closest('.shot').classList.add('is-broken')">
+        <span class="shot__missing">screenshots/settings-general.png</span>
+        <figcaption>
+          The config page the widget follows: Docker, Container list, Podman Desktop and Miscelánea
+          (the Updates and Appearance cards sit below the captured viewport).
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section id="install" aria-labelledby="install-title">
+    <h2 id="install-title">Install</h2>
+    <pre><code class="language-bash">git clone https://github.com/DaveR-ui/docker-status-widget.git
+cd docker-status-widget
+./install.sh install          # the widget itself — unprivileged, reversible
+./install.sh install-polkit   # optional, sudo: makes "Start daemon" passwordless
+./install.sh status           # what is installed, and whether Docker is up</code></pre>
+    <p>
+      Then right-click the panel or the desktop → <strong>Add Widgets…</strong> → search
+      <strong>“Docker Status”</strong>. On the desktop the full widget is shown directly; in the panel it
+      collapses to the icon and the severity dot and expands into a popup. If it does not appear, restart
+      plasmashell:
+    </p>
+    <pre><code class="language-bash">kquitapp6 plasmashell &amp;&amp; kstart plasmashell</code></pre>
+    <p>
+      Installing the widget needs no root, and removing it is one command. The polkit rule is the only
+      privileged step, it is a separate command on purpose, and it never happens implicitly.
+    </p>
+    <h3>Requirements</h3>
+    <ul>
+      <li>KDE Plasma 6 (<code>X-Plasma-API-Minimum-Version: 6.0</code>) on Wayland. Verified on Plasma 6.7.4, plasma5support 6.7.4 and polkit 127.</li>
+      <li>Docker with <code>docker.service</code>. Only that unit is supported: no rootless Docker, no user-scoped daemon.</li>
+      <li>For downloads only: <code>yt-dlp</code> on plasmashell’s <code>PATH</code>, a JavaScript runtime (<code>node</code> or <code>deno</code>) for YouTube, and a signed-in browser profile for cookies.</li>
+    </ul>
+  </section>
+
+  <section id="updates" aria-labelledby="updates-title">
+    <h2 id="updates-title">How the update check works</h2>
+    <p>
+      The site also serves a machine-readable release manifest at a fixed address:
+    </p>
+    <pre><code class="language-text">https://dave-r-ui.github.io/docker-status-widget/latest.json</code></pre>
+    <p>
+      Every installed widget fetches that file every few hours and compares the manifest’s
+      <code>version</code> with its own; when the online one is newer, the widget says so instead of
+      letting you run an old build. The manifest is generated from the same
+      <code>metadata.json</code> the widget is packaged with, so the two cannot drift:
+    </p>
+    <pre><code class="language-json">{
+  "app": "io.github.daver-ui.dockerstatus",
+  "name": "Docker Status",
+  "version": "1.0.0",
+  "released": "2026-10-18",
+  "url": "https://github.com/DaveR-ui/docker-status-widget/releases/latest"
+}</code></pre>
+    <p>
+      A JSON endpoint keeps that check robust: no scraping a page, no matching a heading, no guessing when
+      the layout changes. The version badge at the top of this page is written by the same file, and it
+      falls back to the value in the HTML when the fetch fails.
+    </p>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <div class="wrap">
+    <p>
+      <strong>Docker Status</strong> is free software under the
+      <a href="https://github.com/DaveR-ui/docker-status-widget/blob/master/LICENSE">MIT licence</a>.
+    </p>
+    <p>
+      <a href="https://github.com/DaveR-ui/docker-status-widget">GitHub</a> ·
+      <a href="https://github.com/DaveR-ui/docker-status-widget/releases/latest">Releases</a> ·
+      <a href="https://github.com/DaveR-ui/docker-status-widget/issues">Issues</a> ·
+      <code>io.github.daver-ui.dockerstatus</code>
+    </p>
+  </div>
+</footer>
+</body>
+</html>
