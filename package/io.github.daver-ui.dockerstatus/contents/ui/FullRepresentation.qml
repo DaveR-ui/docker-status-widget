@@ -393,7 +393,7 @@ Item {
                     // Rendered SQUARE: a 28x28 tile with no rounded radius
                     // (iconButtonRadius is 0). Kept a ToolButton so its ToolTip renders --
                     // a PlasmaComponents3.ToolTip only
-                    // shows when its parent is an AbstractButton); the square surface is
+                    // shows when its parent is an AbstractButton; the square surface is
                     // supplied by the overridden background, which reads the palette token.
                     PlasmaComponents3.ToolButton {
                         id: refreshButton
