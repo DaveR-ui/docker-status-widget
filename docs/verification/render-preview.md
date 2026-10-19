@@ -94,7 +94,9 @@ not as a release gate: nothing here blocks a merge.
 
 Measured on this machine (Plasma 6.7.5, Qt 6.12.0, plasmashell live under
 `kwin_wayland`, widget installed at version 1.0.0): tier 1 produced
-`render_active.png` (daemon online, grouped containers, and both sub-blocks inside
+`render_active.png` (daemon online, the grouped container headers — every group starts
+closed, so tier 1 renders the headers, the "Collapse all" strip and no container rows —
+and both sub-blocks inside
 the merged Miscelánea section — download and countdown),
 `render_inactive_armed.png` (OFFLINE, armed stop, denied feedback, and an armed
 countdown reading "Shutting down…" with Cancel enabled and "Powering off in
@@ -119,6 +121,10 @@ representation. Both were exercised after installing `plasma-sdk`.
 - Expecting `main.qml` or `CompactRepresentation.qml` to load in the harness:
   they are plasmashell-only (the `PlasmaQuick::PlasmoidAttached` symptom is the
   proof, see [[troubleshooting]]).
+- Expecting tier 1 to show open container rows: every group starts closed, and the
+  harness injects `containers` but cannot tap a group header, so the render shows the
+  group headers, the "Collapse all" strip and no rows. Open a group in a live session
+  (tier 2 or 3) to review the row markup.
 - Editing files under `package/io.github.daver-ui.dockerstatus/contents/` to
   make a preview "work": the KPackage is the shipped artifact and the harness
   deliberately loads it read-only.

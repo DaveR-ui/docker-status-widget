@@ -84,9 +84,16 @@ project, and the list crosses into `FullRepresentation.qml` already grouped: the
 header row per project — the bundled Docker box glyph on a 28px tile, the project name, the running/total
 counter and, for compose-backed groups only, small flat 28x28 play/stop `ToolButton`s with muted glyphs —
 with the same +/- affordance the merged Miscelánea section header uses, and the standalone group keeps
-its header but carries no controls. There is no section header above the list and no section-level
-collapse flag: each group carries its own open/closed state last, so per-group collapse is the only
-collapse affordance. A play or stop click does not build a command in the representation: it emits a
+its header but carries no controls. There is no section header above the list and no section-level collapse flag. Above the list sits the
+collapse-all strip, gated on the same condition as the list (`containers.length > 0`): a muted, flat,
+text-only "Collapse all" `ToolButton` with a tooltip — an action, not a header, so it carries no title and no
+section state. It closes every group, the standalone "Other containers" bucket included, and it covers
+exactly the groups the list renders. The control is repeatable through a root generation counter
+(`groupsCollapseEpoch`): a group absorbs the current generation on its own ± tap, so every not-yet-tapped
+group answers a later press by closing again, while each group's ± still toggles only its own group and
+always wins over the control. Groups start closed on load, so the popup lists every group header with its
+body shut. The state is delegate-local view state: a poll that rebuilds the list resets it to closed, and it
+is never persisted. A play or stop click does not build a command in the representation: it emits a
 signal naming the project and the action, and `main.qml`
 assembles the command with `DockerStatus.buildComposeProjectCommand()` and runs it on the `composeAction`
 one-shot. The popup stays a pure consumer — everything crosses a property in and a signal out.
@@ -107,9 +114,10 @@ changed; the page renders five section cards.
 The popup is a pinned column: the status card is its first region and the merged Miscelánea card is its
 last, neither inside a scroll region, and the container section between them is the scrollable middle
 region — `Layout.fillHeight: true`, its `ListView` uncapped
-and clipped, and a height floor of one and a half container rows
-(`containerScrollFloor: containerRowHeight * 3 / 2` = 78px) so the next row always peeks in and the widget
-never resizes as the list grows. There is no footer and no configurable bottom text; the palette's `footerText` token stays
+and clipped, and a height floor of one and a half container rows plus the collapse-all strip
+(`containerScrollFloor: containerRowHeight * 3 / 2 + containerCollapseStripHeight` = 52 × 1.5 + 32 = 110px):
+the strip is card chrome above the list, so folding its height into the floor keeps the one-and-a-half-row
+scroll peek and grows the popup by a fixed 32px instead, and the widget never resizes as the list grows. There is no footer and no configurable bottom text; the palette's `footerText` token stays
 in `DockerStatusPalette.qml` because the palette is the mockup's fixed set, not a list of tokens in use.
 
 The Podman Desktop launch is a square 28x28 `ToolButton` beside the daemon-status label in the status card:
