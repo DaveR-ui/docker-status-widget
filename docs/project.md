@@ -136,9 +136,9 @@ site/                                 the GitHub Pages release site (the widget'
 docs/                                 the documentation — entry point: the root README.md
 ├── project.md                        the agent-facing entry point (nine fixed sections)
 └── <topic>/                          the five slice folders, each behind its <topic>-index.md hub
-index.md                              generated corpus tree (marker region, repo root)
+index.md                              generated documentation tree (marker region, repo root)
 tag-index.md                          generated tag → docs surface (marker region, repo root)
-validate.js                           zero-dependency corpus validator (run from the repo root)
+validate.js                           zero-dependency documentation validator (run from the repo root)
 README.md                             the single human entry point
 ```
 

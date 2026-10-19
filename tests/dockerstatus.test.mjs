@@ -1539,7 +1539,7 @@ function runUpdateCheckInShell() {
 
     const argsFile = join(stubDir, "curl-args.txt");
     const stub = join(stubDir, "curl");
-    const manifest = '{"version":"0.99.0"}';
+    const manifest = '{"version":"1.0.1"}';
     // Record argv one-per-line to a file (NOT stdout, which must stay clean for the split),
     // then emit the manifest on stdout with no trailing newline.
     writeFileSync(
@@ -1586,8 +1586,8 @@ test("the assembled update check runs through a real shell and splits into two h
 
     // Each half parses, and the comparison is a true, strictly-greater answer.
     const halves = splitUpdateCheckOutput(stdout);
-    assert.equal(parseWidgetVersion(halves.installed), "0.5.0");
-    assert.equal(parseLatestVersion(halves.manifest), "0.99.0");
+    assert.equal(parseWidgetVersion(halves.installed), "1.0.0");
+    assert.equal(parseLatestVersion(halves.manifest), "1.0.1");
     assert.equal(
         isUpdateAvailable(parseWidgetVersion(halves.installed), parseLatestVersion(halves.manifest)),
         true,

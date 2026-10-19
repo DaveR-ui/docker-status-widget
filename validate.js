@@ -24,13 +24,9 @@
  * even when backticked (the anti-smuggling rule), and secret scanning keeps
  * the fenced-blocks-only exemption (inline code can still hide a secret).
  *
- * This script carries the machine walk of the catalog below under the contract
- * encoded by templates/document-template.md. Where this file disagrees with the
- * template, the TEMPLATE WINS and this file carries the bug.
- *
- * The upstream guidelines prose is NOT vendored: this corpus follows
- * documentation-onrails v1.4 by URL, and its normative contract is the one the
- * templates encode.
+ * This script carries the machine walk of the documentation catalog: the
+ * frontmatter contracts, the link graph and the generated regions below. Where
+ * this file disagrees with the documentation, this file carries the bug.
  *
  * ---------------------------------------------------------------------------
  * CONSUMER ADAPTATION (documentation-onrails v1.4 -> docker-status-widget).
@@ -58,10 +54,7 @@
  *      nested `docs/protocols/` folder still matches category "protocols".
  *
  * Every check, the severity model, the generated-region renderer, the secret
- * catalog and the output format behave exactly as in the reference. The
- * normative record of this adaptation is
- * docs/adrs/adr-0018-onrails-v1-4-retrofit.md; it supersedes the vendored-copy
- * clause of adrs/adr-0002-lowercase-naming-convention.md.
+ * catalog and the output format behave exactly as in the reference.
  * ---------------------------------------------------------------------------
  *
  * Catalog (the normative list for this corpus; upstream: guidelines/04-validation.md):

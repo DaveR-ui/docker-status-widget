@@ -218,9 +218,9 @@ tests/dockerstatus.test.mjs
 site/                                 # the GitHub Pages release site, and the manifest the widget fetches
 screenshots/                          # the two images above
 docs/                                 # the documentation; entry point: this README, routing: docs/project.md
-index.md                              # generated corpus tree (marker region, repo root)
+index.md                              # generated documentation tree (marker region, repo root)
 tag-index.md                          # generated tag → docs surface (marker region, repo root)
-validate.js                           # zero-dependency corpus validator: node validate.js
+validate.js                           # zero-dependency documentation validator: node validate.js
 tools/                                # dev/verification aids — nothing here ships in the plasmoid
 ```
 
