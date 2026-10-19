@@ -52,8 +52,6 @@ Window {
             item.shutdownInFlight = false
             item.shutdownRemainingSeconds = previewShutdownRemainingSeconds
             item.shutdownFeedback = ""
-            item.updateAvailable = previewUpdateAvailable
-            item.updateFeedback = previewUpdateFeedback
             item.cookiesBrowser = "firefox"
         }
     }

@@ -2,19 +2,17 @@ name: pages
 
 # Publishes the release site for the widget on every push to master.
 #
-# Every push regenerates latest.json from the plasmoid's metadata.json before the
-# site is published, so the machine endpoint the widget polls and the version the
-# page advertises come from the one file Plasma itself reads,
-# package/io.github.daver-ui.dockerstatus/metadata.json, and cannot drift:
-# nothing about the release version is ever authored twice. The regeneration
-# happens in the checkout and is shipped inside dist/ — nothing is committed back.
+# site/latest.json is a committed static file: the build copies it into dist/ as-is,
+# and it is no longer derived from package/io.github.daver-ui.dockerstatus/metadata.json.
+# So nothing about the release version is regenerated on push, and nothing is committed
+# back to the repository.
 #
 # Deployment mode is the Pages workflow (actions/upload-pages-artifact +
 # actions/deploy-pages), not a gh-pages branch, so the published artifact is
 # assembled fresh here into dist/ and no generated file is ever committed.
 #
 # dist/ is site/* plus the assets the site references at its own root:
-#   latest.json            regenerated from metadata.json
+#   latest.json            copied from site/ as-is (a committed static file)
 #   icons/dockerstatus.svg  copied from the KPackage (contents/icons/)
 #   screenshots/*.png     copied from the repo's screenshots/ (at least one)
 # site/e2e/ is NOT published: it is the Playwright scaffold, not the site.
@@ -53,9 +51,6 @@ jobs:
 
       - name: Run the unit suite
         run: node --test tests/*.mjs
-
-      - name: Regenerate site/latest.json from metadata.json
-        run: node .github/scripts/sync-manifest.mjs --write
 
       - name: Assemble the publishable site
         shell: bash

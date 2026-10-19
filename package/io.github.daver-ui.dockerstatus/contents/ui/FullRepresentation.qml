@@ -120,13 +120,6 @@ Item {
     // is restored in full and stays that way until the user cancels it.
     readonly property bool miscBodyVisible: fullRoot.miscSectionExpanded || fullRoot.shutdownPending
 
-    // Update check. main.qml owns the whole check; this representation only renders the one
-    // line it produces and can ask for a manual re-check. No severity here: the line reuses
-    // the muted, centred line style the bottom text used to carry, so there is deliberately
-    // no updateSeverity property.
-    property bool updateAvailable: false
-    property string updateFeedback: ""
-
     signal startRequested()
     signal stopRequested()
     signal refreshRequested()
@@ -134,7 +127,6 @@ Item {
     signal shutdownStartRequested()
     signal shutdownStopRequested()
     signal shutdownMinutesEdited(string text)
-    signal updateCheckRequested()
     // The Podman Desktop launch request: the representation emits it and builds no command,
     // exactly like every other action here -- main.qml owns the resolved path and the
     // one-shot.
@@ -443,27 +435,6 @@ Item {
 
                         PlasmaComponents3.ToolTip {
                             text: i18n("Open Podman Desktop")
-                        }
-                    }
-
-                    // Shown ONLY while an update is actually available, so an offline machine, a
-                    // missing curl or an unparseable manifest still renders nothing -- the
-                    // silence contract holds. A click opens the release page: the widget's ONE
-                    // browser-opening call, pinned to the fixed DockerStatus.UPDATE_PAGE_URL
-                    // constant, never to a value from configuration.
-                    PlasmaComponents3.ToolButton {
-                        Layout.alignment: Qt.AlignVCenter
-                        Layout.preferredWidth: 24
-                        Layout.preferredHeight: 24
-                        visible: fullRoot.updateAvailable
-                        icon.name: "emblem-important"
-                        icon.color: Kirigami.Theme.negativeTextColor
-                        display: PlasmaComponents3.AbstractButton.IconOnly
-                        flat: true
-                        onClicked: Qt.openUrlExternally(DockerStatus.UPDATE_PAGE_URL)
-
-                        PlasmaComponents3.ToolTip {
-                            text: i18n("A new version is available. Open the release page.")
                         }
                     }
 
@@ -1009,32 +980,6 @@ Item {
                     }
                 }
             }
-        }
-
-        // --- Update notice ---------------------------------------------------
-        // Shown ONLY when an update is actually available, on the same
-        // fullRoot.updateAvailable gate the indicator above reads, so an offline
-        // machine, a missing curl or an unparseable manifest renders nothing at
-        // all -- this line is the feature's entire footprint. It is deliberately
-        // NOT a button and NOT a SeverityDot: it is neither a health state nor a
-        // link. The one click target this file owns is the indicator beside the
-        // daemon status above, and it is pinned to the fixed release-page constant.
-        //
-        // It occupies a RESERVED row of one grid unit between the scroll region and
-        // the pinned Miscelanea section: the text is emptied rather than the label
-        // being hidden, so the row is blank until an update exists and the widget
-        // never grows by a line when one appears.
-        PlasmaComponents3.Label {
-            Layout.fillWidth: true
-            Layout.preferredHeight: Kirigami.Units.gridUnit
-            text: fullRoot.updateAvailable ? fullRoot.updateFeedback : ""
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-            elide: Text.ElideRight
-            color: paletteTokens.muted
-            opacity: 0.5
-            font.family: paletteTokens.fontFamily
-            font.pixelSize: paletteTokens.subtlePixelSize
         }
 
         // --- Miscelanea section -----------------------------------------------

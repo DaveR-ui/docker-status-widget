@@ -14,9 +14,9 @@ doc_language: en
 Docker Status is a KDE Plasma 6 plasmoid (panel widget, and full widget on the desktop)
 that reports whether the Docker daemon is running, starts it with one click, and stops it behind a
 confirmation. Its form is a KPackage of QML files, one polkit rule, one Bash installer and a GitHub
-Pages release site: no build step, no service of its own, no database. The installed widget reads its
-own `metadata.json` and fetches one fixed https release manifest to tell you an update exists, and
-nothing else about it talks to the network. The widget is a read-mostly
+Pages release site: no build step, no service of its own, no database, and **no network access at
+all** — the widget fetches nothing at install time or at runtime, and the Pages site is a static
+landing page it never contacts. The widget is a read-mostly
 observer of two external commands — `systemctl is-active docker` and `docker ps -a` — and the only mutations it can
 perform are `systemctl start docker.service`, passwordless through a deliberately narrow privilege
 grant; `systemctl stop docker.service`, which is deliberately not covered by that grant and so goes
@@ -37,8 +37,8 @@ no polkit rule for the power-off and no widening of the
 grant for it — unlike the docker stop it does not prompt, so the countdown and the Cancel button, not a
 password, are the safeguard; no restart/disable/mask button; no stop entry in the context menu, because
 a menu is also a one-click surface; no rootless or user-scoped daemon support; no `docker events` subscription (state
-is polled, not streamed); no network beyond the one update check — no service of its own, no telemetry,
-no POST, and no URL taken from configuration, because the manifest address is a fixed constant;
+is polled, not streamed); no network access at all — no service of its own, no telemetry, no POST, no
+fetch, and no URL taken from configuration;
 no command string taken from configuration — with
 **two** recorded exceptions instead of one: the video-download row, where configuration supplies only
 validated values inside a command the widget builds,
@@ -110,28 +110,27 @@ package/io.github.daver-ui.dockerstatus/      the plasmoid KPackage — what Pla
     ├── config/config.qml             config page registration (source is relative to contents/ui/)
     ├── icons/dockerstatus.svg        bundled app icon, referenced by metadata.json Icon (/icons/dockerstatus.svg)
     └── ui/
-        ├── main.qml                  PlasmoidItem: fixed commands, polling, actions, download wiring, update check, state
+        ├── main.qml                  PlasmoidItem: fixed commands, polling, actions, download wiring, state
         ├── CompactRepresentation.qml panel: icon + severity dot
-        ├── FullRepresentation.qml    popup/desktop: pinned column — status card, scrollable container middle (1.5-row floor), update notice row, pinned Miscelánea
+        ├── FullRepresentation.qml    popup/desktop: pinned column — status card, scrollable container middle (1.5-row floor), pinned Miscelánea
         ├── SeverityDot.qml           the single severity -> palette colour mapping
         ├── DockerStatusPalette.qml   the mockup's fixed dark palette and type scale (neutral chrome tokens)
         ├── dockerstatus.js           pure logic, no QML types, unit tested
-        └── config/ConfigGeneral.qml  config page widgets (poll, icon, list, download settings, update interval)
+        └── config/ConfigGeneral.qml  config page widgets (poll, icon, list, download settings, countdown)
 polkit/49-docker-status-widget.rules  the scoped privilege grant (installed by hand)
 tests/dockerstatus.test.mjs           Node harness over the shipped dockerstatus.js
 install.sh                            lifecycle CLI
-.github/                              CI and Pages workflows, plus the manifest script
+.github/                              CI and Pages workflows
 ├── workflows/ci.yml                  PR gate: test, qmllint, docs (three status checks)
-├── workflows/pages.yml               push to master: validate, test, rebuild latest.json, publish dist/
-├── workflows/playwright.yml          non-gating site e2e (continue-on-error)
-└── scripts/sync-manifest.mjs         derives site/latest.json from metadata.json (--write / --check)
+├── workflows/pages.yml               push to master: validate, test, publish dist/
+└── workflows/playwright.yml          non-gating site e2e (continue-on-error)
 tools/                                dev/verification aids — nothing here ships in the plasmoid
 ├── render_preview.qml                preview harness: loads the shipped FullRepresentation.qml by URL
 └── render_preview.py                 driver: injects preview state, grabs PNGs (headless-representation probe)
-site/                                 the GitHub Pages release site (the widget's update endpoint)
+site/                                 the static GitHub Pages landing page (the widget never contacts it)
 ├── index.html                        static page; its version text is hand-maintained
 ├── styles.css                        the site's stylesheet
-├── latest.json                       generated manifest the widget fetches (version only)
+├── latest.json                       frozen committed static file the page reads (version only); no generator, no widget consumer
 └── e2e/                              non-gating Playwright scaffold over the static site
 docs/                                 the documentation — entry point: the root README.md
 ├── project.md                        the agent-facing entry point (nine fixed sections)
@@ -151,8 +150,7 @@ README.md                             the single human entry point
   executable path respectively; the Podman
   Desktop builder is called again by the status card's square launch button. No other
   configuration value is a command; everywhere else configuration supplies only values inside a command
-  the widget builds. The update-check command is also built in `dockerstatus.js`, but entirely from
-  fixed constants, so it is deliberately not a third boundary. The run-token trick
+  the widget builds. The run-token trick
   appends a shell comment, which is safe only for strings this project builds itself.
 - Every one-shot assignment goes through `withRunToken()`: the `executable` engine treats
   `connectedSources` as a **set**, so an identical command string is not re-executed.
@@ -258,7 +256,5 @@ README.md                             the single human entry point
   [troubleshooting.md](verification/troubleshooting.md#the-shutdown-play-button-stays-disabled)
 - "the machine powers off without asking for a password" →
   [troubleshooting.md](verification/troubleshooting.md#the-machine-powers-off-without-asking-for-a-password)
-- "the widget never says an update is available" →
-  [troubleshooting.md](verification/troubleshooting.md#the-widget-never-says-an-update-is-available)
 - "the Podman Desktop launch reports podman-desktop: not found" →
   [troubleshooting.md](verification/troubleshooting.md#the-podman-desktop-launch-reports-podman-desktop-not-found)
