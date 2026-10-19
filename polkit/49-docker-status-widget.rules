@@ -14,8 +14,8 @@
  * It grants no ability to stop, restart, reload, disable, mask or otherwise
  * modify docker.service, and no ability to touch any other unit.
  *
- * The widget gained a stop button (adr-0007), and this grant is deliberately NOT
- * widened for it. Stopping therefore keeps polkit's interactive password prompt,
+ * The widget's stop button is deliberately NOT covered by this grant. Stopping
+ * therefore keeps polkit's interactive password prompt,
  * while starting stays passwordless. That asymmetry is the intended behaviour:
  * adding "stop" to the array would delete it by decision, not by oversight.
  *

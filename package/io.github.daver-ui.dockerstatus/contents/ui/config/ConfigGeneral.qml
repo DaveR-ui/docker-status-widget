@@ -20,8 +20,8 @@ import ".."
  * follows the system colour scheme on purpose.
  *
  * The page renders six section cards: Docker, Container list, Podman Desktop,
- * Miscelánea (the video-download and shutdown-countdown settings, merged into one
- * card by adr-0019-miscelanea-section-merge), Updates and Appearance.
+ * Miscelánea (the video-download and shutdown-countdown settings share one card),
+ * Updates and Appearance.
  *
  * The severity -> colour mapping still lives in SeverityDot.qml and nowhere
  * else. Nothing on this page is a severity today, but if a colour here ever
@@ -259,9 +259,8 @@ Kirigami.FormLayout {
     }
 
     // --- Miscelánea ----------------------------------------------------------
-    // Video download and Shutdown countdown used to be two cards; they are merged
-    // here so the two groups share one set of card chrome, with their controls and
-    // their order unchanged. See adr-0019-miscelanea-section-merge.
+    // Video download and Shutdown countdown sit on one card here, so the two groups
+    // use one set of card chrome, with their controls and their order unchanged.
     Rectangle {
         Kirigami.FormData.isSection: true
         Layout.fillWidth: true
@@ -425,9 +424,9 @@ Kirigami.FormLayout {
                     QQC2.ToolTip.visible: hovered
                 }
 
-                // The shutdown duration lives on this same card so both former cards
-                // share one chrome (adr-0019-miscelanea-section-merge), but it stays
-                // its own control with its own Kirigami.FormData.label.
+                // The shutdown duration lives on this same card so it shares the card
+                // chrome, but it stays its own control with its own
+                // Kirigami.FormData.label.
                 QQC2.TextField {
                     id: shutdownCountdownMinutes
                     Kirigami.FormData.label: i18n("Shutdown countdown (minutes):")

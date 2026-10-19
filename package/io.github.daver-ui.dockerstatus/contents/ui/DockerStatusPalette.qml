@@ -99,7 +99,7 @@ QtObject {
     readonly property int cardRadius: 14                // status card, sections
     readonly property int controlRadius: 10             // buttons, text fields, timer tile
     readonly property int tileRadius: 9                 // container icon tile, container row
-    readonly property int iconButtonRadius: 0           // square icon button: refresh + Podman launch in the status card (adr-0017)
+    readonly property int iconButtonRadius: 0           // square icon button: refresh + Podman launch in the status card
     readonly property int appBorderWidth: 1
 
     // --- Typography ----------------------------------------------------------

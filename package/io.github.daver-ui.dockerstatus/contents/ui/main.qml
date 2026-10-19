@@ -18,11 +18,11 @@
  *     exceptions. The video download needs the URL the user pasted, so it is assembled
  *     by DockerStatus.buildVideoDownloadCommand(), which validates the URL against a
  *     host allow-list and shell-quotes every interpolated value -- including the
- *     configuration (adr-0006). The per-project compose play/stop and the Podman
- *     Desktop launch are the second: their commands are assembled by
+ *     configuration. The per-project compose play/stop and the Podman Desktop
+ *     launch are the second: their commands are assembled by
  *     DockerStatus.buildComposeProjectCommand() / buildPodmanDesktopCommand(), which
- *     interpolate a value into one shell-quoted argument and expose no free-form channel
- *     (adr-0014). Both remaining exceptions shell-quote
+ *     interpolate a value into one shell-quoted argument and expose no free-form channel.
+ *     Both remaining exceptions shell-quote
  *     every interpolated value, and that is what makes the trailing shell-comment token
  *     safe everywhere else. Do not add a third exception without reading
  *     dockerstatus.js and the tests that run the assembled command through a real shell.
@@ -33,7 +33,7 @@
  *     polkit grant is deliberately NOT widened for it, so stopping keeps the interactive
  *     password prompt while starting stays passwordless. That asymmetry is the point, not
  *     a gap: adding "stop" to ALLOWED_VERBS would delete it by decision, not by
- *     oversight (adr-0007).
+ *     oversight.
  *
  *  5. "Countdown to Extinction" is a second destructive action, and its countdown is
  *     deliberately WIDGET-OWNED. The configured duration only sizes a local
@@ -46,20 +46,20 @@
  *     logind's default policy for org.freedesktop.login1.power-off is allow_active=yes,
  *     so a local active session powers off without a password. The safeguards are
  *     therefore the deliberate activation, the more-than-10-minute countdown, the
- *     visible countdown and the cancel button -- not a password gate (adr-0009). The
+ *     visible countdown and the cancel button -- not a password gate. The
  *     duration is editable inline in the popup as well as on the config page; the
  *     popup emits raw text and this file stays the SINGLE writer of the kcfg entry,
  *     refusing anything the resolver cannot use so both surfaces cannot drift.
  *
  *  6. The compose and Podman Desktop actions are UNPRIVILEGED mutations: they run as the
  *     logged-in user against that user's own docker socket and that user's own session, so
- *     they add no polkit rule and ALLOWED_VERBS stays ["start"] (adr-0004, adr-0007,
- *     adr-0014). The per-group stop is a container-level action, NOT `systemctl stop
+ *     they add no polkit rule and ALLOWED_VERBS stays ["start"]. The per-group stop is a
+ *     container-level action, NOT `systemctl stop
  *     docker`, so it needs no password: its safeguard is the single shell-quoted label
  *     argument plus the visible feedback line, and a vanished group fails at click time
  *     with docker's own message. The Podman launch is likewise unprivileged -- a wrong
- *     Podman path fails at click time with the binary's own message, never at load time
- *     (adr-0017).
+ *     Podman path fails at click time with the binary's own message, never at load
+ *     time.
  */
 
 import QtQuick
@@ -94,7 +94,7 @@ PlasmoidItem {
     // does not prompt -- logind's default policy for org.freedesktop.login1.power-off is
     // allow_active=yes, so a local active session powers off without a password. The
     // safeguards are the deliberate activation, the more-than-10-minute countdown, the
-    // visible countdown and the cancel button, not a password gate (adr-0009).
+    // visible countdown and the cancel button, not a password gate.
     readonly property string powerOffCommand: "systemctl poweroff"
 
     // The video download is the one deliberate exception: the user pastes a URL, so
@@ -131,8 +131,8 @@ PlasmoidItem {
     property int runToken: 0
 
     // Compose project actions. The action is an UNPRIVILEGED mutation (the user's own
-    // docker socket), so it widens no polkit grant and ALLOWED_VERBS stays ["start"]
-    // (adr-0004, adr-0007, adr-0014). It mirrors daemonAction's handler: one one-shot
+    // docker socket), so it widens no polkit grant and ALLOWED_VERBS stays ["start"].
+    // It mirrors daemonAction's handler: one one-shot
     // source, one in-flight flag, exit code 0 clears the feedback, anything else
     // surfaces stderr verbatim (or a generic fallback) so a vanished stack is never
     // swallowed.
@@ -145,8 +145,7 @@ PlasmoidItem {
     // Podman Desktop launch. Mirrors composeAction's handler: an UNPRIVILEGED mutation
     // (the user's own session) that widens no polkit grant, with one one-shot source and
     // one in-flight flag; exit code 0 clears the feedback and anything else surfaces
-    // stderr verbatim (or a generic fallback), so a failed launch is never swallowed
-    // (adr-0014, adr-0017).
+    // stderr verbatim (or a generic fallback), so a failed launch is never swallowed.
     property bool podmanLaunchInFlight: false
     property string podmanLaunchFeedback: ""
     property string podmanLaunchFeedbackSeverity: DockerStatus.SEVERITY_MUTED
@@ -232,7 +231,7 @@ PlasmoidItem {
     // Only reachable after the UI confirmation in FullRepresentation: the button arms
     // on the first click and calls this on the second. Stopping is not covered by the
     // polkit grant, so the interactive password prompt is expected here -- that
-    // asymmetry with the passwordless start is deliberate (adr-0007).
+    // asymmetry with the passwordless start is deliberate.
     function stopDaemon() {
         if (root.actionInFlight || !root.daemonRunning) {
             return;
@@ -289,7 +288,7 @@ PlasmoidItem {
     // interpolated value is the configured executable path, resolved and shell-quoted
     // inside buildPodmanDesktopCommand(), so the command is the quoted path plus the run
     // token and nothing else. One guard, one flag, one one-shot -- the same shape
-    // runComposeProject() uses (adr-0014, adr-0017).
+    // runComposeProject() uses.
     function launchPodmanDesktop() {
         if (root.podmanLaunchInFlight) {
             return;
@@ -356,7 +355,7 @@ PlasmoidItem {
      * sequence is cancelled or completes; stop is the only way to cancel and needs no
      * privilege. At expiry firePowerOff() runs the fixed constant. A widget reload drops
      * all of this state, which silently cancels a pending shutdown -- the intended
-     * fail-safe (adr-0009).
+     * fail-safe.
      */
     function startShutdownCountdown() {
         if (root.shutdownPending || root.shutdownInFlight || !root.shutdownReady) {
@@ -477,7 +476,7 @@ PlasmoidItem {
     // absolute-deadline semantics with one accepted consequence: a forward system-clock
     // step, or a resume after the deadline has already passed while suspended, makes the
     // next tick fire immediately. The cancel button and the configurable countdown length
-    // are the mitigations for that debt (adr-0009).
+    // are the mitigations for that debt.
     Timer {
         id: shutdownTicker
         interval: 1000
@@ -693,7 +692,7 @@ PlasmoidItem {
     // One-shot: the Podman Desktop launch, assembled by DockerStatus.buildPodmanDesktopCommand()
     // and run by launchPodmanDesktop(). Mirrors composeAction: one source, one in-flight flag,
     // exit code 0 clears the feedback and anything else surfaces stderr verbatim (or a generic
-    // fallback) so a failed launch is never swallowed (adr-0014, adr-0017).
+    // fallback) so a failed launch is never swallowed.
     P5Support.DataSource {
         id: podmanLaunch
         engine: "executable"
@@ -752,7 +751,7 @@ PlasmoidItem {
     // --- Contextual actions --------------------------------------------------
     // There is deliberately no stop entry here. A context menu is still a one-click
     // surface, and the stop is destructive enough that the confirmation is the whole
-    // point; the popup button is the single stop path (adr-0007).
+    // point; the popup button is the single stop path.
     Plasmoid.contextualActions: [
         PlasmaCore.Action {
             text: i18n("Refresh")

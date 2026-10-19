@@ -87,9 +87,8 @@ Item {
     property string composeActionFeedbackSeverity: "muted"
 
     // Podman Desktop launch. main.qml owns the resolved path and the one-shot; this file
-    // only renders the in-flight flag and a failure, never a command. The launch returned
-    // as a square status-card button (adr-0017) after its section was removed (adr-0016);
-    // a failed launch is surfaced, never swallowed.
+    // only renders the in-flight flag and a failure, never a command. The launch is a
+    // square status-card button, and a failed launch is surfaced, never swallowed.
     property bool podmanLaunchInFlight: false
     property string podmanLaunchFeedback: ""
     property string podmanLaunchFeedbackSeverity: "muted"
@@ -107,15 +106,14 @@ Item {
     // The containers section has NO collapse state any more: its header row is
     // gone entirely, so there is no header left to tap and no flag that could
     // keep a body closed behind a list that is always shown. The download and
-    // countdown blocks used to carry one flag each; adr-0019 merged them into this
-    // single section, so they share this one flag and collapse together.
+    // countdown blocks sit in one section, so one flag collapses them together.
     //
     // Assigned EXACTLY ONCE: the merged header's MouseArea is the only writer.
     property bool miscSectionExpanded: true
 
-    // The countdown is the one part with an ARMED state, and adr-0009 names "the
-    // visible countdown and the cancel button" among the safeguards that let the
-    // power-off run without a password prompt. So collapse is a rest-state declutter
+    // The countdown is the one part with an ARMED state: "the visible countdown and the
+    // cancel button" are the safeguards that let the power-off run without a password
+    // prompt. So collapse is a rest-state declutter
     // only: while a shutdown is pending the merged body comes back whatever the
     // section bool says, and an armed destructive state can never be collapsed away.
     // The header's own toggle still flips the section bool, so a pending countdown
@@ -139,7 +137,7 @@ Item {
     signal updateCheckRequested()
     // The Podman Desktop launch request: the representation emits it and builds no command,
     // exactly like every other action here -- main.qml owns the resolved path and the
-    // one-shot (adr-0014, adr-0017).
+    // one-shot.
     signal podmanLaunchRequested()
     // Per-project compose actions name the project; the representation builds no command
     // and reaches for no data source -- it hands the project back to main.qml.
@@ -381,9 +379,9 @@ Item {
                         font.weight: Font.DemiBold
                     }
 
-                    // Relocated from the removed topbar (adr-0017): the in-flight busy
-                    // state lives in the status card's head row now, so actionInFlight is
-                    // never orphaned. Kept verbatim from the topbar it left.
+                    // The in-flight busy state lives in the status card's head row, so
+                    // actionInFlight is never orphaned. The element is unmodified from
+                    // where it originally sat.
                     PlasmaComponents3.BusyIndicator {
                         Layout.alignment: Qt.AlignVCenter
                         Layout.preferredWidth: Kirigami.Units.iconSizes.small
@@ -392,9 +390,9 @@ Item {
                         visible: fullRoot.actionInFlight
                     }
 
-                    // Relocated from the removed topbar (adr-0017) and rendered SQUARE: a
-                    // 28x28 tile with no rounded radius (iconButtonRadius is 0). Kept a
-                    // ToolButton so its ToolTip renders (a PlasmaComponents3.ToolTip only
+                    // Rendered SQUARE: a 28x28 tile with no rounded radius
+                    // (iconButtonRadius is 0). Kept a ToolButton so its ToolTip renders --
+                    // a PlasmaComponents3.ToolTip only
                     // shows when its parent is an AbstractButton); the square surface is
                     // supplied by the overridden background, which reads the palette token.
                     PlasmaComponents3.ToolButton {
@@ -420,10 +418,9 @@ Item {
                         }
                     }
 
-                    // Re-added to the popup as a SQUARE status-card button (adr-0017): its
-                    // launch section was removed (adr-0016), so the launch returns here, the
-                    // same 28x28 surface as the refresh button. main.qml owns the resolved
-                    // path and the one-shot; this only emits the request.
+                    // A SQUARE status-card button, the same 28x28 surface as the refresh
+                    // button. main.qml owns the resolved path and the one-shot; this only
+                    // emits the request.
                     PlasmaComponents3.ToolButton {
                         id: podmanButton
                         Layout.preferredWidth: 28
@@ -450,10 +447,10 @@ Item {
                     }
 
                     // Shown ONLY while an update is actually available, so an offline machine, a
-                    // missing curl or an unparseable manifest still renders nothing -- the silence
-                    // contract of adr-0013 is unchanged. A click opens the release page: the widget's
-                    // ONE browser-opening call, authorised by adr-0015 and pinned to the fixed
-                    // DockerStatus.UPDATE_PAGE_URL constant, never to a value from configuration.
+                    // missing curl or an unparseable manifest still renders nothing -- the
+                    // silence contract holds. A click opens the release page: the widget's ONE
+                    // browser-opening call, pinned to the fixed DockerStatus.UPDATE_PAGE_URL
+                    // constant, never to a value from configuration.
                     PlasmaComponents3.ToolButton {
                         Layout.alignment: Qt.AlignVCenter
                         Layout.preferredWidth: 24
@@ -497,9 +494,9 @@ Item {
                     }
                 }
 
-                // A failed Podman launch is surfaced, never swallowed (adr-0014, adr-0017):
-                // the same feedback contract the removed section used, restored as a small
-                // row in the status card. Invisible rows take no layout space.
+                // A failed Podman launch is surfaced, never swallowed: the feedback
+                // contract is restored as a small row in the status card. Invisible rows
+                // take no layout space.
                 RowLayout {
                     Layout.fillWidth: true
                     Layout.topMargin: 9
@@ -1043,8 +1040,7 @@ Item {
         // --- Miscelanea section -----------------------------------------------
         // Pinned at the bottom of the column (its last child) and never part of the
         // scroll region: it stays put while the middle region above scrolls.
-        // One merged, collapsible card (adr-0019-miscelanea-section-merge) that holds
-        // BOTH blocks the popup used to render as two separate collapsible sections: the
+        // One merged, collapsible card that holds BOTH blocks in one section: the
         // video-download row and the "Countdown to Extinction" shutdown controls. The
         // single header below collapses or expands both together. Each block keeps its
         // own inner title, so the two remain legible inside the one card, and the
@@ -1329,8 +1325,8 @@ Item {
                     // for org.freedesktop.login1.power-off is allow_active=yes. The
                     // safeguards are the deliberate activation, the more-than-10-minute
                     // countdown, the visible countdown and the cancel button, not a password
-                    // gate (adr-0009). The 35x35 timer tile beside the inner title is the
-                    // countdown's identity and moves inside the body with it.
+                    // gate. The 35x35 timer tile beside the inner title is the countdown's
+                    // identity and moves inside the body with it.
                     ColumnLayout {
                         Layout.fillWidth: true
                         spacing: 8
@@ -1518,7 +1514,7 @@ Item {
                             Layout.topMargin: 8
                             // Ungated by the collapse flag on purpose: this line only exists
                             // while a shutdown is pending, and that armed state must never be
-                            // collapsed away (adr-0009's visible-countdown safeguard).
+                            // collapsed away -- the visible-countdown safeguard.
                             visible: fullRoot.shutdownPending
                             text: i18nc("@info", "Powering off in %1", DockerStatus.formatCountdown(fullRoot.shutdownRemainingSeconds))
                             color: paletteTokens.muted

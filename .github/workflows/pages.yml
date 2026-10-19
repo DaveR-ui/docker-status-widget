@@ -46,6 +46,11 @@ jobs:
         with:
           node-version: "22"
 
+      # Keep master honest: the same two gates the pull request runs, before
+      # anything is published. A broken master must not ship a site.
+      - name: Validate the documentation corpus
+        run: node validate.js
+
       - name: Run the unit suite
         run: node --test tests/*.mjs
 

@@ -210,9 +210,9 @@ function containerSeverity(state) {
 /*
  * Compose groups and per-project start/stop.
  *
- * This is the SECOND sanctioned command-building boundary, and it is a NEW kind of
- * mutation: before adr-0014 the widget had never run a `docker start` or `docker
- * stop`. It is narrow in the same shape as the video download -- the project name is
+ * This is the SECOND sanctioned command-building boundary, and a distinct kind of
+ * mutation: the widget runs `docker start` and `docker stop` here, never `systemctl`.
+ * It is narrow in the same shape as the video download -- the project name is
  * a value INTERPOLATED into exactly one shell-quoted argument, never a command, and
  * the verb is chosen from a fixed pair of constants, so no caller can turn an
  * unvalidated choice into a command.
@@ -338,9 +338,9 @@ function buildComposeProjectCommand(options) {
 /*
  * Podman Desktop launch.
  *
- * This is the boundary that contradicts adr-0006 most openly -- the configured path IS
- * the command -- and it is deliberate and bounded in adr-0014: one setting, one validated
- * shape, one default, and NO flag channel. The path is a plain executable name or a
+ * This is the boundary where the configured value IS the command, and it is
+ * deliberate and bounded: one setting, one validated shape, one default, and NO
+ * flag channel. The path is a plain executable name or a
  * `~`-relative/absolute path matching PODMAN_DESKTOP_PATH_PATTERN, never free-form text;
  * it goes through shellQuote() like every other value, and the assembled command is the
  * quoted path plus the run token and NOTHING else -- no arguments, no URL, no flags -- so
@@ -367,7 +367,7 @@ var PODMAN_DESKTOP_PATH_PATTERN = /^(~\/)?[A-Za-z0-9._\/+-]+$/;
  * empty/null/undefined or a value that is not a plain name or path -- it carries a space,
  * a quote or any other shell metacharacter -- falls back to PODMAN_DESKTOP_DEFAULT, and a
  * leading "~/" is expanded against home. The setting is a validated value, never a command
- * line; a field that could hold one is exactly what adr-0006 exists to prevent.
+ * line; a field that could hold one is exactly what the resolvers in this file refuse.
  */
 function resolvePodmanDesktopPath(configured, home) {
     var text = normalizeOutput(configured);
@@ -845,10 +845,9 @@ var UPDATE_CHECK_URL = "https://dave-r-ui.github.io/docker-status-widget/latest.
 /*
  * The release page the widget's "an update is available" indicator opens. Fixed
  * for the same reason UPDATE_CHECK_URL is fixed: a misconfiguration must not be
- * able to point the widget at another host, and the human-approved reversal of
- * adr-0013's "not a link" clause (adr-0015) authorises exactly ONE click target
- * -- this constant, the GitHub Pages site root, never a value from
- * configuration and never assembled from parts.
+ * able to point the widget at another host. Exactly ONE click target is authorised
+ * -- this constant, the GitHub Pages site root, never a value from configuration and
+ * never assembled from parts.
  */
 var UPDATE_PAGE_URL = "https://dave-r-ui.github.io/docker-status-widget/";
 var UPDATE_CHECK_MAX_TIME_SECONDS = 5;
