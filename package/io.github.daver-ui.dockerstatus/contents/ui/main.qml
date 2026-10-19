@@ -104,19 +104,6 @@ PlasmoidItem {
     // command through a real shell and assert the arguments arrive intact.
     readonly property string homeDirectoryCommand: "printf %s \"$HOME\""
 
-    // Fixed, and it mints no command-building exception: DockerStatus.buildUpdateCheckCommand()
-    // assembles this entirely from fixed constants -- it reads one LOCAL file (the widget's own
-    // installed metadata.json) and fetches ONE fixed https URL (the release manifest). No configuration
-    // value and no user input reaches it, so it is the same class of thing as the daemon commands
-    // above, not a second exception like the download row. The URL is deliberately a constant so a
-    // misconfiguration cannot point the widget elsewhere. See the Update check section in
-    // dockerstatus.js for the full boundary, and note the whole check degrades to silence offline.
-    readonly property string updateCheckCommand: DockerStatus.buildUpdateCheckCommand({})
-
-    // Hours between update checks -> milliseconds; 0 disables them entirely. Math.max(0, ...)
-    // keeps a stray negative from producing a negative interval.
-    readonly property int updateCheckIntervalMs: Math.max(0, Plasmoid.configuration.updateCheckIntervalHours * 3600 * 1000)
-
     readonly property int effectivePollIntervalMs: Math.max(1000, Plasmoid.configuration.pollIntervalSeconds * 1000)
 
     // --- Observable state ----------------------------------------------------
@@ -166,17 +153,6 @@ PlasmoidItem {
     property int shutdownRemainingSeconds: 0
     property string shutdownFeedback: ""
     property string shutdownFeedbackSeverity: DockerStatus.SEVERITY_MUTED
-
-    // Update check state. updateFeedback reuses the popup's muted, centred line style, so there
-    // is no updateFeedbackSeverity and no second colour mapping. updateAvailable is the
-    // only thing that shows the line; everything else exists to make it never cry wolf.
-    // installedVersion is a cache of the last successfully read installed version: every
-    // check parses its own copy and never trusts this one, so it is observable state for a
-    // future surface rather than an input to the decision.
-    property string installedVersion: ""
-    property bool updateCheckInFlight: false
-    property bool updateAvailable: false
-    property string updateFeedback: ""
 
     // Deliberately `var`, not `int`: the resolver answers null for a value that cannot
     // arm a countdown, and an int property could not hold that.
@@ -407,65 +383,6 @@ PlasmoidItem {
             return;
         }
         Plasmoid.configuration.shutdownCountdownMinutes = raw;
-    }
-
-    /*
-     * Update check. checkForUpdates() is the manual one-shot (the context-menu action);
-     * the polled updateCheckSource runs the same fixed command in the background and both
-     * deliver here. The handler is deliberately quiet: every failure -- no curl, no
-     * metadata.json, offline, an unparseable manifest -- lands on the silent branch and
-     * produces no text at all. There is no stderr surfacing anywhere in this path.
-     */
-    function checkForUpdates() {
-        if (root.updateCheckInFlight) {
-            return;
-        }
-        root.updateCheckInFlight = true;
-        updateCheckForced.connectedSources = [
-            DockerStatus.withRunToken(root.updateCheckCommand, root.nextRunToken())
-        ];
-    }
-
-    function handleUpdateCheck(sourceName, data) {
-        // Only the event that closes a run carries "exit code"; ignore anything else. The
-        // in-flight flag is cleared on that closing event and nowhere else, the same guard
-        // and the same ordering downloadAction uses, so a future engine that streams cannot
-        // free the button while the run is still alive.
-        const exitCode = data["exit code"];
-        if (exitCode === undefined) {
-            return;
-        }
-
-        root.updateCheckInFlight = false;
-
-        // Every check stands ONLY on what its own run observed. The installed version is
-        // parsed from THIS run's bytes and is never inherited from an earlier one: a package
-        // swapped under a live widget would otherwise leave a stale cached version to be
-        // compared against a fresh manifest -- the exact "the version I just installed is
-        // not recognised" window the silent path has to cover. installedVersion therefore
-        // becomes a plain cache of the last successful read, observable but never trusted.
-        const halves = DockerStatus.splitUpdateCheckOutput(data["stdout"]);
-        const installed = halves.installed !== ""
-            ? DockerStatus.parseWidgetVersion(halves.installed)
-            : "";
-        root.installedVersion = installed;
-
-        // The silent path: offline, no curl, a missing metadata.json, an unreadable
-        // installed version, or an unparseable manifest. Clear everything and show nothing
-        // -- this is the whole offline contract, and it never surfaces stderr.
-        const latest = DockerStatus.parseLatestVersion(halves.manifest);
-        if (latest === "" || installed === "") {
-            root.updateAvailable = false;
-            root.updateFeedback = "";
-            return;
-        }
-
-        // A remote that is not strictly newer is not an update: isUpdateAvailable() is
-        // conservative by design and must never be talked into showing a line that is wrong.
-        root.updateAvailable = DockerStatus.isUpdateAvailable(installed, latest);
-        root.updateFeedback = root.updateAvailable
-            ? i18nc("@info", "Version %1 is available.", latest)
-            : "";
     }
 
     // The countdown is a wall-clock deadline, not one long Timer interval: a 15-minute
@@ -717,37 +634,6 @@ PlasmoidItem {
         }
     }
 
-    // Update check: two sources, the tenth and eleventh in this file (the nine before them
-    // are the two docker probes, forcedDaemonRead, daemonAction, composeAction, powerAction,
-    // homeSource, downloadAction and podmanLaunch). A polled source runs the fixed command --
-    // the engine runs it once on connect, so the load-time check is free -- and disconnects
-    // itself when the interval is 0 via the connectedSources binding. A one-shot carries the
-    // manual "Check for updates": a polled source's connectedSources is a binding and cannot
-    // be reassigned per click, so the tokenised command rides this one instead, exactly like
-    // the daemon re-read. Both deliver to the single handler above; neither ever surfaces
-    // stderr.
-    P5Support.DataSource {
-        id: updateCheckSource
-        engine: "executable"
-        interval: root.updateCheckIntervalMs
-        connectedSources: root.updateCheckIntervalMs > 0 ? [root.updateCheckCommand] : []
-
-        onNewData: (sourceName, data) => {
-            root.handleUpdateCheck(sourceName, data);
-        }
-    }
-
-    P5Support.DataSource {
-        id: updateCheckForced
-        engine: "executable"
-        interval: 0
-        connectedSources: []
-
-        onNewData: (sourceName, data) => {
-            root.handleUpdateCheck(sourceName, data);
-        }
-    }
-
     // --- Contextual actions --------------------------------------------------
     // There is deliberately no stop entry here. A context menu is still a one-click
     // surface, and the stop is destructive enough that the confirmation is the whole
@@ -763,12 +649,6 @@ PlasmoidItem {
             icon.name: "media-playback-start"
             enabled: !root.daemonRunning && !root.actionInFlight
             onTriggered: root.startDaemon()
-        },
-        PlasmaCore.Action {
-            text: i18n("Check for updates")
-            icon.name: "system-software-update"
-            enabled: !root.updateCheckInFlight
-            onTriggered: root.checkForUpdates()
         }
     ]
 
@@ -800,8 +680,6 @@ PlasmoidItem {
         shutdownRemainingSeconds: root.shutdownRemainingSeconds
         shutdownFeedback: root.shutdownFeedback
         shutdownFeedbackSeverity: root.shutdownFeedbackSeverity
-        updateAvailable: root.updateAvailable
-        updateFeedback: root.updateFeedback
         composeActionInFlight: root.composeActionInFlight
         composeActionProject: root.composeActionProject
         composeActionKind: root.composeActionKind
@@ -818,7 +696,6 @@ PlasmoidItem {
         onShutdownStartRequested: root.startShutdownCountdown()
         onShutdownStopRequested: root.stopShutdownCountdown()
         onShutdownMinutesEdited: (text) => root.setShutdownMinutes(text)
-        onUpdateCheckRequested: root.checkForUpdates()
         onComposeStartRequested: (project) => root.startComposeProject(project)
         onComposeStopRequested: (project) => root.stopComposeProject(project)
         onPodmanLaunchRequested: root.launchPodmanDesktop()

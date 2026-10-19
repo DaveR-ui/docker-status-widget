@@ -37,8 +37,8 @@ workflow's job, not a proof); the polkit rule's correctness, which is argued in
 - `tests/dockerstatus.test.mjs` — the harness; read the header comment before the assertions.
 - `.github/workflows/ci.yml` — the merge gate: the three jobs whose names are the three status-check
   contexts (`test`, `qmllint`, `docs`).
-- `.github/workflows/pages.yml` and `.github/scripts/sync-manifest.mjs` — the publish path, and the manifest
-  derivation the widget's version check depends on.
+- `.github/workflows/pages.yml` — the publish path for the static landing page (the widget does not
+  consume it).
 - [troubleshooting.md](troubleshooting.md) — the symptom-keyed write-ups.
 - [../project.md](../project.md) — the Commands table, plus Common Lookups for symptom routing.
 
@@ -50,8 +50,8 @@ round-trip realm-crossing values through JSON before comparing them, because `de
 a cross-realm object for the wrong reason; then assert behaviour by group — constants, daemon-state
 parsing, normalisation, container parsing, malformed-line handling, the badge, the run token, both
 severity mappings, the download helpers (URL classification, quoting, path/binary/runtime
-resolution, command assembly and result parsing), and the update-check helpers (the fixed command, the
-marker split, the version parsers and the comparison), plus the static files that ship beside them: the two
+resolution, command assembly and result parsing), the compose/Podman command helpers (the grouping, both
+command builders and the Podman path resolver), plus the static files that ship beside them: the two
 action identities, both fixed privileged commands and the polkit rule's `ALLOWED_VERBS` array. Two of
 those tests are the strongest available check
 that user input never becomes shell syntax: they run the real assembled command through `/bin/sh` with
@@ -62,12 +62,9 @@ The evidence layers, and which of them can be re-run:
 
 | Layer | How it is verified | Re-runnable |
 |---|---|---|
-| Node unit suite | 172 unit tests under `node --test`, over the shipped bytes: parsing, severity, the run token, the download helpers, the update-check helpers (the constants, the fixed command they assemble, the marker split, the version parsers and the strictly-greater comparison), the shutdown countdown helpers (`resolveShutdownMinutes`, `shutdownRemainingSeconds`, `formatCountdown` and the two constants), the two action identities and their exact QML `actionKind` expressions, both fixed privileged commands, and the polkit rule as text plus a default-deny predicate matrix over its whole decision surface; also the surfaces a runtime test cannot reach — the footer and bottom-text surfaces, asserted absent (`taglineText`, `cfg_taglineText`, `Persiguiendo la singularidad` and a `footerText` read), the pinned-column assertions (the status → container → update → Miscelánea order, the container section as the scrollable middle region, and the `containerScrollFloor`), the `firefox` cookies default, the cookies combo's seed-and-mute arrangement, the shutdown kcfg entry and its config control, the fixed `powerOffCommand` literal and the countdown state machine in `main.qml`, the full-representation shutdown bindings, the inline shutdown-minutes field's wiring (inbound property, edit signal, validation through the single resolver, seed/sync guards, the focus-loss mirror that re-syncs a valid field value without clobbering the user's error text, disabled-while-pending) and the single-writer rule (only `main.qml` writes the entry; an unresolvable value is never persisted), and the stop button's fixed width | yes |
+| Node unit suite | 138 unit tests under `node --test`, over the shipped bytes: parsing, severity, the run token, the download helpers, the shutdown countdown helpers (`resolveShutdownMinutes`, `shutdownRemainingSeconds`, `formatCountdown` and the two constants), the compose/Podman helpers (the grouping, both command builders and the Podman path resolver), the two action identities and their exact QML `actionKind` expressions, both fixed privileged commands, and the polkit rule as text plus a default-deny predicate matrix over its whole decision surface; also the surfaces a runtime test cannot reach — the footer and bottom-text surfaces, asserted absent (`taglineText`, `cfg_taglineText`, `Persiguiendo la singularidad` and a `footerText` read), the pinned-column assertions (the status → container → Miscelánea order, the container section as the scrollable middle region, and the `containerScrollFloor`), the `firefox` cookies default, the cookies combo's seed-and-mute arrangement, the shutdown kcfg entry and its config control, the fixed `powerOffCommand` literal and the countdown state machine in `main.qml`, the full-representation shutdown bindings, the inline shutdown-minutes field's wiring (inbound property, edit signal, validation through the single resolver, seed/sync guards, the focus-loss mirror that re-syncs a valid field value without clobbering the user's error text, disabled-while-pending) and the single-writer rule (only `main.qml` writes the entry; an unresolvable value is never persisted), and the stop button's fixed width | yes |
 | Download command boundary | unit tests run the assembled command through a real `/bin/sh` with a stub `yt-dlp` on `PATH` and assert the argv arrives intact, including the real YouTube URL with its `&list=` and a quote-injection URL; a separate test pins the `withRunToken()` newline case an adversarial pass found | yes |
-| CI (GitHub Actions) | `.github/workflows/ci.yml`, on `pull_request` into `master`: `node --test tests/*.mjs`; the Qt6 `qmllint` — the job installs `qt6-declarative-dev-tools` and runs `/usr/lib/qt6/bin/qmllint` over both QML roots, read as a **diagnostic stream**, not an exit code, because Qt6 exits 0 unless `--max-warnings` is set, so a real defect is an `Error:`-severity diagnostic in the captured output **or** a non-zero qmllint exit status (a file it cannot parse exits 255); and `node validate.js` in check mode only, run from the repo root — plus one more step inside the `test` job:
-  `.github/scripts/sync-manifest.mjs --check`, which fails the pull request when the committed
-  `site/latest.json` no longer matches `metadata.json`. It is a step, not a job, so it adds no fourth
-  status context. Three status-check contexts: `test`, `qmllint`, `docs`. | yes — this is the merge gate |
+| CI (GitHub Actions) | `.github/workflows/ci.yml`, on `pull_request` into `master`: `node --test tests/*.mjs`; the Qt6 `qmllint` — the job installs `qt6-declarative-dev-tools` and runs `/usr/lib/qt6/bin/qmllint` over both QML roots, read as a **diagnostic stream**, not an exit code, because Qt6 exits 0 unless `--max-warnings` is set, so a real defect is an `Error:`-severity diagnostic in the captured output **or** a non-zero qmllint exit status (a file it cannot parse exits 255); and `node validate.js` in check mode only, run from the repo root. Three status-check contexts: `test`, `qmllint`, `docs`. | yes — this is the merge gate |
 | Release site (Playwright) | `.github/workflows/playwright.yml` — `continue-on-error: true`, so deliberately **non-gating**: it serves `site/` with a local `python3` static server through `site/e2e/playwright.config.mjs` and runs `site/e2e/site.spec.mjs` on pull requests that touch `site/`, plus a weekly sweep. It never runs in the merge gate. | yes, but not part of the gate |
 | Data engine contract | probe QML against live plasma5support 6.7.4, re-measured on 6.7.5 for the long one-shot row: payload keys, set semantics, interval quantisation, and the finding that a two-second silence produces no event at all | no — probe |
 | Full pipeline against live Docker | a probe harness parsed the real three-container stack | no — probe |
@@ -112,22 +109,19 @@ claim this corpus makes about the widget rests on these layers.
 - **The deployed Pages artifact is only verified by simulation.** The e2e suite serves `site/` with a local
   `python3` server; it never sees the assembled `dist/` the Pages workflow uploads (`site/*` plus the copied
   icon and screenshots). A missing or mis-pathed asset in `dist/` would not be caught here.
-- **`sync-manifest --check` guards the manifest, and only the manifest.** It runs as a step inside the
-  `test` job of `ci.yml` — deliberately a step rather than a fourth job, so the branch-protection contract
-  stays three status contexts — so a `metadata.json` version bump with a stale committed `site/latest.json`
-  fails the pull request. What it does not see is the site itself: the non-gating e2e suite reads the
-  committed `site/latest.json` and would notice the mismatch in its weekly sweep, but nothing gates on it.
-- **The static version text in `site/index.html` is hand-maintained**, and `sync-manifest --check` does not
-  guard it — it guards the manifest only. A release procedure has to update the page's static
-  `#latest-version` / `#release-line` text by hand; the inline script rewrites it from the manifest when
+- **The committed `site/latest.json` is not guarded by anything.** It is a frozen static file — the
+  generator and its CI step are gone — so a release procedure has to update it by hand alongside the
+  widget's `metadata.json` and the page's static version text; nothing fails a pull request when the three
+  disagree. The non-gating e2e suite reads the committed file and would notice a missing or malformed one
+  in its weekly sweep, but nothing gates on it.
+- **The static version text in `site/index.html` is hand-maintained**, and nothing guards it. A release
+  procedure has to update the page's static
+  `#latest-version` / `#release-line` text by hand; the inline script rewrites it from the committed
+  `latest.json` when
   JavaScript runs, so the no-JavaScript fallback is the path that will silently go stale.
 - **Playwright is deliberately non-gating**, so the site cannot block a merge. Promoting it is a separate
   decision, not a default.
-- **The update check inside plasmashell is unreachable by any test.** Its control flow — offline, no `curl`,
-  an unreadable `metadata.json`, an unparseable manifest — is review-and-lint only; the Node suite pins the
-  pure helpers and the wiring as static text, which proves the arrangement, not the running behaviour.
-- No QML behavioural test: the widget wrapper — including the download row, the shutdown countdown and the
-  update check —
+- No QML behavioural test: the widget wrapper — including the download row and the shutdown countdown —
   is lint-and-review only. The download's *command boundary* and the countdown's *resolver* are well
   tested; their *rows*, the inline field's interaction and the play/stop timing are not — the field's
   wiring is pinned as static text, which proves the arrangement, not the behaviour. The *pixels* of the

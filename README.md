@@ -59,7 +59,7 @@ only for downloads — a `yt-dlp` reachable on plasmashell's `PATH`, plus a Java
 | Surface | Content |
 | --- | --- |
 | Panel (compact) | Theme icon (dimmed when stopped) + severity dot |
-| Popup / desktop (full) | A pinned column: the daemon status card (state, `running/total` count, start/stop row, and the refresh, Podman Desktop launch and update-indicator buttons), the scrollable grouped container list in the middle, the update notice row, and the Miscelánea card pinned at the bottom |
+| Popup / desktop (full) | A pinned column: the daemon status card (state, `running/total` count, start/stop row, and the refresh and Podman Desktop launch buttons), the scrollable grouped container list in the middle, and the Miscelánea card pinned at the bottom |
 
 The popup is laid out so it never changes size as containers come and go: the status card and the
 Miscelánea card stay pinned at the two ends, and the container list is the scrollable middle region.
@@ -161,7 +161,6 @@ table.
 | Cookies browser | `firefox` | Passed as `--cookies-from-browser`; accepts yt-dlp syntax such as `chrome:Default` or `firefox+gnomekeyring`. Leave empty to send no cookies. |
 | Podman Desktop path | `podman-desktop` | Executable name or path behind the square launch button beside the daemon status. `~/` expands. |
 | Shutdown countdown (minutes) | `15` | How long the countdown runs before the power-off; a whole number greater than 10, editable inline in the popup too. |
-| Update check interval (hours) | `6` | How often the widget asks the release manifest whether a newer version exists; `0` disables the check entirely. |
 
 ## Starting and stopping the daemon
 
@@ -172,14 +171,6 @@ active session only. It does not grant stop, restart, disable or mask.
 Stopping is deliberately different: the stop button arms on the first click and runs on the second, behind
 an expiring confirmation, and it is outside the grant, so polkit asks for your password as well. Two
 safeguards on a destructive verb, on purpose.
-
-## Updates
-
-The widget checks a fixed release manifest on a schedule and says so when a newer version exists. The
-notice is a muted line in the popup plus one indicator beside the daemon status; clicking that indicator
-opens the release page. Nothing is said while the widget is current, and a failed check — offline, no
-`curl`, an unreadable manifest — draws nothing at all. The manifest is generated from the same
-`metadata.json` the widget is packaged with, so the version is authored exactly once.
 
 ---
 
@@ -204,18 +195,18 @@ package/io.github.daver-ui.dockerstatus/
     ├── config/main.xml               # kcfg entries -> cfg_* aliases
     ├── icons/dockerstatus.svg        # bundled app icon (metadata.json Icon: /icons/dockerstatus.svg)
     └── ui/
-        ├── main.qml                  # PlasmoidItem: commands, polling, actions, download/update wiring, state
+        ├── main.qml                  # PlasmoidItem: commands, polling, actions, download wiring, state
         ├── CompactRepresentation.qml # panel icon + severity dot
-        ├── FullRepresentation.qml    # popup/desktop: pinned column — status card, scrollable grouped container list, update notice, Miscelánea
+        ├── FullRepresentation.qml    # popup/desktop: pinned column — status card, scrollable grouped container list, Miscelánea
         ├── SeverityDot.qml           # single severity -> colour mapping
         ├── DockerStatusPalette.qml   # the mockup's fixed dark palette and type scale
         ├── dockerstatus.js           # pure logic incl. download boundary, unit tested in Node
-        └── config/ConfigGeneral.qml  # config page (poll, icon, list, Podman path, download, countdown, updates)
+        └── config/ConfigGeneral.qml  # config page (poll, icon, list, Podman path, download, countdown)
 polkit/49-docker-status-widget.rules
 install.sh                            # lifecycle CLI
 tests/dockerstatus.test.mjs
 .github/                              # CI gate (test, qmllint, docs) and the Pages release workflow
-site/                                 # the GitHub Pages release site, and the manifest the widget fetches
+site/                                 # the static GitHub Pages landing page; the widget never fetches it
 screenshots/                          # the two images above
 docs/                                 # the documentation; entry point: this README, routing: docs/project.md
 index.md                              # generated documentation tree (marker region, repo root)

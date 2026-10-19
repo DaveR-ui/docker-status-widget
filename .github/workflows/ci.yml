@@ -48,13 +48,6 @@ jobs:
       - name: Run the unit suite
         run: node --test tests/*.mjs
 
-      # The version endpoint is derived from metadata.json by the Pages workflow; this
-      # step keeps the committed copy honest so a PR that bumps KPlugin.Version fails
-      # until it regenerates site/latest.json. A step, not a job: it adds no new
-      # status-check context, so the branch-protection contract stays three checks.
-      - name: Check the release manifest is derived from the current version
-        run: node .github/scripts/sync-manifest.mjs --check
-
   qmllint:
     name: qmllint
     # ubuntu-26.04 deliberately, not ubuntu-latest: this pin is the fix, not a

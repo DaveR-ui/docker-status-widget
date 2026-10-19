@@ -12,21 +12,20 @@ status: active
 
 ## What this slice is
 
-The QML layer Plasma loads: one KPackage that selects a representation, polls two Docker commands and a
-fixed update check, exposes three contextual actions, renders a panel item and a popup, and hosts a
+The QML layer Plasma loads: one KPackage that selects a representation, polls two Docker commands,
+exposes two contextual actions, renders a panel item and a popup, and hosts a
 config page. The form matters —
 **the files ARE the widget**. There is no compile step, no transpile, no bundling: the bytes under
 `package/io.github.daver-ui.dockerstatus/contents/` are exactly what runs.
 
 ## Boundaries
 
-**In:** representation selection and layout; the eleven `P5Support.DataSource` instances and their wiring
-(five for the Docker side, one for the Podman Desktop launch, two for the download row, one for the power-off, two for the update check);
+**In:** representation selection and layout; the nine `P5Support.DataSource` instances and their wiring
+(five for the Docker side, one for the Podman Desktop launch, two for the download row, one for the power-off);
 the grouped compose containers section and its per-group play/stop controls;
-`Plasmoid.contextualActions` and the start/stop/refresh/update handlers; the download handler and its
+`Plasmoid.contextualActions` and the start/stop/refresh handlers; the download handler and its
 observable state; the shutdown
-countdown, its ticker, its inline minutes editor and its observable state; the update check and its
-observable state, including the muted line and the update indicator it can render; i18n strings, tooltips and
+countdown, its ticker, its inline minutes editor and its observable state; i18n strings, tooltips and
 `Plasmoid.title`; the
 severity-to-colour mapping; the kcfg entries and the `cfg_*` alias wiring; the config page widgets.
 
@@ -50,7 +49,7 @@ command and the compose/Podman commands, whose assembly and command boundary liv
 ## How it works
 
 `PlasmoidItem` is the root. `preferredRepresentation` is the full representation on a planar
-(desktop) form factor and null in a panel, which falls back to the compact one. Eleven `DataSource`
+(desktop) form factor and null in a panel, which falls back to the compact one. Nine `DataSource`
 instances with the `executable` engine carry every command:
 
 | id | connectedSources | interval | role |
@@ -64,8 +63,6 @@ instances with the `executable` engine carry every command:
 | `downloadAction` | the assembled yt-dlp command, assigned on demand | `0` | one-shot video download; the single event at exit closes the run, and the consumer still guards and accumulates in case a future engine streams |
 | `podmanLaunch` | the shell-quoted resolved Podman Desktop path, assigned on demand | `0` | one-shot Podman Desktop launch behind the status card's square button, built by `DockerStatus.buildPodmanDesktopCommand()`; stays in flight for as long as the app runs — the engine delivers exactly one event, at exit — so the flag is released when it closes and a wrong path fails immediately with the binary's own message |
 | `powerAction` | the fixed `systemctl poweroff`, assigned on demand | `0` | one-shot at countdown expiry; clears `shutdownInFlight` and surfaces the exit code and `stderr`; can stay alive while `systemctl` waits for the shutdown job |
-| `updateCheckSource` | the fixed `updateCheckCommand` while `updateCheckIntervalHours > 0`, `[]` otherwise | `updateCheckIntervalMs` | the polled update check; the engine runs it once on connect, so the load-time check is free, and the `connectedSources` binding disconnects it (`[]`) when the interval is `0` |
-| `updateCheckForced` | assigned on demand | `0` | one-shot manual re-check behind "Check for updates"; a polled source's `connectedSources` is a binding and cannot be reassigned per click, so the tokenised command rides this one instead |
 
 `effectivePollIntervalMs` is `max(1000, pollIntervalSeconds * 1000)`, so a configured sub-second
 interval is silently floored. `onNewData` handlers write `root.daemonState` and the parsed container
@@ -103,18 +100,16 @@ derived `miscBodyVisible` (`miscSectionExpanded || shutdownPending`) gates the b
 rule, so an armed countdown is always visible whatever the section bool says and can never be collapsed
 away. The state stays entirely inside `FullRepresentation.qml`: it never crosses into `main.qml`, and the
 popup remains a pure consumer. The config page merges its two cards the same way: one "Miscelánea" card
-(after Podman Desktop, before Updates) whose single nested `Kirigami.FormLayout` holds the seven download
+(after Podman Desktop) whose single nested `Kirigami.FormLayout` holds the seven download
 and shutdown controls in their original order, with no kcfg entry, `cfg_*` alias, control id or tooltip
-changed; the page renders six section cards.
+changed; the page renders five section cards.
 
 The popup is a pinned column: the status card is its first region and the merged Miscelánea card is its
 last, neither inside a scroll region, and the container section between them is the scrollable middle
 region — `Layout.fillHeight: true`, its `ListView` uncapped
 and clipped, and a height floor of one and a half container rows
 (`containerScrollFloor: containerRowHeight * 3 / 2` = 78px) so the next row always peeks in and the widget
-never resizes as the list grows. The update notice sits in a reserved one-grid-unit row between the middle
-region and the pinned Miscelánea card, its text emptied rather than the label hidden, so it cannot grow the
-widget either. There is no footer and no configurable bottom text; the palette's `footerText` token stays
+never resizes as the list grows. There is no footer and no configurable bottom text; the palette's `footerText` token stays
 in `DockerStatusPalette.qml` because the palette is the mockup's fixed set, not a list of tokens in use.
 
 The Podman Desktop launch is a square 28x28 `ToolButton` beside the daemon-status label in the status card:
@@ -122,7 +117,7 @@ The Podman Desktop launch is a square 28x28 `ToolButton` beside the daemon-statu
 `launchPodmanDesktop()`, running `DockerStatus.buildPodmanDesktopCommand()` on the `podmanLaunch` one-shot —
 one source, one in-flight flag, exit code 0 clears the feedback and anything else surfaces stderr verbatim
 (or a generic fallback naming the exit code), with the button disabled while the app runs. The data-source
-count is eleven. The backing logic — `DockerStatus.buildPodmanDesktopCommand()`,
+count is nine. The backing logic — `DockerStatus.buildPodmanDesktopCommand()`,
 `DockerStatus.resolvePodmanDesktopPath()`, the `podmanDesktopPath` kcfg entry and the `ConfigGeneral`
 setting — is the Podman Desktop command boundary, and `main.qml` is its caller.
 
@@ -155,26 +150,6 @@ without persisting, skips a redundant write, and otherwise writes
 `Plasmoid.configuration.shutdownCountdownMinutes`. The representation validates its field through the same
 resolver but reads and writes no configuration.
 
-The update check is the second polled source, and it is deliberately not a third command-building
-exception: `DockerStatus.buildUpdateCheckCommand()` assembles `updateCheckCommand` entirely from fixed
-constants, so no configuration value and no user input reaches it. `handleUpdateCheck()` is the one
-handler both sources deliver to; it reads only the closing event, splits the output at the marker and
-decides with `DockerStatus.isUpdateAvailable()`. Every failure branch is silent by construction: offline, no `curl`, an
-unreadable `metadata.json` or an unparseable manifest all clear the state and render nothing — there is no
-error text anywhere in this feature. `checkForUpdates()` is the manual one-shot behind the third contextual
-action ("Check for updates", `enabled: !root.updateCheckInFlight`), and it tokenises the fixed command
-because a polled source's `connectedSources` is a binding. State ownership is unchanged: `main.qml` owns
-`installedVersion`, `updateCheckInFlight`, `updateAvailable` and `updateFeedback`, and the
-representation is a pure consumer. `FullRepresentation.qml` renders the feature as a muted, centred
-line in a reserved row between the scroll region and the pinned Miscelánea card, reading
-`updateFeedback`, its text emptied while no update exists so the row stays blank and the widget never
-grows by a line when one appears —
-plus a small flat `emblem-important` `ToolButton` beside the daemon state in the status card, on the
-same `updateAvailable` gate. The line stays deliberately neither a button nor a `SeverityDot` nor a
-link, but the indicator is the widget's one sanctioned exception: its click opens the fixed
-`DockerStatus.UPDATE_PAGE_URL` release-page constant through the widget's single `Qt.openUrlExternally`
-call, and the URL is never configuration.
-
 ## Conventions of this slice
 
 - Commands are `readonly` constants in `main.qml`, with **two** command-building exceptions:
@@ -185,8 +160,7 @@ call, and the URL is never configuration.
   `main.qml` calls both builders — the compose one from the grouped container section, the Podman one
   from the status-card button.
   No other configuration value is a command; everywhere else configuration supplies only values inside
-  a command the widget builds. The update-check command is also
-  built in the pure module, but entirely from fixed constants, so it mints no further exception.
+  a command the widget builds.
 - The per-project compose action needs no privilege — it is the user's own docker socket and the user's
   own containers — so the daemon's start/stop asymmetry is untouched: the per-group stop is
   deliberately NOT `systemctl stop docker`.
@@ -218,15 +192,12 @@ call, and the URL is never configuration.
 
 ## Dependencies
 
-**Upstream:** `dockerstatus.js` for parsing, severity, the download-command builder, the compose/Podman
-command builders and the update-check
-helpers; `metadata.json`
+**Upstream:** `dockerstatus.js` for parsing, severity, the download-command builder and the compose/Podman
+command builders; `metadata.json`
 and `main.xml` for plugin identity and config defaults; the probed behaviour of Plasma 6.7.4 and
 plasma5support 6.7.4. **Runtime (download only):** a `yt-dlp` executable reachable on plasmashell's
 `PATH`; for YouTube a JavaScript runtime (`node` or `deno`); cookies from the configured browser (default
-Firefox) for X and for age-gated YouTube. **Runtime (update check only):** a `curl` reachable on
-plasmashell's `PATH`, plus network reachability to the fixed Pages URL; a missing `curl` or an offline
-machine is not an error — it is simply no update notice.
+Firefox) for X and for age-gated YouTube.
 **Runtime (Podman launch only):** the Podman Desktop executable, on plasmashell's `PATH` (default
 `podman-desktop`) or named by an absolute or `~/`-expanded path in the widget's options; the status
 card's square launch button is the UI trigger, and a wrong setting fails at click time with the
@@ -253,9 +224,6 @@ a running Plasma session.
 - The download row's layout is previewable headless through the render harness ([[render-preview]]),
   but only its command boundary is unit tested, so its enable/disable behaviour is reviewed until it
   runs in a session.
-- The update check's QML surface — the two sources, the silent handler and the muted line — is
-  review-and-lint only, exactly like every other QML wrapper here. The Node suite pins its pure helpers and
-  its wiring as static text, which proves the arrangement, not the running behaviour.
 - The countdown lives in QML, so the play/stop timing, the inline field's interaction and the effective
   passwordless power-off are reviewed, not tested; the pure resolver (`resolveShutdownMinutes`), the two
   helpers (`shutdownRemainingSeconds`, `formatCountdown`) and the inline field's wiring (inbound property,

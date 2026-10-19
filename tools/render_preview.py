@@ -46,7 +46,6 @@ STATES = {
         previewActionInFlight=False, previewActionKind="", previewStopArmed=False,
         previewActionFeedback="", previewDownloaderEnabled=True,
         previewShutdownPending=False, previewShutdownRemainingSeconds=0,
-        previewUpdateAvailable=False, previewUpdateFeedback="",
     ),
     "inactive_armed": dict(
         previewDaemonState="inactive", previewDaemonRunning=False,
@@ -54,15 +53,13 @@ STATES = {
         previewActionInFlight=False, previewActionKind="", previewStopArmed=True,
         previewActionFeedback="Permission denied", previewDownloaderEnabled=True,
         previewShutdownPending=True, previewShutdownRemainingSeconds=754,
-        previewUpdateAvailable=False, previewUpdateFeedback="",
     ),
-    "unknown_update": dict(
+    "unknown": dict(
         previewDaemonState="unknown", previewDaemonRunning=False,
         previewContainers=[], previewContainerListEnabled=True,
         previewActionInFlight=True, previewActionKind="start", previewStopArmed=False,
         previewActionFeedback="", previewDownloaderEnabled=False,
         previewShutdownPending=False, previewShutdownRemainingSeconds=0,
-        previewUpdateAvailable=True, previewUpdateFeedback="Version 0.6.0 is available",
     ),
 }
 
